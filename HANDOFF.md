@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-07
+**Last updated:** 2026-04-07 (Session 3)
 
 ---
 
@@ -29,7 +29,7 @@ The system runs research agents, assembles findings into a professional PDF repo
 | `package.json` | Node dependencies: `@supabase/supabase-js`, `dotenv` | Done |
 | `assets/logo.png` | B & I logo — deep forest green + warm gold. Used for report branding. | Done |
 
-### Supabase Database — COMPLETE
+### Supabase Database — COMPLETE (with pending migrations)
 
 Live at `https://vupnhlpowfqwmrysohhrq.supabase.co`
 
@@ -42,6 +42,27 @@ Live at `https://vupnhlpowfqwmrysohhrq.supabase.co`
 | `api_cache` | Cached API responses to avoid redundant calls |
 | `report_sources` | Source citations used by agents |
 
+### Pending DB Migrations (run before building tools)
+
+These schema changes were decided this session but not yet applied:
+
+```sql
+-- 1. Add status to clients table
+ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'prospect';
+-- Values: 'prospect' | 'active' | 'inactive'
+
+-- 2. Add status to propositions table
+ALTER TABLE propositions ADD COLUMN status TEXT DEFAULT 'prospect';
+-- Values: 'prospect' | 'proposal_sent' | 'active' | 'paused' | 'inactive'
+
+-- 3. Add factor_weights to propositions table
+ALTER TABLE propositions ADD COLUMN factor_weights JSONB;
+-- Default: {"market_demand":1.0,"regulatory_feasibility":1.0,"competitive_landscape":1.0,"financial_viability":1.0,"supply_chain_reliability":1.0,"risk_level":1.0}
+
+-- 4. Add error_message to reports table
+ALTER TABLE reports ADD COLUMN error_message TEXT;
+```
+
 ### Propositions Table — Full Schema
 
 ```
@@ -52,6 +73,8 @@ schedule_type ('monthly'|'weekly'|'quarterly'|'on_demand'),
 schedule_day (1-28),
 next_run_at (timestamptz),
 last_run_at (timestamptz),
+status ('prospect'|'proposal_sent'|'active'|'paused'|'inactive'),  ← PENDING MIGRATION
+factor_weights (JSONB),                                              ← PENDING MIGRATION
 created_at, updated_at
 ```
 
@@ -86,9 +109,14 @@ saveReportSource(data)
 | `YOUTUBE_API_KEY` | YouTube influencer research |
 | `EXCHANGE_RATE_API_KEY` | Currency conversion |
 | `CENSUS_API_KEY` | US Census demographic data |
+| `TWILIO_ACCOUNT_SID` | SMS alerting |
+| `TWILIO_AUTH_TOKEN` | SMS alerting |
+| `TWILIO_FROM_NUMBER` | Twilio phone number (sends from) |
+| `TWILIO_TO_NUMBER` | Brendon's personal cell (receives alerts) |
 
 Reddit API disabled — use Brave Search with `site:reddit.com` instead.
 Crunchbase disabled — use Brave Search for competitive intelligence.
+**SerpAPI** identified as premium search upgrade for the future (~$200/month). Same swap pattern: add key to `.env`, write `tools/search_serp.py`, update workflows. No other changes needed.
 
 ### Seed Data — COMPLETE
 
@@ -99,9 +127,18 @@ Crunchbase disabled — use Brave Search for competitive intelligence.
 
 Brendon's proposition is set to monthly schedule, next run May 1 2026.
 
+**Camel milk proposition null fields filled (Session 3):**
+- `industry`: Health Food & Functional Beverages
+- `product_type`: Dehydrated Camel Milk Powder
+- `origin_country`: Somalia
+- `target_country`: United States
+- `target_demographic`: Health-conscious adults 25–55; lactose-intolerant consumers; paleo/keto dieters; Muslim-American community
+- `estimated_budget`: 50000
+- `additional_context`: FDA registration pathway, halal certification as market signal, DTC + specialty retail channels
+
 ---
 
-## All 9 Pre-Build Decisions — LOCKED
+## All Pre-Build Decisions — LOCKED
 
 | # | Decision | Outcome |
 |---|---|---|
@@ -114,6 +151,125 @@ Brendon's proposition is set to monthly schedule, next run May 1 2026.
 | 7 | Workflow list | 11 workflows confirmed (see below). `research_origin_ops.md` replaces `research_somalia_ops.md` for generics. |
 | 8 | Agent architecture | Multi-agent parallel. 1 Sonnet orchestrator. ~5 Haiku research sub-agents. 1 Sonnet report assembler. |
 | 9 | Python environment | `venv` + `requirements.txt`. Not set up yet — first task when resuming. |
+
+---
+
+## Pre-Foundation Gaps — STATUS
+
+| # | Gap | Status |
+|---|---|---|
+| 1 | Camel milk proposition null fields | ✅ DONE — filled this session |
+| 2 | Client/proposition intake process | ✅ LOCKED — see full intake flow below |
+| 3 | Viability score methodology | ✅ LOCKED — see rubric below |
+| 4 | Quality check before PDF assembly | ✅ LOCKED — see completeness check below |
+| 5 | Failure alerting | ✅ LOCKED — Resend email + Twilio SMS to Brendon + DB error log |
+| 6 | `pdf_url` column on reports table | ✅ DONE — column already existed, confirmed live |
+| 7 | Supabase Storage bucket | ⏳ PENDING — Brendon must create manually (see below) |
+| 8 | Cache TTL strategy | ⏳ NOT YET DISCUSSED |
+| 9 | On-demand trigger | ⏳ NOT YET DISCUSSED |
+| 10 | Brave Search throttling strategy | ⏳ NOT YET DISCUSSED |
+
+---
+
+## Gap 2 — Intake Flow (LOCKED)
+
+**Full business process:**
+1. Client reaches out (email, referral — outside the system)
+2. Client fills out form on website → intake schema captured
+3. Brendon gets notification email with formatted summary
+4. Brendon reviews → system generates a **PDF proposal** (scope, cost, timeline) for Brendon to send
+5. Client agrees and signs (DocuSign or similar — outside the system for now)
+6. Brendon runs `node activate.js --proposition-id <id>` → proposition goes `active` → research begins
+
+**Tools to build:**
+- `tools/intake.js` — validates intake data, writes client + proposition to Supabase (status: `prospect`), emails Brendon summary
+- `tools/generate_proposal.js` — generates PDF proposal for Brendon to send to client
+- `tools/activate.js` — flips proposition status to `active`, sets `next_run_at`, kicks off first research run
+
+**Intake schema** (these become the web form fields):
+```
+client_name, client_email, client_company (optional)
+proposition_title, proposition_description
+industry, product_type, origin_country, target_country
+target_demographic, estimated_budget
+additional_context
+schedule_type, schedule_day
+factor_weights (per viability rubric below)
+```
+
+**Status flow:**
+- Clients: `prospect → active → inactive`
+- Propositions: `prospect → proposal_sent → active → paused → inactive`
+- Orchestrator only picks up `active` propositions
+
+---
+
+## Gap 3 — Viability Score Rubric (LOCKED)
+
+**6 factors, each scored 1–5 by the assembly agent:**
+
+| Factor | What it measures |
+|---|---|
+| Market Demand | Real, growing demand in the target market |
+| Regulatory Feasibility | How clear and navigable the compliance path is |
+| Competitive Landscape | Room to enter vs. how crowded the space is |
+| Financial Viability | Unit economics at realistic volumes |
+| Supply Chain Reliability | Consistent sourcing and delivery |
+| Risk Level | Number and severity of serious risks (inverted — lower risk = higher score) |
+
+**Client-defined weights** stored in `propositions.factor_weights` (JSONB):
+```json
+{
+  "market_demand": 1.0,
+  "regulatory_feasibility": 1.0,
+  "competitive_landscape": 1.0,
+  "financial_viability": 1.0,
+  "supply_chain_reliability": 1.0,
+  "risk_level": 1.0
+}
+```
+Weight tiers: `1.0` (Normal) | `1.5` (Important) | `2.0` (Critical)
+
+**Scoring:** Weighted average of all 6 factors.
+- 4.0–5.0 → **Strong**
+- 2.5–3.9 → **Moderate**
+- 1.0–2.4 → **Weak**
+
+---
+
+## Gap 4 — Completeness Check (LOCKED)
+
+Before handing off to PDF assembly, orchestrator verifies:
+
+1. All 9 research agents have `status = 'complete'` in `agent_outputs`
+2. No output field is null or empty string
+3. All 6 viability score factors have a numeric value
+
+**Hard fail only on technical errors** (agent crash, API timeout, DB write failure) — not on data sparsity. If data is thin, the agent notes it in its output and continues. Brave Search + Claude reasoning is sufficient to produce meaningful content for every section.
+
+On failure: report marked `failed`, `error_message` written to DB, Brendon notified via Resend email + Twilio SMS.
+
+---
+
+## Gap 5 — Failure Alerting (LOCKED)
+
+On any run failure:
+- **Resend email** → `brennon.mckeever@gmail.com` with: proposition name, failed agent/step, error message, timestamp
+- **Twilio SMS** → Brendon's cell with short summary (e.g. "Run failed: Camel Milk Export — supply chain agent error. Check email.")
+- **DB log** → `reports.status = 'failed'`, `reports.error_message` = full error detail
+
+Client is **not notified** — Brendon reaches out directly.
+
+---
+
+## Gap 7 — Supabase Storage Bucket (PENDING — MANUAL STEP)
+
+**Action required before building PDF tools:**
+1. Go to Supabase project → **Storage**
+2. Create new bucket named `reports`
+3. Set to **private**
+
+Once created, PDF upload tool can reference it. Confirm done before building `tools/generate_report_pdf.py`.
 
 ---
 
@@ -157,51 +313,38 @@ Brendon's proposition is set to monthly schedule, next run May 1 2026.
 
 ## What Has NOT Been Built Yet
 
+- [ ] DB migrations (status columns, factor_weights, error_message) — run SQL before building tools
+- [ ] Supabase Storage bucket `reports` — create manually in dashboard
 - [ ] Python `venv` + `requirements.txt`
 - [ ] `workflows/` directory and all `.md` workflow files
 - [ ] `tools/` Python scripts
 - [ ] `outputs/` folder for storing PDFs
-- [ ] `.tmp/` folder for intermediate files
+- [ ] `tools/intake.js` — client/proposition intake
+- [ ] `tools/generate_proposal.js` — PDF proposal for client
+- [ ] `tools/activate.js` — activates proposition and kicks off first run
 - [ ] Report PDF generation
-- [ ] Email delivery tool
+- [ ] Email delivery tool (Resend)
+- [ ] SMS alert tool (Twilio)
 - [ ] Orchestrator / main runner
-- [ ] Supabase Storage bucket for PDF archiving
-- [ ] `pdf_url` column added to `reports` table
-
----
-
-## Pre-Foundation Gaps — TO RESOLVE NEXT SESSION
-
-These were identified in the pre-build review. Resolve all of these before writing any workflows or tools.
-
-| # | Gap | Action Needed |
-|---|---|---|
-| 1 | Camel milk proposition record has null fields | Fill in `industry`, `product_type`, `origin_country`, `target_country`, `target_demographic`, `estimated_budget`, `additional_context` via SQL update |
-| 2 | No client/proposition intake process | Decide: CLI intake script or workflow? Defines how future clients and ideas enter the system |
-| 3 | Viability score has no methodology | Define scoring rubric — which factors matter, what thresholds mean Strong / Moderate / Weak |
-| 4 | No quality check before PDF assembly | Design a lightweight completeness check the orchestrator runs before handing off to assembly |
-| 5 | No failure alerting | Add failure notification email (via Resend) sent to Brendon if a run errors out |
-| 6 | `reports` table missing `pdf_url` column | Run SQL migration: `ALTER TABLE reports ADD COLUMN pdf_url TEXT;` |
-| 7 | Supabase Storage bucket doesn't exist | Create bucket `reports` in Supabase dashboard for PDF archiving |
-| 8 | Cache has no TTL strategy | Define TTL per data type (e.g. regulatory = 30 days, pricing = 7 days) |
-| 9 | On-demand trigger undefined | Decide exactly how on-demand runs are kicked off (CLI command? script?) |
-| 10 | Brave Search throttling strategy | Define query budget per section + delay between calls |
 
 ---
 
 ## Recommended Order When Resuming
 
-1. Resolve the 10 pre-foundation gaps above
-2. Set up Python `venv` + `requirements.txt`
-3. Create `workflows/`, `tools/`, `outputs/`, `.tmp/` directories
-4. Write `tools/search_brave.py` — first and most critical tool
-5. Write `workflows/research_market_overview.md` — first workflow
-6. Test the full loop: workflow → tool → db.js → Supabase
-7. Expand to all remaining research workflows
-8. Build report assembly and PDF generation
-9. Wire up email delivery with Resend
-10. Build orchestrator
-11. Set up scheduled run trigger
+1. Finish remaining gap decisions: Gap 8 (cache TTL), Gap 9 (on-demand trigger), Gap 10 (Brave Search throttling)
+2. Run the 4 pending DB migrations (status, factor_weights, error_message columns)
+3. Create Supabase Storage bucket `reports` (manual — dashboard)
+4. Set up Python `venv` + `requirements.txt`
+5. Create `workflows/`, `tools/`, `outputs/`, `.tmp/` directories
+6. Write `tools/search_brave.py` — first and most critical tool
+7. Write `workflows/research_market_overview.md` — first workflow
+8. Test the full loop: workflow → tool → db.js → Supabase
+9. Build `tools/intake.js`, `tools/generate_proposal.js`, `tools/activate.js`
+10. Expand to all remaining research workflows
+11. Build report assembly and PDF generation
+12. Wire up Resend email + Twilio SMS delivery
+13. Build orchestrator
+14. Set up scheduled run trigger
 
 ---
 
@@ -219,5 +362,6 @@ WAT Framework:
 ```
 
 Agents (Claude) read workflows, call tools, write results to Supabase via `db.js`.
-Reports uploaded to Supabase Storage, URL saved to `reports.pdf_url`.
-Orchestrator queries `getDuePropositions()` to find scheduled runs.
+Reports uploaded to Supabase Storage (`reports` bucket), URL saved to `reports.pdf_url`.
+Orchestrator queries `getDuePropositions()` to find scheduled runs (active propositions only).
+On failure: Resend email + Twilio SMS to Brendon, error logged to DB.
