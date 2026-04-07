@@ -34,6 +34,16 @@ async function createClient(data) {
  * Creates a new proposition record.
  * A "proposition" is a research focus area or hypothesis that a report
  * will investigate (e.g. "Is the US camel milk market viable in 2026?").
+ *
+ * Schema fields:
+ *   client_id, title, description, industry, product_type,
+ *   origin_country, target_country, target_demographic,
+ *   estimated_budget, additional_context,
+ *   schedule_type ('monthly'|'weekly'|'quarterly'|'on_demand') — default 'monthly'
+ *   schedule_day (1-28, day of month for monthly runs) — default 1
+ *   next_run_at (timestamptz) — when the next automated run should fire
+ *   last_run_at (timestamptz) — when the last run completed
+ *
  * @param {Object} data - Fields matching the `propositions` table schema.
  * @returns {Object} The inserted row.
  */
@@ -45,6 +55,82 @@ async function createProposition(data) {
     .single();
 
   if (error) throw new Error(`createProposition failed: ${error.message}`);
+  return row;
+}
+
+/**
+ * Updates the schedule settings for a proposition.
+ * Used when a client changes their preferred delivery frequency.
+ * @param {string} propositionId - Primary key of the proposition to update.
+ * @param {Object} schedule - Schedule fields to update.
+ *   @param {string} schedule.schedule_type - 'monthly'|'weekly'|'quarterly'|'on_demand'
+ *   @param {number} schedule.schedule_day  - Day of month (1-28) for monthly runs.
+ *   @param {string} schedule.next_run_at   - ISO timestamp for the next run.
+ * @returns {Object} The updated row.
+ */
+async function updatePropositionSchedule(propositionId, schedule) {
+  const { data: row, error } = await supabase
+    .from('propositions')
+    .update(schedule)
+    .eq('id', propositionId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`updatePropositionSchedule failed for proposition ${propositionId}: ${error.message}`);
+  return row;
+}
+
+/**
+ * Returns all propositions whose next_run_at is due (i.e. <= now).
+ * Called by the orchestrator on a schedule to find what needs to run.
+ * Only returns propositions where schedule_type is not 'on_demand'.
+ * @returns {Array} Array of proposition rows ready to be run.
+ */
+async function getDuePropositions() {
+  const { data: rows, error } = await supabase
+    .from('propositions')
+    .select('*')
+    .neq('schedule_type', 'on_demand')
+    .lte('next_run_at', new Date().toISOString());
+
+  if (error) throw new Error(`getDuePropositions failed: ${error.message}`);
+  return rows;
+}
+
+/**
+ * Marks a proposition's last_run_at as now and advances next_run_at
+ * based on its schedule_type and schedule_day.
+ * Called by the orchestrator after a report run completes successfully.
+ * @param {string} propositionId - Primary key of the proposition.
+ * @param {string} scheduleType  - 'monthly'|'weekly'|'quarterly'
+ * @param {number} scheduleDay   - Day of month for monthly cadence.
+ * @returns {Object} The updated row.
+ */
+async function advancePropositionSchedule(propositionId, scheduleType, scheduleDay) {
+  // Calculate the next run timestamp based on schedule type
+  const now = new Date();
+  let nextRun;
+
+  if (scheduleType === 'monthly') {
+    // Advance to the same day next month
+    nextRun = new Date(now.getFullYear(), now.getMonth() + 1, scheduleDay);
+  } else if (scheduleType === 'weekly') {
+    nextRun = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  } else if (scheduleType === 'quarterly') {
+    nextRun = new Date(now.getFullYear(), now.getMonth() + 3, scheduleDay);
+  }
+
+  const { data: row, error } = await supabase
+    .from('propositions')
+    .update({
+      last_run_at: now.toISOString(),
+      next_run_at: nextRun.toISOString(),
+    })
+    .eq('id', propositionId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`advancePropositionSchedule failed for proposition ${propositionId}: ${error.message}`);
   return row;
 }
 
@@ -208,6 +294,9 @@ async function saveReportSource(data) {
 module.exports = {
   createClient,
   createProposition,
+  updatePropositionSchedule,
+  getDuePropositions,
+  advancePropositionSchedule,
   createReport,
   updateReportStatus,
   saveAgentOutput,

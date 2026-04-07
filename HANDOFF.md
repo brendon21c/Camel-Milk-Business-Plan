@@ -1,4 +1,4 @@
-# Project Handoff — Camel Milk Business Plan System
+# Project Handoff — Business Viability Intelligence System
 **Last updated:** 2026-04-07
 
 ---
@@ -6,54 +6,73 @@
 ## What This Project Is
 
 An automated business viability intelligence system that answers:
+> *Is a given business idea viable — and how does that picture change over time?*
+
+The system is **generic by design**. The first proposition being researched is:
 > *Is exporting dehydrated camel milk powder from Somalia to the US health food market a real, viable business?*
 
-The system will run research agents, assemble findings into a professional PDF report, and deliver it by email — on-demand or monthly. It follows the **WAT framework** (Workflows / Agents / Tools) defined in `CLAUDE.md`.
+Future propositions (different business ideas, different clients) are added as new rows in the `propositions` table. No new code is needed for each new idea.
+
+The system runs research agents, assembles findings into a professional PDF report, and delivers it by email — on a client-defined schedule or on demand. It follows the **WAT framework** (Workflows / Agents / Tools) defined in `CLAUDE.md`.
 
 ---
 
-## What Has Been Built So Far
+## What Has Been Built
 
 ### Infrastructure — COMPLETE
 
 | File | Purpose | Status |
 |---|---|---|
-| `supabaseClient.js` | Initialises a single Supabase client using the service key. Reads credentials from `.env`. Fails fast if keys are missing. | Done |
-| `db.js` | Data access layer. All Supabase queries go through here. No other file should touch the client directly. | Done |
-| `testDB.js` | Temporary smoke test — insert, read, delete a `clients` row. Confirmed working. Can be deleted. | Done (temp) |
-| `.env` | All API keys stored here (gitignored). See keys below. | Done |
+| `supabaseClient.js` | Initialises Supabase client using service key. Reads from `.env`. Fails fast if keys missing. | Done |
+| `db.js` | Data access layer. All Supabase queries go through here. Updated with scheduling functions. | Done |
+| `.env` | All API keys stored here (gitignored). | Done |
 | `package.json` | Node dependencies: `@supabase/supabase-js`, `dotenv` | Done |
+| `assets/logo.png` | B & I logo — deep forest green + warm gold. Used for report branding. | Done |
 
 ### Supabase Database — COMPLETE
 
-The database is live at `https://vupnhlpowfqwmrysohhrq.supabase.co`.
-
-**Tables created:**
+Live at `https://vupnhlpowfqwmrysohhrq.supabase.co`
 
 | Table | Purpose |
 |---|---|
-| `clients` | Person or org commissioning the report (name, email, company_name, notes, is_active) |
-| `propositions` | Research focus / hypothesis a report investigates |
-| `reports` | Full lifecycle of a single research run (status: pending → running → complete → failed) |
+| `clients` | Person or org commissioning the report |
+| `propositions` | Research focus / hypothesis — includes scheduling fields |
+| `reports` | Full lifecycle of a single research run |
 | `agent_outputs` | Output from each research sub-agent keyed to a report |
-| `api_cache` | Cached API responses to avoid redundant calls across runs |
-| `report_sources` | Source citations used by agents (URLs, titles, retrieval timestamps) |
+| `api_cache` | Cached API responses to avoid redundant calls |
+| `report_sources` | Source citations used by agents |
+
+### Propositions Table — Full Schema
+
+```
+id, client_id, title, description,
+industry, product_type, origin_country, target_country,
+target_demographic, estimated_budget, additional_context,
+schedule_type ('monthly'|'weekly'|'quarterly'|'on_demand'),
+schedule_day (1-28),
+next_run_at (timestamptz),
+last_run_at (timestamptz),
+created_at, updated_at
+```
 
 ### db.js Functions Available
 
 ```
-createClient(data)                          → insert into clients
-createProposition(data)                     → insert into propositions
-createReport(data)                          → insert into reports
-updateReportStatus(reportId, status)        → update report.status
-saveAgentOutput(data)                       → insert into agent_outputs
-getAgentOutputsByReportId(reportId)         → fetch all outputs for a report
-getCachedApiResponse(cacheKey)              → cache lookup (returns null on miss)
-setCachedApiResponse(cacheKey, data)        → upsert cache entry
-saveReportSource(data)                      → insert into report_sources
+createClient(data)
+createProposition(data)
+updatePropositionSchedule(propositionId, schedule)
+getDuePropositions()                          ← finds propositions where next_run_at <= now
+advancePropositionSchedule(id, type, day)     ← advances next_run_at after a run completes
+createReport(data)
+updateReportStatus(reportId, status)
+saveAgentOutput(data)
+getAgentOutputsByReportId(reportId)
+getCachedApiResponse(cacheKey)
+setCachedApiResponse(cacheKey, data)
+saveReportSource(data)
 ```
 
-### API Keys Available in `.env`
+### API Keys in `.env`
 
 | Key | Service |
 |---|---|
@@ -62,59 +81,127 @@ saveReportSource(data)                      → insert into report_sources
 | `SUPABASE_ANON_KEY` | Supabase anon key |
 | `SUPABASE_SERVICE_KEY` | Supabase service key (used by db.js) |
 | `BRAVE_SEARCH_KEY` | Web research via Brave Search API |
-| `RESEND_API_KEY` | Email delivery (report send) |
+| `RESEND_API_KEY` | Email delivery |
 | `OPEN_FDA_API_KEY` | FDA data queries |
 | `YOUTUBE_API_KEY` | YouTube influencer research |
 | `EXCHANGE_RATE_API_KEY` | Currency conversion |
 | `CENSUS_API_KEY` | US Census demographic data |
 
-Reddit API is disabled — use Brave Search with `site:reddit.com` queries instead.
-Crunchbase is disabled — use Brave Search for competitive intelligence.
+Reddit API disabled — use Brave Search with `site:reddit.com` instead.
+Crunchbase disabled — use Brave Search for competitive intelligence.
+
+### Seed Data — COMPLETE
+
+| Record | ID |
+|---|---|
+| Client: Brendon McKeever | `ea134c2d-547e-4fcb-b475-65383680c8fb` |
+| Proposition: Camel Milk Export | `54f51272-d819-4d82-825a-15603ed48654` |
+
+Brendon's proposition is set to monthly schedule, next run May 1 2026.
+
+---
+
+## All 9 Pre-Build Decisions — LOCKED
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | Research method | **Hybrid** — Claude agents + Brave Search API |
+| 2 | Report structure | 14 sections (see below). Logo colors. Clean business layout. Viability score. |
+| 3 | Report delivery | Resend to `brennon.mckeever@gmail.com`. PDF attached. Short summary in body. Subject: `{Business Idea} — {Month Year}`. Reports saved to `outputs/` date-stamped. |
+| 4 | Run trigger | Per-proposition schedule stored in DB. Default monthly. On-demand always available. |
+| 5 | Baseline vs delta | Both — full fresh report every run + brief bullet-point "What Changed" section from run 2 onwards. 6 months of full report history stored and retrievable on demand. |
+| 6 | APIs | All already in `.env`. No new signups needed. |
+| 7 | Workflow list | 11 workflows confirmed (see below). `research_origin_ops.md` replaces `research_somalia_ops.md` for generics. |
+| 8 | Agent architecture | Multi-agent parallel. 1 Sonnet orchestrator. ~5 Haiku research sub-agents. 1 Sonnet report assembler. |
+| 9 | Python environment | `venv` + `requirements.txt`. Not set up yet — first task when resuming. |
+
+---
+
+## Report Structure (Locked)
+
+1. Cover Page — proposition title, date, viability score (Strong / Moderate / Weak)
+2. Table of Contents
+3. Executive Summary — 1 page, bottom line up front
+4. Market Overview
+5. Competitor Analysis
+6. Regulatory Landscape
+7. Production & Equipment
+8. Packaging
+9. Distribution Strategy
+10. Marketing & Influencers
+11. Financial Projections
+12. Risk Assessment
+13. Recommendations
+14. What Changed This Month *(bullet points only, skipped on first run)*
+15. Sources
+
+**Design:** Deep forest green (`#1E4D3B`) + warm gold (`#C9A84C`) + white. Clean sans-serif body, professional serif headings. Charts and graphs in brand colors. Logo on cover and every page header/footer.
+
+---
+
+## Confirmed Workflow List
+
+1. `research_market_overview.md`
+2. `research_competitors.md`
+3. `research_regulatory.md`
+4. `research_production.md`
+5. `research_packaging.md`
+6. `research_distribution.md`
+7. `research_marketing.md`
+8. `research_financials.md`
+9. `research_origin_ops.md` *(generic — covers any sourcing country)*
+10. `research_legal.md`
+11. `assemble_report.md`
 
 ---
 
 ## What Has NOT Been Built Yet
 
-Everything from the research and delivery layer is still to come:
-
-- [ ] `workflows/` directory — no workflow `.md` files written yet
-- [ ] `tools/` Python scripts — no research tools written yet
-- [ ] Report generation (PDF)
-- [ ] Email delivery (Resend or Gmail)
-- [ ] Orchestrator agent / main runner
-- [ ] Python virtual environment (`venv`, `requirements.txt`)
-
----
-
-## Open Decisions (from PRE_BUILD.md — not yet resolved)
-
-These questions were documented before build started. None have been formally answered yet. Check `PRE_BUILD.md` for full detail.
-
-| # | Decision |
-|---|---|
-| 1 | Primary research method — Brave Search API (likely), web scraping, or Claude-native |
-| 2 | Report section structure and depth |
-| 3 | Delivery Gmail address + whether to store report history locally |
-| 4 | Run trigger — manual command, script, or scheduled (Windows Task Scheduler) |
-| 5 | Full monthly refresh vs. delta report vs. both |
-| 6 | Confirm API list (Brave Search is available; others TBD) |
-| 7 | Confirm workflow list (11 proposed in PRE_BUILD.md) |
-| 8 | Single orchestrator vs. multi-agent parallel architecture |
-| 9 | Python venv setup |
+- [ ] Python `venv` + `requirements.txt`
+- [ ] `workflows/` directory and all `.md` workflow files
+- [ ] `tools/` Python scripts
+- [ ] `outputs/` folder for storing PDFs
+- [ ] `.tmp/` folder for intermediate files
+- [ ] Report PDF generation
+- [ ] Email delivery tool
+- [ ] Orchestrator / main runner
+- [ ] Supabase Storage bucket for PDF archiving
+- [ ] `pdf_url` column added to `reports` table
 
 ---
 
-## Next Steps (Recommended Order)
+## Pre-Foundation Gaps — TO RESOLVE NEXT SESSION
 
-1. Answer the open decisions above (or start with what's already clear and decide the rest as you go)
-2. Set up Python venv + `requirements.txt`
-3. Write the first workflow file (`workflows/research_market_overview.md`)
-4. Write the first research tool (`tools/search_brave.py`)
-5. Test the full loop: workflow → tool → db.js → Supabase
-6. Expand to remaining research areas in parallel
-7. Build report assembly and PDF generation
-8. Wire up email delivery with Resend
-9. Set up run trigger
+These were identified in the pre-build review. Resolve all of these before writing any workflows or tools.
+
+| # | Gap | Action Needed |
+|---|---|---|
+| 1 | Camel milk proposition record has null fields | Fill in `industry`, `product_type`, `origin_country`, `target_country`, `target_demographic`, `estimated_budget`, `additional_context` via SQL update |
+| 2 | No client/proposition intake process | Decide: CLI intake script or workflow? Defines how future clients and ideas enter the system |
+| 3 | Viability score has no methodology | Define scoring rubric — which factors matter, what thresholds mean Strong / Moderate / Weak |
+| 4 | No quality check before PDF assembly | Design a lightweight completeness check the orchestrator runs before handing off to assembly |
+| 5 | No failure alerting | Add failure notification email (via Resend) sent to Brendon if a run errors out |
+| 6 | `reports` table missing `pdf_url` column | Run SQL migration: `ALTER TABLE reports ADD COLUMN pdf_url TEXT;` |
+| 7 | Supabase Storage bucket doesn't exist | Create bucket `reports` in Supabase dashboard for PDF archiving |
+| 8 | Cache has no TTL strategy | Define TTL per data type (e.g. regulatory = 30 days, pricing = 7 days) |
+| 9 | On-demand trigger undefined | Decide exactly how on-demand runs are kicked off (CLI command? script?) |
+| 10 | Brave Search throttling strategy | Define query budget per section + delay between calls |
+
+---
+
+## Recommended Order When Resuming
+
+1. Resolve the 10 pre-foundation gaps above
+2. Set up Python `venv` + `requirements.txt`
+3. Create `workflows/`, `tools/`, `outputs/`, `.tmp/` directories
+4. Write `tools/search_brave.py` — first and most critical tool
+5. Write `workflows/research_market_overview.md` — first workflow
+6. Test the full loop: workflow → tool → db.js → Supabase
+7. Expand to all remaining research workflows
+8. Build report assembly and PDF generation
+9. Wire up email delivery with Resend
+10. Build orchestrator
+11. Set up scheduled run trigger
 
 ---
 
@@ -124,9 +211,13 @@ These questions were documented before build started. None have been formally an
 WAT Framework:
   workflows/   ← plain-language SOPs (what to do and how)
   tools/       ← Python scripts that do the actual work
-  db.js        ← all database access
+  db.js        ← all database access (Node.js)
   .env         ← all credentials
+  outputs/     ← date-stamped PDF reports (kept 6 months)
   .tmp/        ← disposable intermediates generated during runs
+  assets/      ← logo and brand assets
 ```
 
-Agents (Claude) read workflows, call tools, and write results to Supabase via `db.js`.
+Agents (Claude) read workflows, call tools, write results to Supabase via `db.js`.
+Reports uploaded to Supabase Storage, URL saved to `reports.pdf_url`.
+Orchestrator queries `getDuePropositions()` to find scheduled runs.
