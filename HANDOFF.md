@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-08 (Session 8)
+**Last updated:** 2026-04-08 (Session 9 — run.js Part 1 complete)
 
 ---
 
@@ -44,6 +44,7 @@ All migrations have been run in the Supabase SQL Editor. Files in `migrations/` 
 | 002 | `reports.error_message` |
 | 003 | `propositions.proposition_type` |
 | 004 | `clients.phone`, `propositions.plan_tier` |
+| 005 | `reports.run_number`, `reports.previous_report_id` |
 
 Status values — clients: `prospect | active | inactive`
 Status values — propositions: `prospect | proposal_sent | active | paused | inactive`
@@ -195,19 +196,51 @@ Full schema is documented in the docstring at the top of `tools/generate_report_
 7. ~~`db.js` — all functions~~ ✓
 8. ~~`tools/generate_report_pdf.py` — PDF builder~~ ✓
 9. ~~`tools/intake.js`, `generate_proposal_pdf.py`, `generate_proposal.js`, `activate.js`~~ ✓
-10. Orchestrator (`run.js`) + scheduled trigger ← **NEXT**
+10. ~~Orchestrator (`run.js`) Part 1 — structure, scheduling, error handling, stubs~~ ✓ ← **Part 2 next**
 11. End-to-end test run
 
 ---
 
-## Next Up — Step 10: Build Orchestrator (`run.js`)
+## Next Up — Step 10 Part 2: Fill in `run.js` agent orchestration
 
-Build `run.js` — the orchestrator that:
-- Accepts `--proposition-id <id> --force` for on-demand runs
-- Calls `getDuePropositions()` for scheduled runs
-- Spawns research sub-agents per workflow
-- Calls assembler agent → writes content JSON → calls `generate_report_pdf.py`
-- Uploads PDF to Supabase Storage, saves URL, sends report email to client
+**Start here next session.**
+
+Part 1 is complete and tested. `run.js` runs end-to-end with stubs — report record created, status transitions work, error handling and failure email work, schedule advances correctly.
+
+**Part 2 tasks (fill in the stubs in `run.js`):**
+
+1. **Research sub-agents** — Replace each of the 10 `[stub]` functions with real Claude Haiku calls:
+   - Read the corresponding workflow file from `workflows/`
+   - Build a prompt: workflow SOP + proposition context
+   - Call Claude Haiku via Anthropic SDK (`claude-haiku-4-5-20251001`)
+   - Parse structured JSON output
+   - Call `saveAgentOutput()` to persist to DB
+   - Return parsed output
+
+2. **Quality gate** — Fill in `checkQuality()`:
+   - All 10 agent outputs non-null
+   - All 6 viability score factors populated (market_demand, regulatory, competitive, financial, supply_chain, risk) and in 1–5 range
+   - Throw on failure so the run is marked failed
+
+3. **Assembler agent** — Fill in `runAssemblerAgent()`:
+   - Call Claude Sonnet (`claude-sonnet-4-6`) with `workflows/assemble_report.md` + all 10 research outputs
+   - Produce `.tmp/<reportId>_content.json` matching the PDF builder schema
+   - Call `generate_report_pdf.py` via `execSync`
+   - Upload PDF to Supabase Storage `reports` bucket
+   - Save signed URL via `updateReportPdfUrl()`
+   - Email PDF to client via Resend (see `tools/generate_proposal.js` for email pattern)
+   - Call `updateReportStatus(reportId, 'complete')` after successful delivery
+
+4. **Move `updateReportStatus complete` call** — Currently in `runProposition()` after the assembler stub. In Part 2 the assembler owns that transition — remove it from `runProposition()` once the assembler is real.
+
+**Key context for Part 2:**
+- PDF content JSON schema is documented in the docstring at the top of `tools/generate_report_pdf.py`
+- Block types: `paragraph`, `bullets`, `table`, `callout`, `key_figures`
+- Viability score factors: `market_demand`, `regulatory`, `competitive`, `financial`, `supply_chain`, `risk` — each 1–5, client weights from `proposition.factor_weights`
+- Score thresholds: 4–5 = Strong / 2.5–3.9 = Moderate / 1–2.4 = Weak
+- "What Changed" section: only included when `run_number > 1` (use `context.runNumber`)
+- Supabase Storage bucket name: `reports`
+- Resend delivery pattern: see `tools/generate_proposal.js` `sendProposalEmails()` for base64 PDF attachment approach
 
 ## Intake Flow (complete — Step 9 done)
 
