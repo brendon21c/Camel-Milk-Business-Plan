@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-08 (Session 4)
+**Last updated:** 2026-04-08 (Session 5)
 
 ---
 
@@ -98,33 +98,36 @@ Status values — propositions: `prospect | proposal_sent | active | paused | in
 
 ## What Has NOT Been Built Yet
 
-- [ ] Run 4 pending DB migrations
-- [ ] Create Supabase Storage bucket `reports` (private) — manual dashboard step
-- [ ] Python `venv` + `requirements.txt`
-- [ ] Directories: `workflows/`, `tools/`, `outputs/`, `.tmp/`
-- [ ] `tools/search_brave.py` — core search tool with throttling
-- [ ] All 11 workflow `.md` files
+- [x] Run 4 pending DB migrations
+- [x] Create Supabase Storage bucket `reports` (private)
+- [x] Python `venv` + `requirements.txt`
+- [x] Directories: `workflows/`, `tools/`, `outputs/`, `.tmp/`
+- [x] `tools/search_brave.py` — core search tool with throttling
+- [x] All 11 workflow `.md` files (see Workflow List below)
+- [ ] `db.js` additions — `updateReportPdfUrl()` + any other missing assembler functions
 - [ ] All research + assembly Python tools
+- [ ] `tools/generate_report_pdf.py` — PDF builder (ReportLab, brand colours, logo)
 - [ ] `tools/intake.js`, `tools/generate_proposal.js`, `tools/activate.js`
-- [ ] PDF generation + Resend email delivery
+- [ ] Resend email delivery
 - [ ] Orchestrator (`run.js`)
+- [ ] `tools/prune_old_reports.js` — deletes reports, agent_outputs, report_sources, and Storage PDFs older than 6 months. Run monthly (post-launch) to prevent DB bloat.
 
 ---
 
 ## Build Order
 
-1. Run 4 DB migrations
-2. Create Supabase Storage bucket (manual)
-3. Python venv + requirements.txt
-4. Create directories
-5. `tools/search_brave.py`
-6. `workflows/research_market_overview.md`
-7. Test full loop: workflow → tool → db.js → Supabase
-8. `tools/intake.js`, `generate_proposal.js`, `activate.js`
-9. All remaining research workflows + tools
-10. Report assembly + PDF generation
-11. Resend email delivery
-12. Orchestrator + scheduled trigger
+1. ~~Run 4 DB migrations~~ ✓
+2. ~~Create Supabase Storage bucket (manual)~~ ✓
+3. ~~Python venv + requirements.txt~~ ✓
+4. ~~Create directories~~ ✓
+5. ~~`tools/search_brave.py`~~ ✓
+6. ~~All 11 workflows~~ ✓
+7. `db.js` additions — `updateReportPdfUrl()` + missing assembler functions
+8. `tools/generate_report_pdf.py` — PDF builder
+9. `tools/intake.js`, `generate_proposal.js`, `activate.js`
+10. Resend email delivery
+11. Orchestrator (`run.js`) + scheduled trigger
+12. End-to-end test run
 
 ---
 

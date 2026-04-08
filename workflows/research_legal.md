@@ -1,0 +1,201 @@
+# Workflow: Research Legal
+
+**Agent tier:** Haiku by default. Escalate to Sonnet if legal landscape is complex or jurisdiction-specific nuance is required. Escalate to Opus only if Sonnet results are poor.
+**Cache TTL:** 14 days (legal structures change slowly)
+**Report section:** Feeds into Risk Assessment (section 12) and Recommendations (section 13)
+**Output:** JSON written to `agent_outputs` table via `db.js`
+
+---
+
+## Objective
+
+Research the legal and structural requirements for operating this business in the target country.
+Cover business entity formation, insurance requirements, intellectual property considerations,
+and import/export compliance obligations beyond FDA/regulatory (which is handled separately
+in `research_regulatory.md`).
+
+This workflow is generic. All proposition-specific details come from the inputs.
+
+---
+
+## Inputs
+
+You will receive a JSON object with the following fields from the orchestrator:
+
+```json
+{
+  "report_id": "<uuid>",
+  "proposition_id": "<uuid>",
+  "product_type": "e.g. dehydrated camel milk powder",
+  "industry": "e.g. specialty dairy / health food",
+  "origin_country": "e.g. Somalia",
+  "target_country": "e.g. United States",
+  "current_year": "e.g. 2026"
+}
+```
+
+---
+
+## Steps
+
+### 1. Run Search Queries
+
+Execute the following 6 searches using `tools/search_brave.py`. Replace bracketed
+placeholders with values from your inputs. Run them sequentially.
+
+```
+python tools/search_brave.py --query "business entity types importing [product_type] [target_country]" --count 10 --freshness 336
+python tools/search_brave.py --query "LLC vs corporation food import business [target_country] [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "product liability insurance [industry] importer [target_country]" --count 10 --freshness 336
+python tools/search_brave.py --query "trademark registration [product_type] brand [target_country]" --count 10 --freshness 336
+python tools/search_brave.py --query "import compliance obligations [product_type] [target_country] customs broker" --count 10 --freshness 336
+python tools/search_brave.py --query "[origin_country] [target_country] trade compliance sanctions restrictions [current_year]" --count 10 --freshness 336
+```
+
+**Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
+
+### 2. Extract and Synthesise
+
+From the search results, extract the following:
+
+| Field | What to look for |
+|---|---|
+| `entity_options` | Recommended business structures for an importer in target country (LLC, C-Corp, S-Corp, sole trader) |
+| `recommended_entity` | The most appropriate structure for this type of import business, with rationale |
+| `formation_cost` | Estimated cost and time to form the recommended entity |
+| `insurance_types` | Types of insurance required or strongly recommended (product liability, cargo, general liability) |
+| `insurance_cost_estimate` | Annual cost range for relevant policies |
+| `ip_considerations` | Trademark registration, brand protection steps worth taking early |
+| `customs_compliance` | Customs broker requirement, importer of record obligations, ISF filing |
+| `sanctions_or_restrictions` | Any OFAC sanctions, trade restrictions, or compliance flags involving origin country |
+| `ongoing_legal_obligations` | Annual filings, renewal requirements, compliance obligations |
+| `data_gaps` | Fields where no reliable data was found |
+
+### 3. Assess Confidence
+
+For each field, rate confidence as:
+- **High** — specific, sourced from a credible legal or government resource
+- **Medium** — directionally accurate but from a secondary source or slightly dated
+- **Low** — inferred or from a single unreliable result
+
+### 4. Format Output
+
+Structure your findings as the JSON object defined in the Output Format section below.
+Synthesise only — do not include raw search results.
+
+### 5. Save to Database
+
+Call `db.js → saveAgentOutput()` with:
+
+```json
+{
+  "report_id": "<from inputs>",
+  "agent_name": "research_legal",
+  "status": "complete",
+  "output": <your JSON output object>
+}
+```
+
+On failure, set `status` to `"failed"` and include an `"error"` key. Return what you
+have — do not halt the run.
+
+### 6. Save Sources
+
+For every URL cited, call `db.js → saveReportSource()` with:
+
+```json
+{
+  "report_id": "<from inputs>",
+  "agent_name": "research_legal",
+  "url": "<source url>",
+  "title": "<page title if available>",
+  "retrieved_at": "<ISO timestamp>"
+}
+```
+
+---
+
+## Output Format
+
+```json
+{
+  "section": "legal",
+  "generated_at": "<ISO timestamp>",
+  "entity_options": [
+    {
+      "type": "<e.g. LLC>",
+      "pros": ["<pro 1>"],
+      "cons": ["<con 1>"],
+      "fit_for_this_business": "high | medium | low"
+    }
+  ],
+  "recommended_entity": {
+    "type": "<entity type>",
+    "rationale": "<why this structure fits>",
+    "estimated_formation_cost_usd": "<value or null>",
+    "estimated_formation_time": "<e.g. 1-2 weeks or null>",
+    "confidence": "high | medium | low"
+  },
+  "insurance": [
+    {
+      "type": "<e.g. Product Liability>",
+      "mandatory_or_recommended": "mandatory | recommended",
+      "estimated_annual_cost_usd": "<range or null>",
+      "confidence": "high | medium | low"
+    }
+  ],
+  "ip_considerations": [
+    "<consideration 1>",
+    "<consideration 2>"
+  ],
+  "customs_compliance": {
+    "customs_broker_required": true,
+    "importer_of_record_obligations": "<summary>",
+    "key_filings": ["<e.g. ISF filing>"],
+    "confidence": "high | medium | low"
+  },
+  "sanctions_or_restrictions": {
+    "flagged": true,
+    "details": "<description of any OFAC, trade restriction, or compliance issue — null if none>",
+    "confidence": "high | medium | low"
+  },
+  "ongoing_legal_obligations": [
+    "<obligation 1>",
+    "<obligation 2>"
+  ],
+  "narrative_summary": "<3–5 sentence plain-English summary. Written for the report. No jargon.>",
+  "data_gaps": [
+    "<any fields with low confidence or missing data>"
+  ],
+  "sources": [
+    {
+      "url": "<url>",
+      "title": "<title>",
+      "relevance": "<what this source was used for>"
+    }
+  ]
+}
+```
+
+---
+
+## Edge Cases
+
+| Situation | How to handle |
+|---|---|
+| Sanctions or trade restrictions found involving origin country | Set `sanctions_or_restrictions.flagged` to `true`, describe in detail — this must surface clearly in the report |
+| No legal information found for target country | Note in `data_gaps`, recommend client consult a local attorney |
+| Conflicting entity recommendations | Present top 2 options, note the conflict, recommend professional legal advice |
+| DB write fails | Log error to stderr, return JSON to orchestrator directly |
+
+---
+
+## Quality Bar
+
+Before saving output, verify:
+- [ ] `recommended_entity` is populated with a rationale
+- [ ] At least 2 `insurance` entries are present
+- [ ] `sanctions_or_restrictions` is explicitly addressed (even if `flagged: false`)
+- [ ] `customs_compliance` is populated
+- [ ] `narrative_summary` is present and written in plain English
+- [ ] `sources` has at least 3 URLs
