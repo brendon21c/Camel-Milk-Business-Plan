@@ -401,6 +401,48 @@ async function saveReportSource(data) {
 }
 
 // ---------------------------------------------------------------------------
+// Status helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Updates the status of a client record.
+ * Valid values: 'prospect' | 'active' | 'inactive'
+ * @param {string} clientId - Primary key of the client.
+ * @param {string} status   - New status value.
+ * @returns {Object} The updated row.
+ */
+async function updateClientStatus(clientId, status) {
+  const { data: row, error } = await supabase
+    .from('clients')
+    .update({ status })
+    .eq('id', clientId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`updateClientStatus failed for client ${clientId}: ${error.message}`);
+  return row;
+}
+
+/**
+ * Activates a proposition — flips status to 'active' and sets the initial schedule.
+ * Called by activate.js after the client has signed and paid.
+ * @param {string} propositionId - Primary key of the proposition.
+ * @param {Object} data          - Fields to update (status, schedule_type, schedule_day, next_run_at).
+ * @returns {Object} The updated row.
+ */
+async function activateProposition(propositionId, data) {
+  const { data: row, error } = await supabase
+    .from('propositions')
+    .update(data)
+    .eq('id', propositionId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`activateProposition failed for proposition ${propositionId}: ${error.message}`);
+  return row;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -408,11 +450,13 @@ module.exports = {
   // Clients
   createClient,
   getClientById,
+  updateClientStatus,
 
   // Propositions
   createProposition,
   getPropositionById,
   updatePropositionSchedule,
+  activateProposition,
   getDuePropositions,
   advancePropositionSchedule,
 

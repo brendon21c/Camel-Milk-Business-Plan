@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-08 (Session 7)
+**Last updated:** 2026-04-08 (Session 8)
 
 ---
 
@@ -34,17 +34,16 @@ System runs research agents → assembles PDF report → delivers by email on a 
 
 ---
 
-## Pending DB Migrations (run before building tools)
+## DB Migrations — ALL COMPLETE
 
-All migrations complete. Summary of what was run:
+All migrations have been run in the Supabase SQL Editor. Files in `migrations/` are kept as a record.
 
-```sql
-ALTER TABLE clients ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'prospect';
-ALTER TABLE propositions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'prospect';
-ALTER TABLE propositions ADD COLUMN IF NOT EXISTS factor_weights JSONB;
-ALTER TABLE reports ADD COLUMN IF NOT EXISTS error_message TEXT;
-ALTER TABLE propositions ADD COLUMN IF NOT EXISTS proposition_type TEXT DEFAULT 'physical_import_export';
-```
+| Migration | What it added |
+|---|---|
+| 001 | `clients.status`, `propositions.status`, `propositions.factor_weights` |
+| 002 | `reports.error_message` |
+| 003 | `propositions.proposition_type` |
+| 004 | `clients.phone`, `propositions.plan_tier` |
 
 Status values — clients: `prospect | active | inactive`
 Status values — propositions: `prospect | proposal_sent | active | paused | inactive`
@@ -73,6 +72,7 @@ proposition_type values: `physical_import_export | physical_domestic | saas_soft
 | 13 | Intake flow | Web form → Supabase (prospect) → email to Brendon → proposal PDF → `node activate.js` flips to active |
 | 14 | Python env | `venv` + `requirements.txt` |
 | 15 | Brand / identity | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat font family. |
+| 16 | Pricing tiers | Starter $100 (one-time report) / Pro $250 (report + 1 monthly refresh) / Retainer $150/month (ongoing monthly reports) |
 
 ---
 
@@ -150,6 +150,8 @@ proposition_type values: `physical_import_export | physical_domestic | saas_soft
 | `saveReportSource` | Save a source citation |
 | `getCachedApiResponse` | Cache lookup by key |
 | `setCachedApiResponse` | Cache upsert by key |
+| `updateClientStatus` | Flip client status (prospect → active → inactive) |
+| `activateProposition` | Flip proposition to active + set schedule fields |
 
 ---
 
@@ -174,36 +176,64 @@ Full schema is documented in the docstring at the top of `tools/generate_report_
 | `tools/search_brave.py` | Done |
 | `tools/preview_brand.py` | Done — generates 2-page brand preview PDF |
 | `tools/generate_report_pdf.py` | Done — full production PDF builder. Badge fix applied (Session 7): verdict/score split to two lines, badge widened 200→240pt |
-| `tools/intake.js` | Not built |
-| `tools/generate_proposal.js` | Not built |
-| `tools/activate.js` | Not built |
+| `tools/intake.js` | Done — writes prospect to clients + propositions, emails Brendon |
+| `tools/generate_proposal_pdf.py` | Done — branded proposal PDF builder (ReportLab, same brand as report) |
+| `tools/generate_proposal.js` | Done — fetches data, runs PDF builder, emails client + Brendon |
+| `tools/activate.js` | Done — flips to active, sets schedule, triggers first run |
 | `tools/prune_old_reports.js` | Not built (post-launch) |
 
 ---
 
 ## Build Order
 
-1. ~~Run 4 DB migrations~~ ✓
+1. ~~Run DB migrations (001–004)~~ ✓
 2. ~~Create Supabase Storage bucket (manual)~~ ✓
 3. ~~Python venv + requirements.txt~~ ✓
 4. ~~Create directories~~ ✓
 5. ~~`tools/search_brave.py`~~ ✓
 6. ~~All 11 workflows~~ ✓
-7. ~~`db.js` additions — `updateReportPdfUrl()` + missing assembler functions~~ ✓
+7. ~~`db.js` — all functions~~ ✓
 8. ~~`tools/generate_report_pdf.py` — PDF builder~~ ✓
-9. `tools/intake.js`, `generate_proposal.js`, `activate.js` ← **NEXT**
-10. Resend email delivery
-11. Orchestrator (`run.js`) + scheduled trigger
-12. End-to-end test run
+9. ~~`tools/intake.js`, `generate_proposal_pdf.py`, `generate_proposal.js`, `activate.js`~~ ✓
+10. Orchestrator (`run.js`) + scheduled trigger ← **NEXT**
+11. End-to-end test run
 
 ---
 
-## Next Up — Step 9: Intake Tools
+## Next Up — Step 10: Build Orchestrator (`run.js`)
 
-Three files:
-- **`tools/intake.js`** — receives prospect data (from web form or CLI), writes to `clients` + `propositions` tables with `status: 'prospect'`, sends notification email to Brendon
-- **`tools/generate_proposal.js`** — generates a proposal PDF for the prospect (simple, not a full report), emails to Brendon for review
-- **`tools/activate.js`** — CLI: `node tools/activate.js --proposition-id <id>` flips proposition + client to `active`, sets `next_run_at`, triggers first run
+Build `run.js` — the orchestrator that:
+- Accepts `--proposition-id <id> --force` for on-demand runs
+- Calls `getDuePropositions()` for scheduled runs
+- Spawns research sub-agents per workflow
+- Calls assembler agent → writes content JSON → calls `generate_report_pdf.py`
+- Uploads PDF to Supabase Storage, saves URL, sends report email to client
+
+## Intake Flow (complete — Step 9 done)
+
+```
+node tools/intake.js --name "..." --email "..." --phone "..." ...
+  → writes to clients + propositions (status: prospect)
+  → emails Brendon
+
+node tools/generate_proposal.js --proposition-id <id>
+  → generates branded proposal PDF
+  → emails PDF to client + Brendon
+  → flips proposition status → proposal_sent
+
+node tools/activate.js --proposition-id <id>
+  → flips client + proposition → active
+  → sets schedule (monthly for retainer, on_demand for starter/pro)
+  → triggers first run via run.js (when built)
+```
+
+## Pricing Tiers (locked Session 8)
+
+| Plan | Price | What's Included |
+|---|---|---|
+| Starter | $100 | One-time report |
+| Pro | $250 | One-time report + 1 monthly refresh |
+| Retainer | $150/month | Ongoing monthly reports |
 
 ---
 
