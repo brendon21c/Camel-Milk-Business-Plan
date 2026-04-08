@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-08 (Session 5 — compacted)
+**Last updated:** 2026-04-08 (Session 7)
 
 ---
 
@@ -22,6 +22,7 @@ System runs research agents → assembles PDF report → delivers by email on a 
 | `supabaseClient.js` + `db.js` | Done |
 | `.env` with all API keys | Done |
 | `assets/logo.png` | Done |
+| `assets/fonts/` (Montserrat 5 weights) | Done — downloaded on first preview run |
 | Seed data (Brendon + camel milk proposition) | Done |
 | `package.json` (supabase-js, dotenv) | Done |
 
@@ -35,25 +36,21 @@ System runs research agents → assembles PDF report → delivers by email on a 
 
 ## Pending DB Migrations (run before building tools)
 
+All migrations complete. Summary of what was run:
+
 ```sql
-ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'prospect';
-ALTER TABLE propositions ADD COLUMN status TEXT DEFAULT 'prospect';
-ALTER TABLE propositions ADD COLUMN factor_weights JSONB;
-ALTER TABLE reports ADD COLUMN error_message TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'prospect';
+ALTER TABLE propositions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'prospect';
+ALTER TABLE propositions ADD COLUMN IF NOT EXISTS factor_weights JSONB;
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS error_message TEXT;
+ALTER TABLE propositions ADD COLUMN IF NOT EXISTS proposition_type TEXT DEFAULT 'physical_import_export';
 ```
 
 Status values — clients: `prospect | active | inactive`
 Status values — propositions: `prospect | proposal_sent | active | paused | inactive`
+proposition_type values: `physical_import_export | physical_domestic | saas_software | service_business | digital_product`
 
-### Session 5 migration — DONE
-
-```sql
-ALTER TABLE propositions ADD COLUMN IF NOT EXISTS proposition_type TEXT DEFAULT 'physical_import_export';
-```
-
-Values: `physical_import_export` | `physical_domestic` | `saas_software` | `service_business` | `digital_product`
-
-**Note:** Current workflow set fully supports `physical_import_export` and `physical_domestic` (domestic path added to `research_origin_ops`, `research_regulatory`, `research_financials`). Additional workflow sets required before onboarding `saas_software`, `service_business`, or `digital_product` propositions.
+**Note:** Current workflow set fully supports `physical_import_export` and `physical_domestic`. Additional workflow sets required before onboarding `saas_software`, `service_business`, or `digital_product` propositions.
 
 ---
 
@@ -63,7 +60,7 @@ Values: `physical_import_export` | `physical_domestic` | `saas_software` | `serv
 |---|---|---|
 | 1 | Research method | Hybrid — Claude agents + Brave Search API |
 | 2 | Report structure | 14 sections, brand colors, viability score |
-| 3 | Report delivery | Resend email to `brennon.mckeever@gmail.com`. PDF attached. No SMS (Twilio shelved — A2P registration required, no website yet). |
+| 3 | Report delivery | Resend email to `brennon.mckeever@gmail.com`. PDF attached. No SMS. |
 | 4 | Run trigger | Per-proposition schedule in DB. On-demand: `node run.js --proposition-id <id> --force` |
 | 5 | Baseline vs delta | Full fresh report every run + "What Changed" bullets from run 2 onwards. 6 months history. |
 | 6 | Agent architecture | 1 Sonnet orchestrator, ~5 Haiku research sub-agents, 1 Sonnet assembler |
@@ -75,6 +72,28 @@ Values: `physical_import_export` | `physical_domestic` | `saas_software` | `serv
 | 12 | Quality check | All 9 agents complete + no null outputs + all 6 score factors populated. Hard fail on technical errors only. |
 | 13 | Intake flow | Web form → Supabase (prospect) → email to Brendon → proposal PDF → `node activate.js` flips to active |
 | 14 | Python env | `venv` + `requirements.txt` |
+| 15 | Brand / identity | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat font family. |
+
+---
+
+## Brand Spec (locked in Session 6)
+
+| Element | Value |
+|---|---|
+| Business name | McKeever Consulting |
+| Primary colour | Deep Navy `#1C3557` |
+| Accent colour | Warm Gold `#C8A94A` |
+| Secondary colour | Slate Silver `#8A9BB0` |
+| Body text | Near-Black `#1E1E2E` |
+| Background | Off-White `#F7F8FA` |
+| Font family | Montserrat (ExtraBold/Bold/SemiBold/Medium/Regular) |
+| Logo style | Wordmark — "McKeever" ExtraBold + "C O N S U L T I N G" tracked Medium + gold rule |
+| Cover page | Full navy bg, gold report label, white title, gold viability badge, wordmark at bottom |
+| Interior header | 30pt navy bar — compact wordmark left, page number right |
+| Footer | Silver rule + "Confidential — Prepared by McKeever Consulting" |
+| Tables | Gold header row (navy text), alternating white/off-white rows, silver grid lines |
+| Callout boxes | Light blue-grey bg `#EEF2F7`, 4pt navy left bar |
+| Font files | `assets/fonts/Montserrat-{weight}.ttf` — auto-downloaded from GitHub on first run |
 
 ---
 
@@ -82,7 +101,7 @@ Values: `physical_import_export` | `physical_domestic` | `saas_software` | `serv
 
 1. Cover Page — title, date, viability score
 2. Table of Contents
-3. Executive Summary
+3. Executive Summary (includes score breakdown table)
 4. Market Overview
 5. Competitor Analysis
 6. Regulatory Landscape
@@ -95,8 +114,6 @@ Values: `physical_import_export` | `physical_domestic` | `saas_software` | `serv
 13. Recommendations
 14. What Changed This Month *(skipped on first run)*
 15. Sources
-
-**Brand:** Deep forest green `#1E4D3B` + warm gold `#C9A84C` + white. Logo on cover and every header/footer.
 
 ---
 
@@ -111,21 +128,56 @@ Values: `physical_import_export` | `physical_domestic` | `saas_software` | `serv
 
 ---
 
-## What Has NOT Been Built Yet
+## db.js — ALL FUNCTIONS COMPLETE
 
-- [x] Run 4 pending DB migrations
-- [x] Create Supabase Storage bucket `reports` (private)
-- [x] Python `venv` + `requirements.txt`
-- [x] Directories: `workflows/`, `tools/`, `outputs/`, `.tmp/`
-- [x] `tools/search_brave.py` — core search tool with throttling
-- [x] All 11 workflow `.md` files (see Workflow List below)
-- [ ] `db.js` additions — `updateReportPdfUrl()` + any other missing assembler functions
-- [ ] All research + assembly Python tools
-- [ ] `tools/generate_report_pdf.py` — PDF builder (ReportLab, brand colours, logo)
-- [ ] `tools/intake.js`, `tools/generate_proposal.js`, `tools/activate.js`
-- [ ] Resend email delivery
-- [ ] Orchestrator (`run.js`)
-- [ ] `tools/prune_old_reports.js` — deletes reports, agent_outputs, report_sources, and Storage PDFs older than 6 months. Run monthly (post-launch) to prevent DB bloat.
+| Function | Purpose |
+|---|---|
+| `createClient` | Insert new client |
+| `getClientById` | Fetch client by ID (for email delivery) |
+| `createProposition` | Insert new proposition |
+| `getPropositionById` | Fetch proposition by ID (for --force runs) |
+| `updatePropositionSchedule` | Update schedule settings |
+| `getDuePropositions` | Fetch all propositions due to run |
+| `advancePropositionSchedule` | Advance next_run_at after a run |
+| `createReport` | Insert new report record |
+| `getReportById` | Fetch report by ID |
+| `getReportsByPropositionId` | Fetch all reports for a proposition (determines run_number + previous_report_id) |
+| `updateReportStatus` | Set report status |
+| `updateReportPdfUrl` | Save signed Storage URL after PDF upload |
+| `updateReportError` | Set status=failed + write error_message in one call |
+| `saveAgentOutput` | Save a research agent's JSON output |
+| `getAgentOutputsByReportId` | Fetch all agent outputs for a report |
+| `saveReportSource` | Save a source citation |
+| `getCachedApiResponse` | Cache lookup by key |
+| `setCachedApiResponse` | Cache upsert by key |
+
+---
+
+## PDF Content JSON Schema
+
+The assembler agent writes `.tmp/<report_id>_content.json` which `generate_report_pdf.py` reads.
+Full schema is documented in the docstring at the top of `tools/generate_report_pdf.py`.
+
+**Block types the assembler can use:**
+- `paragraph` — body text string
+- `bullets` — optional label + items list
+- `table` — headers list + rows list of lists + optional col_widths
+- `callout` — label + text (navy left bar box)
+- `key_figures` — items list of {label, value} stat cards
+
+---
+
+## Tools — Status
+
+| Tool | Status |
+|---|---|
+| `tools/search_brave.py` | Done |
+| `tools/preview_brand.py` | Done — generates 2-page brand preview PDF |
+| `tools/generate_report_pdf.py` | Done — full production PDF builder. Badge fix applied (Session 7): verdict/score split to two lines, badge widened 200→240pt |
+| `tools/intake.js` | Not built |
+| `tools/generate_proposal.js` | Not built |
+| `tools/activate.js` | Not built |
+| `tools/prune_old_reports.js` | Not built (post-launch) |
 
 ---
 
@@ -137,18 +189,27 @@ Values: `physical_import_export` | `physical_domestic` | `saas_software` | `serv
 4. ~~Create directories~~ ✓
 5. ~~`tools/search_brave.py`~~ ✓
 6. ~~All 11 workflows~~ ✓
-7. `db.js` additions — `updateReportPdfUrl()` + missing assembler functions
-8. `tools/generate_report_pdf.py` — PDF builder
-9. `tools/intake.js`, `generate_proposal.js`, `activate.js`
+7. ~~`db.js` additions — `updateReportPdfUrl()` + missing assembler functions~~ ✓
+8. ~~`tools/generate_report_pdf.py` — PDF builder~~ ✓
+9. `tools/intake.js`, `generate_proposal.js`, `activate.js` ← **NEXT**
 10. Resend email delivery
 11. Orchestrator (`run.js`) + scheduled trigger
 12. End-to-end test run
 
 ---
 
+## Next Up — Step 9: Intake Tools
+
+Three files:
+- **`tools/intake.js`** — receives prospect data (from web form or CLI), writes to `clients` + `propositions` tables with `status: 'prospect'`, sends notification email to Brendon
+- **`tools/generate_proposal.js`** — generates a proposal PDF for the prospect (simple, not a full report), emails to Brendon for review
+- **`tools/activate.js`** — CLI: `node tools/activate.js --proposition-id <id>` flips proposition + client to `active`, sets `next_run_at`, triggers first run
+
+---
+
 ## Future: Website & Admin Panel
 
-Client-facing site (intake form, about page) + admin panel (view clients/reports, "Run Now" button per proposition). Admin run button wraps the `--force` CLI logic. Build after core system is working. Keep business logic modular so a web layer can sit on top without rework.
+Client-facing site (intake form, about page) + admin panel (view clients/reports, "Run Now" button per proposition). Admin run button wraps the `--force` CLI logic. Build after core system is working.
 
 ---
 
@@ -156,14 +217,22 @@ Client-facing site (intake form, about page) + admin panel (view clients/reports
 
 ```
 workflows/   ← plain-language SOPs
-tools/       ← Python scripts (execution)
+tools/       ← Python + Node.js scripts (execution)
 db.js        ← all Supabase queries (Node.js)
 .env         ← all credentials
 outputs/     ← date-stamped PDFs (6 months)
 .tmp/        ← disposable intermediates
-assets/      ← logo + brand assets
+assets/      ← logo, brand assets, fonts/
 ```
 
 Agents read workflows → call tools → write to Supabase via `db.js`.
 PDFs uploaded to Supabase Storage `reports` bucket, URL saved to `reports.pdf_url`.
 Orchestrator calls `getDuePropositions()` for scheduled runs (active propositions only).
+
+---
+
+## Key File Notes
+
+- `tools/preview_brand.py` — standalone brand preview tool, not called by the orchestrator. Run manually to check visual changes: `python tools/preview_brand.py` → `outputs/mckeever_brand_preview.pdf`
+- `assets/fonts/` — Montserrat TTF files. Auto-downloaded by `preview_brand.py` and `generate_report_pdf.py` on first run if missing.
+- No logo image file — the McKeever wordmark is drawn in code by both PDF tools (canvas API). No external asset needed.

@@ -175,6 +175,119 @@ async function updateReportStatus(reportId, status) {
   return row;
 }
 
+/**
+ * Saves the Supabase Storage signed URL for a completed report PDF.
+ * Called by the assembler after the PDF is uploaded to the `reports` bucket.
+ * The signed URL is attached to the email so the client can access the file.
+ * @param {string} reportId - Primary key of the report.
+ * @param {string} pdfUrl   - Signed Supabase Storage URL (7-day TTL).
+ * @returns {Object} The updated row.
+ */
+async function updateReportPdfUrl(reportId, pdfUrl) {
+  const { data: row, error } = await supabase
+    .from('reports')
+    .update({ pdf_url: pdfUrl })
+    .eq('id', reportId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`updateReportPdfUrl failed for report ${reportId}: ${error.message}`);
+  return row;
+}
+
+/**
+ * Marks a report as failed and records the error message.
+ * Sets status to 'failed' and writes the error detail to error_message in one call
+ * so the failure is always fully recorded even if the status update is the last thing done.
+ * Called by the assembler quality gate and any post-gate step that fails unrecoverably.
+ * @param {string} reportId     - Primary key of the report.
+ * @param {string} errorMessage - Description of what failed and why.
+ * @returns {Object} The updated row.
+ */
+async function updateReportError(reportId, errorMessage) {
+  const { data: row, error } = await supabase
+    .from('reports')
+    .update({ status: 'failed', error_message: errorMessage })
+    .eq('id', reportId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`updateReportError failed for report ${reportId}: ${error.message}`);
+  return row;
+}
+
+/**
+ * Fetches a single report by its primary key.
+ * Used by the orchestrator to check the current state of a specific report
+ * and by the assembler to retrieve context when building the "What Changed" section.
+ * @param {string} reportId - Primary key of the report.
+ * @returns {Object} The report row.
+ */
+async function getReportById(reportId) {
+  const { data: row, error } = await supabase
+    .from('reports')
+    .select('*')
+    .eq('id', reportId)
+    .single();
+
+  if (error) throw new Error(`getReportById failed for report ${reportId}: ${error.message}`);
+  return row;
+}
+
+/**
+ * Fetches all reports for a given proposition, ordered newest-first.
+ * Used by the orchestrator to determine the run_number (count + 1) and
+ * the previous_report_id (the most recent completed report) before starting a new run.
+ * @param {string} propositionId - Primary key of the proposition.
+ * @returns {Array} Array of report rows, newest first.
+ */
+async function getReportsByPropositionId(propositionId) {
+  const { data: rows, error } = await supabase
+    .from('reports')
+    .select('*')
+    .eq('proposition_id', propositionId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(`getReportsByPropositionId failed for proposition ${propositionId}: ${error.message}`);
+  return rows;
+}
+
+/**
+ * Fetches a single proposition by its primary key.
+ * Used by the orchestrator to load proposition details (product, countries,
+ * factor_weights, schedule) when running a specific proposition on demand.
+ * @param {string} propositionId - Primary key of the proposition.
+ * @returns {Object} The proposition row.
+ */
+async function getPropositionById(propositionId) {
+  const { data: row, error } = await supabase
+    .from('propositions')
+    .select('*')
+    .eq('id', propositionId)
+    .single();
+
+  if (error) throw new Error(`getPropositionById failed for proposition ${propositionId}: ${error.message}`);
+  return row;
+}
+
+/**
+ * Fetches a single client by their primary key.
+ * Used by the orchestrator and assembler to get the client's name and email
+ * for the report email delivery step.
+ * @param {string} clientId - Primary key of the client.
+ * @returns {Object} The client row.
+ */
+async function getClientById(clientId) {
+  const { data: row, error } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('id', clientId)
+    .single();
+
+  if (error) throw new Error(`getClientById failed for client ${clientId}: ${error.message}`);
+  return row;
+}
+
 // ---------------------------------------------------------------------------
 // Agent Outputs
 // ---------------------------------------------------------------------------
@@ -292,16 +405,33 @@ async function saveReportSource(data) {
 // ---------------------------------------------------------------------------
 
 module.exports = {
+  // Clients
   createClient,
+  getClientById,
+
+  // Propositions
   createProposition,
+  getPropositionById,
   updatePropositionSchedule,
   getDuePropositions,
   advancePropositionSchedule,
+
+  // Reports
   createReport,
+  getReportById,
+  getReportsByPropositionId,
   updateReportStatus,
+  updateReportPdfUrl,
+  updateReportError,
+
+  // Agent outputs
   saveAgentOutput,
   getAgentOutputsByReportId,
+
+  // Sources
+  saveReportSource,
+
+  // Cache
   getCachedApiResponse,
   setCachedApiResponse,
-  saveReportSource,
 };
