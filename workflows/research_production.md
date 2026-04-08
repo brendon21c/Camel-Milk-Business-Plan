@@ -59,6 +59,50 @@ python tools/search_brave.py --query "[product_type] processing facility require
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 Do not add extra delays — the tool handles it.
 
+#### Fallback Queries
+
+> **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
+
+**Primary 1:** `[product_type] processing equipment commercial scale cost [current_year]`
+```
+python tools/search_brave.py --query "[product_type] manufacturing machinery price range [industry]" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] processing equipment capital cost estimate commercial" --count 10 --freshness 72
+```
+
+**Primary 2:** `[product_type] manufacturing equipment suppliers [industry]`
+```
+python tools/search_brave.py --query "[product_type] equipment vendors manufacturers global suppliers" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] processing line equipment companies sourcing" --count 10 --freshness 72
+```
+
+**Primary 3:** `[product_type] minimum viable production scale investment [current_year]`
+```
+python tools/search_brave.py --query "[product_type] small scale commercial production startup cost" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] minimum batch size viable production entry-level operation" --count 10 --freshness 72
+```
+
+**Primary 4:** `[product_type] production process steps technical requirements`
+```
+python tools/search_brave.py --query "how is [product_type] made processing stages overview" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] manufacturing process flow technical specifications" --count 10 --freshness 72
+```
+
+**Primary 5:** `[product_type] quality control equipment food safety certification [target_country]`
+```
+python tools/search_brave.py --query "[product_type] QC testing requirements [target_country] compliance" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] food safety inspection standards quality assurance equipment" --count 10 --freshness 72
+```
+
+**Primary 6:** `[product_type] processing facility requirements energy water infrastructure`
+```
+python tools/search_brave.py --query "[product_type] factory setup requirements utilities space" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] production facility specifications footprint infrastructure needs" --count 10 --freshness 72
+```
+
+#### Agent-Generated Queries
+
+After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

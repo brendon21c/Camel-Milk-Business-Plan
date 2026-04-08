@@ -57,6 +57,38 @@ python tools/search_brave.py --query "[product_type] competitors distribution st
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 Do not add extra delays — the tool handles it.
 
+#### Fallback Queries
+
+> **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
+
+**Query 1 — Distribution channels**
+- `[industry] selling channels [target_country] retail online wholesale`
+- `how to distribute [product_type] in [target_country] market entry`
+
+**Query 2 — Amazon FBA requirements and fees**
+- `Amazon FBA food product requirements [industry] seller guide`
+- `selling [industry] products on Amazon requirements fees [current_year]`
+
+**Query 3 — Specialty retail entry requirements and slotting fees**
+- `[industry] specialty grocery store entry requirements [target_country]`
+- `slotting fees food brands retail buyer requirements [target_country]`
+
+**Query 4 — Distributors and brokers**
+- `[industry] food distribution companies [target_country] contact`
+- `wholesale [product_type] distributor broker [target_country]`
+
+**Query 5 — Import customs and logistics**
+- `importing [product_type] to [target_country] customs documentation`
+- `[origin_country] food export to [target_country] import duties process`
+
+**Query 6 — Competitor distribution strategy**
+- `[industry] brand distribution model [target_country] case study`
+- `[product_type] market [target_country] how brands sell channels`
+
+#### Agent-Generated Queries
+
+After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-08 (Session 5)
+**Last updated:** 2026-04-08 (Session 5 — compacted)
 
 ---
 
@@ -44,6 +44,16 @@ ALTER TABLE reports ADD COLUMN error_message TEXT;
 
 Status values — clients: `prospect | active | inactive`
 Status values — propositions: `prospect | proposal_sent | active | paused | inactive`
+
+### Session 5 migration — DONE
+
+```sql
+ALTER TABLE propositions ADD COLUMN IF NOT EXISTS proposition_type TEXT DEFAULT 'physical_import_export';
+```
+
+Values: `physical_import_export` | `physical_domestic` | `saas_software` | `service_business` | `digital_product`
+
+**Note:** Current workflow set fully supports `physical_import_export` and `physical_domestic` (domestic path added to `research_origin_ops`, `research_regulatory`, `research_financials`). Additional workflow sets required before onboarding `saas_software`, `service_business`, or `digital_product` propositions.
 
 ---
 
@@ -90,9 +100,14 @@ Status values — propositions: `prospect | proposal_sent | active | paused | in
 
 ---
 
-## Workflow List (11 files)
+## Workflow List (11 files) — ALL COMPLETE
 
 `research_market_overview.md`, `research_competitors.md`, `research_regulatory.md`, `research_production.md`, `research_packaging.md`, `research_distribution.md`, `research_marketing.md`, `research_financials.md`, `research_origin_ops.md`, `research_legal.md`, `assemble_report.md`
+
+**All 10 research workflows include:**
+- 6 primary queries + 6 fallback pairs (triggered if primary returns < 3 useful results)
+- Agent-generated queries instruction (up to 3 self-authored queries if coverage still thin)
+- Domestic path in `research_origin_ops`, `research_regulatory`, `research_financials` (used when `origin_country == target_country`)
 
 ---
 

@@ -57,6 +57,38 @@ python tools/search_brave.py --query "[target_demographic] [industry] packaging 
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 Do not add extra delays — the tool handles it.
 
+#### Fallback Queries
+
+> **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
+
+**Query 1 — Packaging formats and types**
+- `[product_type] packaging options containers retail [target_country]`
+- `[industry] product packaging types comparison pouches canisters`
+
+**Query 2 — Packaging suppliers and MOQ**
+- `[product_type] packaging manufacturer wholesale minimum order`
+- `custom food packaging supplier [industry] small batch`
+
+**Query 3 — Packaging cost per unit**
+- `[industry] packaging cost breakdown per unit small scale production`
+- `food product packaging price range retail [current_year]`
+
+**Query 4 — FDA labeling requirements**
+- `[target_country] food labeling rules [industry] imported products requirements`
+- `FDA food label compliance checklist [industry] [current_year]`
+
+**Query 5 — Shelf life and barrier materials**
+- `[product_type] shelf life storage requirements packaging type`
+- `[industry] food packaging barrier properties moisture oxygen protection`
+
+**Query 6 — Consumer packaging preferences**
+- `[industry] consumer packaging preferences survey [target_country]`
+- `[target_demographic] packaging sustainability preferences health food`
+
+#### Agent-Generated Queries
+
+After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

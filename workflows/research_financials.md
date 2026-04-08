@@ -44,6 +44,14 @@ You will receive a JSON object with the following fields from the orchestrator:
 
 ### 1. Run Search Queries
 
+#### Domestic vs. Import Check
+
+**Before running queries:** Check if `origin_country == target_country`. If yes, this is a **domestic product** — follow the Domestic Path below. If no, follow the Standard (Import) Path.
+
+---
+
+#### Standard (Import) Path
+
 Execute the following 6 searches using `tools/search_brave.py`. Replace bracketed
 placeholders with values from your inputs. Run them sequentially — do not skip any.
 
@@ -56,8 +64,67 @@ python tools/search_brave.py --query "[product_type] wholesale price distributor
 python tools/search_brave.py --query "[industry] gross margin benchmark wholesale retail [target_country] [current_year]" --count 10 --freshness 24
 ```
 
+---
+
+#### Domestic Path
+
+Use these 6 queries instead when `origin_country == target_country`. No tariffs, exchange rates, or international freight apply — focus on domestic COGS, local distribution costs, and domestic shipping rates.
+
+```
+python tools/search_brave.py --query "[product_type] domestic cost of goods sold COGS per kg [origin_country] [current_year]" --count 10 --freshness 24
+python tools/search_brave.py --query "[product_type] domestic production cost raw material sourcing [origin_country] [current_year]" --count 10 --freshness 24
+python tools/search_brave.py --query "[product_type] domestic shipping rates distribution cost per kg [target_country] [current_year]" --count 10 --freshness 24
+python tools/search_brave.py --query "[product_type] local distribution warehousing cost [target_country] [current_year]" --count 10 --freshness 24
+python tools/search_brave.py --query "[product_type] wholesale price distributor price per kg [target_country] [current_year]" --count 10 --freshness 24
+python tools/search_brave.py --query "[industry] gross margin benchmark wholesale retail [target_country] [current_year]" --count 10 --freshness 24
+```
+
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 Do not add extra delays — the tool handles it.
+
+#### Fallback Queries
+
+> **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
+
+**Query 1 — Raw material sourcing cost:**
+```
+python tools/search_brave.py --query "[product_type] production cost farm gate price [origin_country]" --count 10 --freshness 24
+python tools/search_brave.py --query "[industry] commodity price per kg [origin_country] export market [current_year]" --count 10 --freshness 24
+```
+
+**Query 2 — International shipping and freight:**
+```
+python tools/search_brave.py --query "freight cost per kg [origin_country] [target_country] air cargo sea shipping" --count 10 --freshness 24
+python tools/search_brave.py --query "international logistics cost [origin_country] export [target_country] food shipment" --count 10 --freshness 24
+```
+
+**Query 3 — Import tariffs and duties:**
+```
+python tools/search_brave.py --query "[target_country] import duty food products [industry] customs tariff schedule" --count 10 --freshness 24
+python tools/search_brave.py --query "[product_type] HS code customs classification [target_country] duty rate" --count 10 --freshness 24
+```
+
+**Query 4 — Exchange rate:**
+```
+python tools/search_brave.py --query "[origin_country] [target_country] currency conversion rate [current_year]" --count 10 --freshness 24
+python tools/search_brave.py --query "[origin_country] economy currency USD exchange rate history [current_year]" --count 10 --freshness 24
+```
+
+**Query 5 — Wholesale pricing:**
+```
+python tools/search_brave.py --query "[industry] wholesale distributor pricing [target_country] [current_year]" --count 10 --freshness 24
+python tools/search_brave.py --query "[product_type] B2B price per unit bulk [target_country] importer" --count 10 --freshness 24
+```
+
+**Query 6 — Gross margin benchmarks:**
+```
+python tools/search_brave.py --query "[industry] profit margin benchmark specialty food [target_country]" --count 10 --freshness 24
+python tools/search_brave.py --query "food import business gross margin wholesale retail markup [target_country]" --count 10 --freshness 24
+```
+
+#### Agent-Generated Queries
+
+After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
 ### 2. Extract and Synthesise
 
@@ -251,6 +318,7 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
 | Client budget is provided and appears insufficient | Note this plainly in `narrative_summary` — do not soften it |
 | Conflicting figures from different sources | Use the most recent from the most credible source; note the conflict in `data_gaps` |
 | All 6 searches return thin results | Complete what you can, set all confidence values to `"low"`, escalate agent tier to Sonnet, and note data scarcity prominently in `narrative_summary` |
+| `origin_country == target_country` | Follow Domestic Path in Step 1. Skip all export/import/cross-border fields in output. Populate domestic equivalents instead. |
 | DB write fails | Log the error to stderr, return the JSON output to the orchestrator directly so the run isn't lost |
 
 ---

@@ -46,6 +46,14 @@ You will receive a JSON object with the following fields from the orchestrator:
 
 ### 1. Run Search Queries
 
+#### Domestic vs. Import Check
+
+**Before running queries:** Check if `origin_country == target_country`. If yes, this is a **domestic product** — follow the Domestic Path below. If no, follow the Standard (Import) Path.
+
+---
+
+#### Standard (Import) Path
+
 Execute the following 6 searches using `tools/search_brave.py`. Replace bracketed
 placeholders with values from your inputs. Run them sequentially — do not skip any.
 
@@ -58,8 +66,67 @@ python tools/search_brave.py --query "[product_type] import certification requir
 python tools/search_brave.py --query "[product_type] regulatory changes pending [target_country] [current_year]" --count 10 --freshness 336
 ```
 
+---
+
+#### Domestic Path
+
+Use these 6 queries instead when `origin_country == target_country`. No import restrictions, country-of-origin flags, or customs/FDA import alerts apply — focus on domestic food safety law, state-level rules, and domestic certifications.
+
+```
+python tools/search_brave.py --query "[product_type] FDA USDA domestic food safety regulations [target_country] [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] state-level regulations [target_country] food safety compliance [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] domestic labeling requirements FDA [target_country] nutrition facts country of origin" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] domestic certifications [target_country] organic USDA halal kosher food safety [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] health claims allowed prohibited FTC FDA [target_country]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] regulatory changes pending [target_country] [current_year]" --count 10 --freshness 336
+```
+
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 Do not add extra delays — the tool handles it.
+
+#### Fallback Queries
+
+> **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
+
+**Primary 1:** `[product_type] import regulations [target_country] FDA USDA requirements [current_year]`
+```
+python tools/search_brave.py --query "[product_type] import rules [target_country] customs entry requirements" --count 10 --freshness 336
+python tools/search_brave.py --query "[industry] imported food products [target_country] federal requirements" --count 10 --freshness 336
+```
+
+**Primary 2:** `[product_type] FDA food safety standards labeling requirements [target_country]`
+```
+python tools/search_brave.py --query "[product_type] FDA compliance labeling rules [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[industry] food labeling requirements [target_country] nutrition facts" --count 10 --freshness 336
+```
+
+**Primary 3:** `[product_type] health claims allowed prohibited FTC FDA [target_country]`
+```
+python tools/search_brave.py --query "[product_type] marketing claims regulatory guidance [target_country]" --count 10 --freshness 336
+python tools/search_brave.py --query "[industry] structure function claims FDA rules permitted" --count 10 --freshness 336
+```
+
+**Primary 4:** `[origin_country] food import restrictions banned [target_country] [current_year]`
+```
+python tools/search_brave.py --query "[origin_country] FDA import alert food products [target_country]" --count 10 --freshness 336
+python tools/search_brave.py --query "[origin_country] trade sanctions food exports [target_country] restrictions" --count 10 --freshness 336
+```
+
+**Primary 5:** `[product_type] import certification requirements [target_country] organic halal food safety`
+```
+python tools/search_brave.py --query "[product_type] third-party certification [target_country] required documentation" --count 10 --freshness 336
+python tools/search_brave.py --query "[industry] import compliance certifications [target_country] accreditation" --count 10 --freshness 336
+```
+
+**Primary 6:** `[product_type] regulatory changes pending [target_country] [current_year]`
+```
+python tools/search_brave.py --query "[product_type] new regulations proposed rule [target_country] upcoming" --count 10 --freshness 336
+python tools/search_brave.py --query "[industry] food policy changes [target_country] [current_year] regulatory update" --count 10 --freshness 336
+```
+
+#### Agent-Generated Queries
+
+After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
 ### 2. Extract and Synthesise
 
@@ -229,6 +296,7 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
 | Regulatory information is outdated (>12 months old) | Use it but set confidence to `"low"` and note the age in `data_gaps` |
 | Product falls into an ambiguous regulatory category | Note the ambiguity in `regulatory_risks` and `data_gaps`; recommend the operator seek legal counsel |
 | All 6 searches return thin results | Set `overall_regulatory_complexity` to `"unknown"`, note in narrative that regulatory data was limited, complete what you can, escalate agent tier to Sonnet |
+| `origin_country == target_country` | Follow Domestic Path in Step 1. Skip all export/import/cross-border fields in output. Populate domestic equivalents instead. |
 | DB write fails | Log the error to stderr, return the JSON output to the orchestrator directly so the run isn't lost |
 
 ---

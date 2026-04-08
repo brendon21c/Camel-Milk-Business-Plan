@@ -56,6 +56,50 @@ python tools/search_brave.py --query "[target_demographic] [industry] demand dri
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 Do not add extra delays — the tool handles it.
 
+#### Fallback Queries
+
+> **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
+
+**Query 1 — Market size:**
+```
+python tools/search_brave.py --query "[product_type] market revenue [target_country]" --count 10 --freshness 24
+python tools/search_brave.py --query "[industry] market size [target_country] [current_year] report" --count 10 --freshness 24
+```
+
+**Query 2 — Growth rate / forecast:**
+```
+python tools/search_brave.py --query "[product_type] industry outlook [current_year] growth" --count 10 --freshness 24
+python tools/search_brave.py --query "[industry] CAGR forecast [target_country]" --count 10 --freshness 24
+```
+
+**Query 3 — Consumer trends:**
+```
+python tools/search_brave.py --query "[product_type] buyer behaviour [target_country]" --count 10 --freshness 24
+python tools/search_brave.py --query "[target_demographic] purchasing trends [industry] [target_country]" --count 10 --freshness 24
+```
+
+**Query 4 — Import statistics:**
+```
+python tools/search_brave.py --query "[product_type] import export [target_country] trade data" --count 10 --freshness 24
+python tools/search_brave.py --query "[origin_country] [product_type] export volume [target_country]" --count 10 --freshness 24
+```
+
+**Query 5 — Retail price:**
+```
+python tools/search_brave.py --query "[product_type] cost [target_country] Amazon Whole Foods" --count 10 --freshness 24
+python tools/search_brave.py --query "[product_type] price comparison [target_country] online" --count 10 --freshness 24
+```
+
+**Query 6 — Demand drivers:**
+```
+python tools/search_brave.py --query "why consumers buy [product_type] [target_country]" --count 10 --freshness 24
+python tools/search_brave.py --query "[industry] growth drivers [target_country] [current_year]" --count 10 --freshness 24
+```
+
+#### Agent-Generated Queries
+
+After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

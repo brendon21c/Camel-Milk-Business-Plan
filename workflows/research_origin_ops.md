@@ -42,6 +42,14 @@ You will receive a JSON object with the following fields from the orchestrator:
 
 ### 1. Run Search Queries
 
+#### Domestic vs. Import Check
+
+**Before running queries:** Check if `origin_country == target_country`. If yes, this is a **domestic product** — follow the Domestic Path below. If no, follow the Standard (Import) Path.
+
+---
+
+#### Standard (Import) Path
+
 Execute the following 6 searches using `tools/search_brave.py`. Replace bracketed
 placeholders with values from your inputs. Run them sequentially — do not skip any.
 
@@ -53,6 +61,53 @@ python tools/search_brave.py --query "[origin_country] political stability busin
 python tools/search_brave.py --query "trade agreement [origin_country] [target_country] tariff import access [product_type]" --count 10 --freshness 72
 python tools/search_brave.py --query "[product_type] quality control sourcing challenges [origin_country]" --count 10 --freshness 72
 ```
+
+---
+
+#### Domestic Path
+
+Use these 6 queries instead when `origin_country == target_country`. No export permits, cross-border freight, or foreign country risk apply — focus on domestic sourcing, supply chain, and logistics.
+
+```
+python tools/search_brave.py --query "[product_type] domestic suppliers sourcing [origin_country] [current_year]" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] domestic producers farms cooperatives [origin_country] [current_year]" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] domestic logistics warehousing distribution [origin_country] [current_year]" --count 10 --freshness 72
+python tools/search_brave.py --query "[origin_country] domestic [industry] supply chain risks disruptions [current_year]" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] domestic quality control testing certification [origin_country]" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] regional supply chain infrastructure [origin_country] cold chain storage" --count 10 --freshness 72
+```
+
+#### Fallback Queries
+
+> **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
+
+**Query 1 — Supply and producers**
+- `[product_type] production volume exporters [origin_country]`
+- `[origin_country] [industry] supply chain farms cooperatives`
+
+**Query 2 — Export permits and documentation**
+- `[origin_country] food export certificate requirements agricultural products`
+- `how to export [product_type] from [origin_country] government requirements`
+
+**Query 3 — Freight and logistics**
+- `air freight sea freight [origin_country] [target_country] food cargo`
+- `[origin_country] port logistics international shipping options`
+
+**Query 4 — Political stability and business risk**
+- `[origin_country] country risk assessment [current_year] business`
+- `World Bank fragile states index [origin_country] operating environment`
+
+**Query 5 — Trade agreements and tariffs**
+- `[origin_country] import tariff [target_country] [product_type] customs duty`
+- `preferential trade access [origin_country] exports [target_country]`
+
+**Query 6 — Quality control and sourcing challenges**
+- `[product_type] supply chain quality issues [origin_country] certification`
+- `[origin_country] cold chain food safety infrastructure challenges`
+
+#### Agent-Generated Queries
+
+After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 Do not add extra delays — the tool handles it.
@@ -213,6 +268,7 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
 | No direct freight route found between origin and target country | Document the closest available routing (e.g. via connecting hub); note indirect routing in `logistics_options.route` |
 | Trade agreement exists but it is unclear whether the product category is covered | Include the agreement, set `applicability` to `"unconfirmed — product category coverage unclear"`, and flag in `data_gaps` |
 | High political or currency risk detected | Set risk fields to `"high"`, lead `narrative_summary` with an explicit warning sentence, and set `overall_supply_chain_risk` to at least `"high"` |
+| `origin_country == target_country` | Follow Domestic Path in Step 1. Skip all export/import/cross-border fields in output. Populate domestic equivalents instead. |
 | DB write fails | Log the error to stderr, return the JSON output to the orchestrator directly so the run isn't lost |
 
 ---

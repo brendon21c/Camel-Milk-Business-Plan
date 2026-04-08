@@ -57,6 +57,50 @@ python tools/search_brave.py --query "[product_type] reviews [target_country] cu
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 Do not add extra delays — the tool handles it.
 
+#### Fallback Queries
+
+> **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
+
+**Query 1 — Competitor brands:**
+```
+python tools/search_brave.py --query "[product_type] companies [target_country]" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] brands selling [product_type]" --count 10 --freshness 72
+```
+
+**Query 2 — Price per unit:**
+```
+python tools/search_brave.py --query "[product_type] how much does it cost [target_country]" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] retail pricing [target_country] shop" --count 10 --freshness 72
+```
+
+**Query 3 — Distribution and retail:**
+```
+python tools/search_brave.py --query "[product_type] sold at [target_country] grocery health store" --count 10 --freshness 72
+python tools/search_brave.py --query "buy [product_type] online [target_country] retailer" --count 10 --freshness 72
+```
+
+**Query 4 — Market positioning:**
+```
+python tools/search_brave.py --query "[product_type] brand differentiation [target_country]" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] [target_country] health claims marketing angle" --count 10 --freshness 72
+```
+
+**Query 5 — New entrants / startups:**
+```
+python tools/search_brave.py --query "[product_type] [target_country] new company launch [current_year]" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] startup [target_country] investment [current_year]" --count 10 --freshness 72
+```
+
+**Query 6 — Customer sentiment / reviews:**
+```
+python tools/search_brave.py --query "[product_type] [target_country] Reddit review opinion" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] [target_country] best brand comparison" --count 10 --freshness 72
+```
+
+#### Agent-Generated Queries
+
+After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following for each identified competitor.

@@ -52,6 +52,38 @@ python tools/search_brave.py --query "import compliance obligations [product_typ
 python tools/search_brave.py --query "[origin_country] [target_country] trade compliance sanctions restrictions [current_year]" --count 10 --freshness 336
 ```
 
+#### Fallback Queries
+
+> **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
+
+**Query 1 — Business entity types for importers**
+- `best business structure food importer [target_country] startup`
+- `how to set up import company [target_country] [product_type]`
+
+**Query 2 — LLC vs corporation comparison**
+- `LLC vs C-Corp importer tax liability [target_country]`
+- `choosing business entity type [target_country] small importer food`
+
+**Query 3 — Product liability and cargo insurance**
+- `food importer insurance requirements [target_country] [current_year]`
+- `[industry] product liability insurance cost coverage [target_country]`
+
+**Query 4 — Trademark and brand protection**
+- `[target_country] trademark filing process food brand [current_year]`
+- `intellectual property protection importer [product_type] [target_country]`
+
+**Query 5 — Import compliance and customs obligations**
+- `importer of record requirements [target_country] food customs`
+- `customs broker food importer [target_country] ISF filing requirements`
+
+**Query 6 — Trade compliance, sanctions, and restrictions**
+- `OFAC sanctions [origin_country] trade [current_year]`
+- `[origin_country] export controls banned goods [target_country] compliance`
+
+#### Agent-Generated Queries
+
+After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
+
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 
 ### 2. Extract and Synthesise
