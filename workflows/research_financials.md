@@ -126,6 +126,47 @@ python tools/search_brave.py --query "food import business gross margin wholesal
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
+### 1b. Supplement with Government and Public Financial Data
+
+After completing all Brave searches, fetch authoritative financial data from government
+and public sources. These produce high-confidence benchmarks for financial projections.
+Run all unless a tool errors (log error in `data_gaps`, continue).
+
+**SEC EDGAR — find public competitor revenues for margin benchmarking:**
+```
+python tools/fetch_sec_edgar.py search --query "[product_type]" --form 10-K --limit 10
+```
+If you find a relevant public company, look up their CIK and fetch revenue data:
+```
+python tools/fetch_sec_edgar.py company --name "[competitor name]"
+python tools/fetch_sec_edgar.py facts --cik [cik_number] --concept Revenues
+python tools/fetch_sec_edgar.py facts --cik [cik_number] --concept GrossProfit
+```
+Use to: establish revenue scale of public competitors, gross profit margins (GrossProfit /
+Revenues). These are high-confidence benchmarks for financial projections.
+
+**USASpending — government procurement spend in this industry:**
+```
+python tools/fetch_usaspending_data.py search --keyword "[product_type]" --award-type grants --limit 10
+```
+Use to: identify whether government grants exist for producers in this category
+(e.g. USDA specialty crop grants, food import facilitation programs). These may
+represent non-dilutive funding options for the client.
+
+**Census CBP — industry payroll benchmarks:**
+```
+python tools/fetch_census_data.py cbp --naics 311 --geography us:1
+```
+Use to: estimate labour cost benchmarks. Annual payroll divided by employee count
+gives an average salary per employee in food manufacturing — useful for staffing projections.
+
+**Perplexity fallback (use only if margin/pricing data is thin):**
+```
+python tools/search_perplexity.py --query "[product_type] gross margin wholesale retail markup [target_country]"
+python tools/search_perplexity.py --query "[industry] startup capital requirements food import business [target_country]"
+```
+Use when: Brave returned fewer than 3 results with actual financial figures.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

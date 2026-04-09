@@ -100,6 +100,50 @@ python tools/search_brave.py --query "[industry] growth drivers [target_country]
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
+### 1b. Supplement with Government Data Sources
+
+After completing all Brave searches, enrich the research with official US government data.
+These sources produce high-confidence data points that directly improve the viability score.
+Run all of the following unless a tool errors (log errors in `data_gaps`, continue).
+
+**Census demographic data — target market profile:**
+```
+python tools/fetch_census_data.py acs5 --geography us:1 --year 2022
+```
+Use to: validate the size of the target demographic (income levels, education, population).
+Extract: total population, median household income, education levels.
+
+**Census industry data — food manufacturing establishment count:**
+```
+python tools/fetch_census_data.py cbp --naics 311 --geography us:1
+python tools/fetch_census_data.py cbp --naics 31151 --geography us:1
+```
+NAICS 311 = food manufacturing; 31151 = dairy product manufacturing.
+Use to: understand the scale and concentration of the domestic food industry.
+
+**USASpending — federal contracts in this industry:**
+```
+python tools/fetch_usaspending_data.py search --keyword "[product_type]" --award-type contracts --limit 10
+python tools/fetch_usaspending_data.py naics --code 311511 --fiscal-year 2023
+```
+Use to: identify B2G demand, understand government procurement in this category.
+Note: Many specialty food products have $0 in government contracts — that is useful
+intelligence too (indicates purely consumer/retail market).
+
+**SEC EDGAR — find public competitors and their scale:**
+```
+python tools/fetch_sec_edgar.py search --query "[product_type]" --form 10-K --limit 10
+```
+Use to: identify publicly traded companies operating in this space. If you find matches,
+note their names — the competitors agent can look up their financials via the facts command.
+
+**Perplexity fallback (use only if Brave market size data is thin):**
+```
+python tools/search_perplexity.py --query "[product_type] market size [target_country] [current_year] total addressable market"
+```
+Use when: Brave returned fewer than 3 results with actual market size figures.
+Perplexity returns a synthesized answer with citations — add those citations to sources.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

@@ -86,7 +86,9 @@ If `run_number > 1` and `previous_report_id` is not null:
 
 Skip this step on run 1.
 
-### 3. Compute Viability Score
+### 3. Compute Viability Score and Data Confidence Score
+
+#### 3a. Compute Viability Score
 
 Calculate a weighted viability score using the 6 factors below. Each factor scores 1–5.
 Apply the weights from `proposition.factor_weights`.
@@ -127,6 +129,42 @@ Store the score object:
   }
 }
 ```
+
+#### 3b. Compute Data Confidence Score
+
+After computing the viability score, run the confidence tool against all agent outputs:
+
+```
+python tools/compute_data_confidence.py --report-id <report_id>
+```
+
+This produces a `data_confidence` object with:
+- **Score (0–100):** Aggregate of four signals — per-field confidence ratings (45%), agent
+  completion rate (25%), source citation coverage (20%), and flagged data gaps (10%).
+- **Interpretation:** High (85–100), Moderate (65–84), Low (40–64), Very Low (0–39).
+
+Store the full output and use the top-level fields in the report:
+
+```json
+{
+  "data_confidence_score": <0-100>,
+  "interpretation": "High | Moderate | Low | Very Low",
+  "description": "<one sentence explanation>"
+}
+```
+
+**How to use the confidence score in the report:**
+- Display it on the Cover Page beside the viability score badge (same visual weight)
+- Reference it in the Executive Summary: "This report carries a [interpretation] data
+  confidence rating of [score]/100, reflecting [brief reason — e.g. strong government
+  source coverage / gaps in origin country data]."
+- If confidence is Low or Very Low, add a callout box in the Executive Summary explaining
+  which sections are most affected and recommending the client treat the viability verdict
+  as directional rather than definitive.
+
+**Hard fail rule:** If the confidence tool itself fails (Supabase error, no outputs found),
+do NOT block PDF generation. Log the error, set `data_confidence_score` to `null`,
+`interpretation` to `"Unavailable"`, and note it in the Executive Summary.
 
 ### 4. Draft All Report Sections
 
@@ -288,6 +326,8 @@ The client is never notified of failures — Brendon handles recovery manually.
 Before generating the PDF, verify:
 - [ ] All 6 viability score factors are populated with a score and rationale
 - [ ] Overall viability score is between 1.0 and 5.0
+- [ ] Data confidence score is present (0–100) or explicitly set to null with reason noted
+- [ ] If confidence is Low or Very Low, a callout is present in the Executive Summary
 - [ ] Executive Summary is present and leads with the verdict
 - [ ] All 13 sections (or 14 on run 2+) have content — no empty sections
 - [ ] Risk Assessment contains at least 3 risks

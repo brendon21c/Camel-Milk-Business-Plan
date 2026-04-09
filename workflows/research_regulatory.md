@@ -128,6 +128,43 @@ python tools/search_brave.py --query "[industry] food policy changes [target_cou
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
+### 1b. Supplement with Government Data Sources
+
+After completing all Brave searches, fetch authoritative regulatory data directly from
+government APIs. These produce high-confidence citations that significantly improve
+the regulatory section's credibility. Run all unless a tool errors (log, continue).
+
+**openFDA — product recalls and enforcement actions:**
+```
+python tools/fetch_fda_data.py --endpoint food_enforcement --search "[product_type]" --limit 20
+python tools/fetch_fda_data.py --endpoint food_enforcement --search "[industry]" --limit 10
+```
+Use to: find if this product type has a history of FDA enforcement actions or recalls.
+A clean recall record supports regulatory confidence; a history of Class I/II recalls
+is a material risk that must be disclosed in `regulatory_risks`.
+
+**openFDA — consumer adverse event reports:**
+```
+python tools/fetch_fda_data.py --endpoint food_event --search "[product_type]" --limit 10
+```
+Use to: identify reported consumer safety concerns. Useful for health claims research
+and flagging product-category risks that FDA has on record.
+
+**USDA FoodData Central — nutritional composition:**
+```
+python tools/fetch_usda_data.py fdc --query "[product_type]" --limit 5
+```
+Use to: validate nutritional claims, understand what facts panel data looks like for
+this product type, and verify that health claims align with actual composition.
+
+**Perplexity fallback (use only if Brave regulatory data is thin):**
+```
+python tools/search_perplexity.py --query "FDA import requirements [product_type] [origin_country] [current_year]"
+python tools/search_perplexity.py --query "[product_type] USDA certification requirements United States"
+```
+Use when: Brave returned fewer than 3 results with specific regulatory requirements.
+Perplexity returns synthesized regulatory summaries with cited sources.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete details wherever available.

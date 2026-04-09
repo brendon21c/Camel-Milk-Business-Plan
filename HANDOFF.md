@@ -1,301 +1,249 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-08 (Session 9 — run.js Part 1 complete)
+**Last updated:** 2026-04-09 (Session 10 — run.js fully complete, ready for end-to-end test)
 
 ---
 
 ## What This Project Is
 
-An automated business viability intelligence system that answers:
-> *Is a given business idea viable — and how does that picture change over time?*
+An automated business viability intelligence system. Generic by design — first proposition is camel milk powder export from Somalia to the US. Future propositions are new DB rows, no new code needed.
 
-Generic by design. First proposition: exporting dehydrated camel milk powder from Somalia to the US health food market. Future ideas are new rows in the `propositions` table — no new code needed.
-
-System runs research agents → assembles PDF report → delivers by email on a client schedule or on demand.
+Pipeline: research agents → assembler → branded PDF → Resend email → client inbox.
 
 ---
 
-## Infrastructure — COMPLETE
+## Seed IDs (use these for testing)
 
-| Item | Status |
-|---|---|
-| Supabase DB (6 tables) | Done |
-| `supabaseClient.js` + `db.js` | Done |
-| `.env` with all API keys | Done |
-| `assets/logo.png` | Done |
-| `assets/fonts/` (Montserrat 5 weights) | Done — downloaded on first preview run |
-| Seed data (Brendon + camel milk proposition) | Done |
-| `package.json` (supabase-js, dotenv) | Done |
-
-**Supabase project:** `https://vupnhlpwfqwmrysohhrq.supabase.co`
-
-**Seed IDs:**
-- Client (Brendon McKeever): `ea134c2d-547e-4fcb-b475-65383680c8fb`
-- Proposition (Camel Milk Export): `54f51272-d819-4d82-825a-15603ed48654`
+- **Client (Brendon McKeever):** `ea134c2d-547e-4fcb-b475-65383680c8fb`
+- **Proposition (Camel Milk Export):** `54f51272-d819-4d82-825a-15603ed48654`
+- **Supabase project:** `https://vupnhlpwfqwmrysohhrq.supabase.co`
 
 ---
 
-## DB Migrations — ALL COMPLETE
+## Build Status — ALL COMPLETE
 
-All migrations have been run in the Supabase SQL Editor. Files in `migrations/` are kept as a record.
-
-| Migration | What it added |
-|---|---|
-| 001 | `clients.status`, `propositions.status`, `propositions.factor_weights` |
-| 002 | `reports.error_message` |
-| 003 | `propositions.proposition_type` |
-| 004 | `clients.phone`, `propositions.plan_tier` |
-| 005 | `reports.run_number`, `reports.previous_report_id` |
-
-Status values — clients: `prospect | active | inactive`
-Status values — propositions: `prospect | proposal_sent | active | paused | inactive`
-proposition_type values: `physical_import_export | physical_domestic | saas_software | service_business | digital_product`
-
-**Note:** Current workflow set fully supports `physical_import_export` and `physical_domestic`. Additional workflow sets required before onboarding `saas_software`, `service_business`, or `digital_product` propositions.
-
----
-
-## All Decisions — LOCKED
-
-| # | Decision | Outcome |
+| # | Item | Status |
 |---|---|---|
-| 1 | Research method | Hybrid — Claude agents + Brave Search API |
-| 2 | Report structure | 14 sections, brand colors, viability score |
-| 3 | Report delivery | Resend email to `brennon.mckeever@gmail.com`. PDF attached. No SMS. |
-| 4 | Run trigger | Per-proposition schedule in DB. On-demand: `node run.js --proposition-id <id> --force` |
-| 5 | Baseline vs delta | Full fresh report every run + "What Changed" bullets from run 2 onwards. 6 months history. |
-| 6 | Agent architecture | 1 Sonnet orchestrator, ~5 Haiku research sub-agents, 1 Sonnet assembler |
-| 7 | Viability score | 6 factors (Market Demand, Regulatory, Competitive, Financial, Supply Chain, Risk), each 1–5, client-defined weights. 4–5 Strong / 2.5–3.9 Moderate / 1–2.4 Weak |
-| 8 | Cache TTL | Per-source: market/search 24h, competitive 72h, FDA/regulatory 14 days, exchange rates 24h, Census 30 days, YouTube 72h |
-| 9 | On-demand trigger | `node run.js --proposition-id <id> --force` bypasses `next_run_at` |
-| 10 | Brave throttling | 500ms fixed delay between calls + exponential backoff on 429s (max 3 retries) |
-| 11 | Failure alerting | Resend email to Brendon only (client not notified). Error logged to `reports.error_message`. |
-| 12 | Quality check | All 9 agents complete + no null outputs + all 6 score factors populated. Hard fail on technical errors only. |
-| 13 | Intake flow | Web form → Supabase (prospect) → email to Brendon → proposal PDF → `node activate.js` flips to active |
-| 14 | Python env | `venv` + `requirements.txt` |
-| 15 | Brand / identity | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat font family. |
-| 16 | Pricing tiers | Starter $100 (one-time report) / Pro $250 (report + 1 monthly refresh) / Retainer $150/month (ongoing monthly reports) |
+| 1 | DB migrations (001–005) + Supabase Storage bucket | ✓ Done |
+| 2 | Python venv + requirements.txt | ✓ Done |
+| 3 | `supabaseClient.js` + `db.js` (all functions) | ✓ Done |
+| 4 | All 11 workflows | ✓ Done |
+| 5 | `tools/search_brave.py` | ✓ Done |
+| 6 | `tools/generate_report_pdf.py` | ✓ Done |
+| 7 | `tools/preview_brand.py` | ✓ Done |
+| 8 | `tools/intake.js` + `generate_proposal_pdf.py` + `generate_proposal.js` + `activate.js` | ✓ Done |
+| 9 | Government data tools (FDA, USDA, Census, USASpending, SEC EDGAR) | ✓ Done (Session 10) |
+| 10 | `tools/search_perplexity.py` (fallback search) | ✓ Done (Session 10) |
+| 11 | `tools/compute_data_confidence.py` | ✓ Done (Session 10) |
+| 12 | `run.js` Part 1 — structure, scheduling, stubs | ✓ Done |
+| 13 | `run.js` Part 2 — full agent orchestration | ✓ Done (Session 10) |
+| 14 | **End-to-end test run** | **← NEXT** |
 
 ---
 
-## Brand Spec (locked in Session 6)
-
-| Element | Value |
-|---|---|
-| Business name | McKeever Consulting |
-| Primary colour | Deep Navy `#1C3557` |
-| Accent colour | Warm Gold `#C8A94A` |
-| Secondary colour | Slate Silver `#8A9BB0` |
-| Body text | Near-Black `#1E1E2E` |
-| Background | Off-White `#F7F8FA` |
-| Font family | Montserrat (ExtraBold/Bold/SemiBold/Medium/Regular) |
-| Logo style | Wordmark — "McKeever" ExtraBold + "C O N S U L T I N G" tracked Medium + gold rule |
-| Cover page | Full navy bg, gold report label, white title, gold viability badge, wordmark at bottom |
-| Interior header | 30pt navy bar — compact wordmark left, page number right |
-| Footer | Silver rule + "Confidential — Prepared by McKeever Consulting" |
-| Tables | Gold header row (navy text), alternating white/off-white rows, silver grid lines |
-| Callout boxes | Light blue-grey bg `#EEF2F7`, 4pt navy left bar |
-| Font files | `assets/fonts/Montserrat-{weight}.ttf` — auto-downloaded from GitHub on first run |
-
----
-
-## Report Structure (14 sections)
-
-1. Cover Page — title, date, viability score
-2. Table of Contents
-3. Executive Summary (includes score breakdown table)
-4. Market Overview
-5. Competitor Analysis
-6. Regulatory Landscape
-7. Production & Equipment
-8. Packaging
-9. Distribution Strategy
-10. Marketing & Influencers
-11. Financial Projections
-12. Risk Assessment
-13. Recommendations
-14. What Changed This Month *(skipped on first run)*
-15. Sources
-
----
-
-## Workflow List (11 files) — ALL COMPLETE
-
-`research_market_overview.md`, `research_competitors.md`, `research_regulatory.md`, `research_production.md`, `research_packaging.md`, `research_distribution.md`, `research_marketing.md`, `research_financials.md`, `research_origin_ops.md`, `research_legal.md`, `assemble_report.md`
-
-**All 10 research workflows include:**
-- 6 primary queries + 6 fallback pairs (triggered if primary returns < 3 useful results)
-- Agent-generated queries instruction (up to 3 self-authored queries if coverage still thin)
-- Domestic path in `research_origin_ops`, `research_regulatory`, `research_financials` (used when `origin_country == target_country`)
-
----
-
-## db.js — ALL FUNCTIONS COMPLETE
-
-| Function | Purpose |
-|---|---|
-| `createClient` | Insert new client |
-| `getClientById` | Fetch client by ID (for email delivery) |
-| `createProposition` | Insert new proposition |
-| `getPropositionById` | Fetch proposition by ID (for --force runs) |
-| `updatePropositionSchedule` | Update schedule settings |
-| `getDuePropositions` | Fetch all propositions due to run |
-| `advancePropositionSchedule` | Advance next_run_at after a run |
-| `createReport` | Insert new report record |
-| `getReportById` | Fetch report by ID |
-| `getReportsByPropositionId` | Fetch all reports for a proposition (determines run_number + previous_report_id) |
-| `updateReportStatus` | Set report status |
-| `updateReportPdfUrl` | Save signed Storage URL after PDF upload |
-| `updateReportError` | Set status=failed + write error_message in one call |
-| `saveAgentOutput` | Save a research agent's JSON output |
-| `getAgentOutputsByReportId` | Fetch all agent outputs for a report |
-| `saveReportSource` | Save a source citation |
-| `getCachedApiResponse` | Cache lookup by key |
-| `setCachedApiResponse` | Cache upsert by key |
-| `updateClientStatus` | Flip client status (prospect → active → inactive) |
-| `activateProposition` | Flip proposition to active + set schedule fields |
-
----
-
-## PDF Content JSON Schema
-
-The assembler agent writes `.tmp/<report_id>_content.json` which `generate_report_pdf.py` reads.
-Full schema is documented in the docstring at the top of `tools/generate_report_pdf.py`.
-
-**Block types the assembler can use:**
-- `paragraph` — body text string
-- `bullets` — optional label + items list
-- `table` — headers list + rows list of lists + optional col_widths
-- `callout` — label + text (navy left bar box)
-- `key_figures` — items list of {label, value} stat cards
-
----
-
-## Tools — Status
-
-| Tool | Status |
-|---|---|
-| `tools/search_brave.py` | Done |
-| `tools/preview_brand.py` | Done — generates 2-page brand preview PDF |
-| `tools/generate_report_pdf.py` | Done — full production PDF builder. Badge fix applied (Session 7): verdict/score split to two lines, badge widened 200→240pt |
-| `tools/intake.js` | Done — writes prospect to clients + propositions, emails Brendon |
-| `tools/generate_proposal_pdf.py` | Done — branded proposal PDF builder (ReportLab, same brand as report) |
-| `tools/generate_proposal.js` | Done — fetches data, runs PDF builder, emails client + Brendon |
-| `tools/activate.js` | Done — flips to active, sets schedule, triggers first run |
-| `tools/prune_old_reports.js` | Not built (post-launch) |
-
----
-
-## Build Order
-
-1. ~~Run DB migrations (001–004)~~ ✓
-2. ~~Create Supabase Storage bucket (manual)~~ ✓
-3. ~~Python venv + requirements.txt~~ ✓
-4. ~~Create directories~~ ✓
-5. ~~`tools/search_brave.py`~~ ✓
-6. ~~All 11 workflows~~ ✓
-7. ~~`db.js` — all functions~~ ✓
-8. ~~`tools/generate_report_pdf.py` — PDF builder~~ ✓
-9. ~~`tools/intake.js`, `generate_proposal_pdf.py`, `generate_proposal.js`, `activate.js`~~ ✓
-10. ~~Orchestrator (`run.js`) Part 1 — structure, scheduling, error handling, stubs~~ ✓ ← **Part 2 next**
-11. End-to-end test run
-
----
-
-## Next Up — Step 10 Part 2: Fill in `run.js` agent orchestration
-
-**Start here next session.**
-
-Part 1 is complete and tested. `run.js` runs end-to-end with stubs — report record created, status transitions work, error handling and failure email work, schedule advances correctly.
-
-**Part 2 tasks (fill in the stubs in `run.js`):**
-
-1. **Research sub-agents** — Replace each of the 10 `[stub]` functions with real Claude Haiku calls:
-   - Read the corresponding workflow file from `workflows/`
-   - Build a prompt: workflow SOP + proposition context
-   - Call Claude Haiku via Anthropic SDK (`claude-haiku-4-5-20251001`)
-   - Parse structured JSON output
-   - Call `saveAgentOutput()` to persist to DB
-   - Return parsed output
-
-2. **Quality gate** — Fill in `checkQuality()`:
-   - All 10 agent outputs non-null
-   - All 6 viability score factors populated (market_demand, regulatory, competitive, financial, supply_chain, risk) and in 1–5 range
-   - Throw on failure so the run is marked failed
-
-3. **Assembler agent** — Fill in `runAssemblerAgent()`:
-   - Call Claude Sonnet (`claude-sonnet-4-6`) with `workflows/assemble_report.md` + all 10 research outputs
-   - Produce `.tmp/<reportId>_content.json` matching the PDF builder schema
-   - Call `generate_report_pdf.py` via `execSync`
-   - Upload PDF to Supabase Storage `reports` bucket
-   - Save signed URL via `updateReportPdfUrl()`
-   - Email PDF to client via Resend (see `tools/generate_proposal.js` for email pattern)
-   - Call `updateReportStatus(reportId, 'complete')` after successful delivery
-
-4. **Move `updateReportStatus complete` call** — Currently in `runProposition()` after the assembler stub. In Part 2 the assembler owns that transition — remove it from `runProposition()` once the assembler is real.
-
-**Key context for Part 2:**
-- PDF content JSON schema is documented in the docstring at the top of `tools/generate_report_pdf.py`
-- Block types: `paragraph`, `bullets`, `table`, `callout`, `key_figures`
-- Viability score factors: `market_demand`, `regulatory`, `competitive`, `financial`, `supply_chain`, `risk` — each 1–5, client weights from `proposition.factor_weights`
-- Score thresholds: 4–5 = Strong / 2.5–3.9 = Moderate / 1–2.4 = Weak
-- "What Changed" section: only included when `run_number > 1` (use `context.runNumber`)
-- Supabase Storage bucket name: `reports`
-- Resend delivery pattern: see `tools/generate_proposal.js` `sendProposalEmails()` for base64 PDF attachment approach
-
-## Intake Flow (complete — Step 9 done)
+## Next Up — End-to-End Test
 
 ```
-node tools/intake.js --name "..." --email "..." --phone "..." ...
-  → writes to clients + propositions (status: prospect)
-  → emails Brendon
-
-node tools/generate_proposal.js --proposition-id <id>
-  → generates branded proposal PDF
-  → emails PDF to client + Brendon
-  → flips proposition status → proposal_sent
-
-node tools/activate.js --proposition-id <id>
-  → flips client + proposition → active
-  → sets schedule (monthly for retainer, on_demand for starter/pro)
-  → triggers first run via run.js (when built)
+node run.js --proposition-id 54f51272-d819-4d82-825a-15603ed48654 --force
 ```
 
-## Pricing Tiers (locked Session 8)
+**What to watch for in the logs:**
+- Each agent prints `→ tool: web_search(...)` as it makes tool calls
+- Quality gate prints `✓ Quality gate passed (10/10 agents complete)`
+- Assembler prints confidence score, then `Calling Claude Sonnet...`
+- `✓ PDF generated`, `✓ PDF uploaded to Storage`, `✓ Report emailed`
+- Final `✓ Run complete`
 
-| Plan | Price | What's Included |
-|---|---|---|
-| Starter | $100 | One-time report |
-| Pro | $250 | One-time report + 1 monthly refresh |
-| Retainer | $150/month | Ongoing monthly reports |
-
----
-
-## Future: Website & Admin Panel
-
-Client-facing site (intake form, about page) + admin panel (view clients/reports, "Run Now" button per proposition). Admin run button wraps the `--force` CLI logic. Build after core system is working.
+**Likely first-run issues:**
+| Issue | Fix |
+|---|---|
+| `execPython` arg quoting fails on Windows | Check spaces in paths — `VENV_PYTHON` is already quoted in the cmd string |
+| Assembler JSON parse fails | Add `console.log(rawContent.slice(0, 1000))` before `parseJSON()` in `runAssemblerAgent()` to see what Claude produced |
+| Resend 403 error | Confirm `onboarding@resend.dev` is a verified sender in Resend dashboard |
+| Storage upload fails | Confirm `reports` bucket exists and is private in Supabase dashboard |
+| USDA NASS returns no data | NASS QuickStats is sometimes down — `executeTool` catches and returns `{ error: ... }`, agent handles gracefully |
 
 ---
 
 ## Architecture
 
 ```
-workflows/   ← plain-language SOPs
-tools/       ← Python + Node.js scripts (execution)
-db.js        ← all Supabase queries (Node.js)
-.env         ← all credentials
-outputs/     ← date-stamped PDFs (6 months)
-.tmp/        ← disposable intermediates
-assets/      ← logo, brand assets, fonts/
+run.js              ← orchestrator (Node.js)
+  ↓ reads
+workflows/          ← plain-language SOPs (11 files)
+  ↓ tools called by
+tools/              ← Python scripts (execution layer)
+db.js               ← all Supabase queries
+.env                ← all credentials
+outputs/            ← generated PDFs
+.tmp/               ← disposable intermediates (content JSON, auto-deleted)
+assets/             ← fonts (auto-downloaded), brand assets
 ```
-
-Agents read workflows → call tools → write to Supabase via `db.js`.
-PDFs uploaded to Supabase Storage `reports` bucket, URL saved to `reports.pdf_url`.
-Orchestrator calls `getDuePropositions()` for scheduled runs (active propositions only).
 
 ---
 
-## Key File Notes
+## run.js — How It Works (Part 2 complete)
 
-- `tools/preview_brand.py` — standalone brand preview tool, not called by the orchestrator. Run manually to check visual changes: `python tools/preview_brand.py` → `outputs/mckeever_brand_preview.pdf`
-- `assets/fonts/` — Montserrat TTF files. Auto-downloaded by `preview_brand.py` and `generate_report_pdf.py` on first run if missing.
-- No logo image file — the McKeever wordmark is drawn in code by both PDF tools (canvas API). No external asset needed.
+### Research agents (10 total, sequential)
+All 10 delegate to `runResearchAgent(agentName, context)`:
+1. Reads `workflows/research_<name>.md`
+2. Calls **Claude Haiku** (`claude-haiku-4-5-20251001`) in a tool-use loop (max 50 iterations)
+3. Claude calls Python tools as needed, loop feeds results back
+4. Final response is parsed as JSON → saved via `saveAgentOutput()` → sources via `saveReportSource()`
+
+### 7 tools available to research agents
+| Tool | Python script | When used |
+|---|---|---|
+| `web_search` | `search_brave.py` | All agents (primary source) |
+| `fetch_fda_data` | `fetch_fda_data.py` | regulatory, production |
+| `fetch_usda_data` | `fetch_usda_data.py` | regulatory, market_overview, financials |
+| `fetch_census_data` | `fetch_census_data.py` | market_overview, financials |
+| `fetch_usaspending_data` | `fetch_usaspending_data.py` | market_overview, financials |
+| `fetch_sec_edgar` | `fetch_sec_edgar.py` | competitors, financials |
+| `search_perplexity` | `search_perplexity.py` | Any (fallback when Brave thin) |
+
+### Quality gate
+- Hard fail: any critical agent null (`market_overview`, `regulatory`, `financials`, `origin_ops`)
+- Hard fail: more than 1 agent failed total
+- Soft fail: exactly 1 non-critical agent null — continues, gap noted in report
+
+### Data confidence score
+Computed via `compute_data_confidence.py --report-id <id>` before the assembler call.
+Aggregates per-field `high/medium/low` confidence ratings across all 10 agent outputs.
+Score 0–100: 85+ = High, 65–84 = Moderate, 40–64 = Low, <40 = Very Low.
+Non-fatal — if the tool fails, score is set to null and report continues.
+
+### Assembler
+- Calls **Claude Sonnet** (`claude-sonnet-4-6`), no tools, max 32k tokens
+- Input: assemble_report.md workflow + all 10 research outputs + confidence score + previous outputs (run 2+)
+- Output: complete content JSON → written to `.tmp/<reportId>_content.json`
+- Runs `generate_report_pdf.py` → PDF in `outputs/`
+- Uploads PDF to Supabase Storage `reports` bucket → saves signed URL (7 days)
+- Emails PDF (base64 attachment) to client + admin copy to Brendon
+- Calls `updateReportStatus('complete')` — assembler owns this transition
+
+---
+
+## Workflows — ALL COMPLETE
+
+| File | Section | Notes |
+|---|---|---|
+| `research_market_overview.md` | 4 | Updated Session 10: Step 1b adds Census, USASpending, SEC EDGAR, Perplexity |
+| `research_competitors.md` | 5 | — |
+| `research_regulatory.md` | 6 | Updated Session 10: Step 1b adds FDA, USDA FDC, Perplexity |
+| `research_production.md` | 7 | — |
+| `research_packaging.md` | 8 | — |
+| `research_distribution.md` | 9 | — |
+| `research_marketing.md` | 10 | — |
+| `research_financials.md` | 11 | Updated Session 10: Step 1b adds SEC EDGAR, USASpending, Census, Perplexity |
+| `research_origin_ops.md` | supply chain | — |
+| `research_legal.md` | risk | — |
+| `assemble_report.md` | assembler | Updated Session 10: Step 3b adds data confidence score computation |
+
+All 10 research workflows include: 6 primary queries, 6 fallback pairs, agent-generated query instruction, domestic path (when origin == target country).
+
+---
+
+## Tools — ALL COMPLETE
+
+| Tool | Purpose |
+|---|---|
+| `tools/search_brave.py` | Brave Search API — 500ms delay, exponential backoff, Supabase cache |
+| `tools/search_perplexity.py` | Perplexity Sonar — fallback synthesized search with citations |
+| `tools/fetch_fda_data.py` | openFDA food enforcement + adverse events |
+| `tools/fetch_usda_data.py` | USDA FoodData Central (nutrition) + NASS QuickStats (ag production) |
+| `tools/fetch_census_data.py` | Census ACS5 (demographics) + CBP (industry establishment counts) |
+| `tools/fetch_usaspending_data.py` | USASpending.gov contracts + grants (no key required) |
+| `tools/fetch_sec_edgar.py` | SEC EDGAR filing search + company facts (no key required) |
+| `tools/compute_data_confidence.py` | Aggregates per-field confidence ratings → 0-100 score |
+| `tools/generate_report_pdf.py` | ReportLab PDF builder — reads content JSON, produces branded PDF |
+| `tools/preview_brand.py` | Standalone brand preview — run manually, not by orchestrator |
+| `tools/intake.js` | CLI: creates prospect client + proposition, emails Brendon |
+| `tools/generate_proposal_pdf.py` | ReportLab proposal PDF builder |
+| `tools/generate_proposal.js` | Generates + emails proposal PDF, flips status → proposal_sent |
+| `tools/activate.js` | Flips client + proposition → active, sets schedule |
+| `tools/prune_old_reports.js` | Not built — post-launch |
+
+---
+
+## API Keys (.env) — ALL SET
+
+| Key | Variable | Notes |
+|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` | Claude Haiku + Sonnet |
+| Supabase | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` | — |
+| Brave Search | `BRAVE_SEARCH_KEY` | Primary web search |
+| Perplexity | `PERPLEXITY_API_KEY` | Sonar tier (fallback search) |
+| openFDA | `OPEN_FDA_API_KEY` | Food enforcement + events |
+| USDA FDC | `USDA_FDC_API_KEY` | FoodData Central |
+| USDA NASS | `USDA_NASS_API_KEY` | QuickStats agricultural data |
+| Census | `CENSUS_API_KEY` | ACS5 + CBP |
+| Exchange Rate | `EXCHANGE_RATE_API_KEY` | Currency conversion |
+| Resend | `RESEND_API_KEY` | Email delivery |
+| YouTube | `YOUTUBE_API_KEY` | Marketing research |
+| Twilio | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, numbers | Available but unused (SMS disabled) |
+
+USASpending.gov and SEC EDGAR require no key.
+
+---
+
+## DB Schema Summary
+
+**5 migrations run (001–005).** All applied in Supabase SQL Editor.
+
+**Tables:** `clients`, `propositions`, `reports`, `agent_outputs`, `report_sources`, `search_cache`
+
+Key fields added across migrations:
+- `clients`: `status` (prospect/active/inactive), `phone`
+- `propositions`: `status`, `factor_weights`, `proposition_type`, `plan_tier`, `run_number`
+- `reports`: `error_message`, `run_number`, `previous_report_id`
+
+**proposition_type values:** `physical_import_export | physical_domestic | saas_software | service_business | digital_product`
+Only `physical_import_export` and `physical_domestic` have workflows. Others need new workflow sets before use.
+
+---
+
+## Locked Decisions
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | Research method | Claude Haiku (tool-use loop) + Brave Search + gov APIs |
+| 2 | Report structure | 14 sections + Sources. Data confidence score added Session 10. |
+| 3 | Delivery | Resend email, PDF attached. Client + Brendon admin copy. |
+| 4 | Run trigger | Scheduled (next_run_at) or `node run.js --proposition-id <id> --force` |
+| 5 | Delta tracking | Full fresh report every run + "What Changed" section from run 2+ |
+| 6 | Agent architecture | Haiku (research, tool-use) → Sonnet (assembly, synthesis) |
+| 7 | Viability score | 6 factors × weights, each 1–5. 4–5=Strong / 2.5–3.9=Moderate / 1–2.4=Weak |
+| 8 | Data confidence | 0–100 score (field confidence 45%, completion 25%, sources 20%, gaps 10%) |
+| 9 | Quality gate | Hard fail: critical agent null or >1 agent failed. Soft fail: 1 non-critical null. |
+| 10 | Brave throttling | 500ms delay + exponential backoff, max 3 retries |
+| 11 | Failure alerting | Email to Brendon only. Client never notified. Error logged to DB. |
+| 12 | Brand | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat. |
+| 13 | Pricing | Starter $100 / Pro $250 / Retainer $150/month |
+
+---
+
+## Intake Flow
+
+```
+node tools/intake.js --name "..." --email "..." ...
+  → client + proposition created (status: prospect), Brendon emailed
+
+node tools/generate_proposal.js --proposition-id <id>
+  → proposal PDF generated + emailed to client + Brendon
+  → proposition status → proposal_sent
+
+node tools/activate.js --proposition-id <id>
+  → client + proposition → active, schedule set
+  → first report run triggered
+
+node run.js --proposition-id <id> --force   ← on-demand
+node run.js                                  ← scheduled (cron)
+```
+
+---
+
+## Future (post-launch)
+
+- `tools/prune_old_reports.js` — delete reports older than 6 months from Storage
+- Website + admin panel — intake form, report viewer, "Run Now" button per proposition
+- Additional workflow sets for `saas_software`, `service_business`, `digital_product`
