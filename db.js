@@ -297,7 +297,7 @@ async function getClientById(clientId) {
  * Each agent handles one workflow area (e.g. competitor analysis, regulatory)
  * and writes its findings here so the assembly agent can pull them together.
  * @param {Object} data - Fields matching the `agent_outputs` table schema.
- *   Expected keys: report_id, agent_name, output (text/JSON), status.
+ *   Expected keys: report_id, agent_name, output_data (JSONB), status.
  * @returns {Object} The inserted row.
  */
 async function saveAgentOutput(data) {

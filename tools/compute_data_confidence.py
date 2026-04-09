@@ -160,7 +160,7 @@ def compute_field_confidence_score(agent_outputs: list[dict]) -> tuple[float, di
 
     for agent_data in agent_outputs:
         agent_name = agent_data.get("agent_name", "unknown")
-        output     = agent_data.get("output", {})
+        output     = agent_data.get("output_data", {})
 
         if not isinstance(output, dict):
             continue
@@ -232,7 +232,7 @@ def compute_source_coverage_score(agent_outputs: list[dict]) -> tuple[float, dic
             continue
 
         agent_name = agent_data.get("agent_name", "unknown")
-        output     = agent_data.get("output", {})
+        output     = agent_data.get("output_data", {})
         count      = count_sources(output)
 
         # Normalise: 0 sources = 0.0, TARGET_SOURCES+ = 1.0
@@ -263,7 +263,7 @@ def compute_data_gaps_score(agent_outputs: list[dict]) -> tuple[float, dict]:
             continue
 
         agent_name = agent_data.get("agent_name", "unknown")
-        output     = agent_data.get("output", {})
+        output     = agent_data.get("output_data", {})
         count      = count_data_gaps(output)
 
         agent_gap_counts[agent_name] = count
@@ -363,7 +363,7 @@ def fetch_agent_outputs(report_id: str) -> list[dict]:
 
     resp = (
         supabase.table("agent_outputs")
-        .select("agent_name, status, output")
+        .select("agent_name, status, output_data")
         .eq("report_id", report_id)
         .execute()
     )

@@ -146,8 +146,11 @@ def summarise_events(data: dict) -> dict:
     summaries = []
     for r in results:
         # Each event can have multiple products and reactions
-        products  = [p.get("name_brand", "unknown") for p in r.get("products", [])]
-        reactions = [rx.get("name", "unknown") for rx in r.get("reactions", [])]
+        products  = [p.get("name_brand", "unknown") if isinstance(p, dict) else str(p)
+                     for p in r.get("products", [])]
+        # FDA CAERS reactions can come back as dicts {"name": "..."} or plain strings
+        reactions = [rx.get("name", "unknown") if isinstance(rx, dict) else str(rx)
+                     for rx in r.get("reactions", [])]
 
         summaries.append({
             "report_number":  r.get("report_number"),

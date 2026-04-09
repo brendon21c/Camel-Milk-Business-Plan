@@ -45,10 +45,13 @@ const {
 // Clients & constants
 // ---------------------------------------------------------------------------
 
-// Anthropic client — long timeout for the assembler's large Sonnet call
+// Anthropic client — long timeout for the assembler's large Sonnet call.
+// maxRetries: 6 gives the SDK up to ~2 minutes of exponential backoff on 429
+// rate limit errors before giving up. This handles burst exhaustion between agents.
 const anthropic = new Anthropic({
-  apiKey:  process.env.ANTHROPIC_API_KEY,
-  timeout: 600_000, // 10 minutes — assembler can produce ~30k tokens
+  apiKey:     process.env.ANTHROPIC_API_KEY,
+  timeout:    600_000, // 10 minutes — assembler can produce ~30k tokens
+  maxRetries: 6,       // 429 rate limit backoff — default is 2, not enough for 50k TPM limit
 });
 
 // Supabase client for Storage uploads (separate from the db.js client)
@@ -382,7 +385,29 @@ async function callClaude({ model, system, userPrompt, tools = [], maxTokens = 8
       createParams.tools = tools;
     }
 
-    const response = await anthropic.messages.create(createParams);
+    // Rate-limit handling — Anthropic enforces 50k input tokens/minute.
+    // Agents with many tool calls accumulate large contexts and hit 429 mid-loop.
+    // When that happens we wait 60s (resets the per-minute window) and retry
+    // the same turn rather than escalating to a more expensive model.
+    let response;
+    let rateLimitAttempts = 0;
+    while (true) {
+      try {
+        response = await anthropic.messages.create(createParams);
+        break; // success — exit the retry loop
+      } catch (apiErr) {
+        const is429 = apiErr.status === 429 ||
+          (apiErr.message && apiErr.message.includes('rate_limit_error'));
+        if (is429 && rateLimitAttempts < 5) {
+          rateLimitAttempts++;
+          const waitSec = 60 * rateLimitAttempts; // 60s, 120s, 180s, 240s, 300s
+          console.warn(`      ⚠ Rate limited (429) — waiting ${waitSec}s before retry ${rateLimitAttempts}/5...`);
+          await new Promise(r => setTimeout(r, waitSec * 1000));
+        } else {
+          throw apiErr; // not a 429, or retries exhausted — surface to caller
+        }
+      }
+    }
 
     if (response.stop_reason === 'end_turn') {
       // Normal completion — extract text content
@@ -573,7 +598,7 @@ async function createReportRecord(proposition) {
  * @param {Object} context   - Run context (reportId, proposition, client, runNumber).
  * @returns {Promise<Object|null>} Parsed agent output, or null on failure.
  */
-async function runResearchAgent(agentName, context) {
+async function runResearchAgent(agentName, context, { sonnetOnly = false } = {}) {
   const workflowFile = `research_${agentName}.md`;
   console.log(`\n    Running ${agentName}...`);
 
@@ -608,6 +633,31 @@ CRITICAL RULES:
 8. Do not include any explanation, preamble, or text before or after the JSON
 9. If a field cannot be populated due to thin data, use null and add to data_gaps — do not guess`;
 
+  // Build optional briefing blocks — only included when Perplexity returned data.
+  // These give agents venture-specific framing (which regulatory bodies apply,
+  // which research dimensions matter) and current market awareness before they
+  // start their tool calls. Agents use this to adapt their generic SOP to the
+  // specific proposition — e.g. skip FDA/USDA for a solar-panel proposition.
+  //
+  // Capped at 500 chars each to prevent context overflow on data-heavy agents
+  // (financials hit 211k tokens when full 2.5k briefs were injected).
+  const MAX_BRIEF_CHARS = 500;
+  const truncate = (str) => str.length > MAX_BRIEF_CHARS
+    ? str.slice(0, MAX_BRIEF_CHARS) + '...'
+    : str;
+
+  const ventureBlock = context.ventureIntelligence
+    ? `\n## VENTURE INTELLIGENCE BRIEF\n${truncate(context.ventureIntelligence)}\n\n` +
+      `Use this brief to: prioritise relevant tools, skip agencies that don't apply ` +
+      `to this venture type, and focus on the research dimensions that matter most.\n`
+    : '';
+
+  const landscapeBlock = context.landscapeBriefing
+    ? `\n## CURRENT MARKET LANDSCAPE\n${truncate(context.landscapeBriefing)}\n\n` +
+      `Factor recent developments from this brief into your analysis and flag anything ` +
+      `time-sensitive (rule changes, new competitors, trade shifts) in your output.\n`
+    : '';
+
   const userPrompt = `Execute this research workflow and produce the JSON output.
 
 ## WORKFLOW INSTRUCTIONS
@@ -617,53 +667,105 @@ ${workflow}
 \`\`\`json
 ${JSON.stringify(propositionContext, null, 2)}
 \`\`\`
-
+${ventureBlock}${landscapeBlock}
 Follow all steps in the workflow. Use the tools to run the required searches and data pulls.
 Synthesize the results and respond with ONLY the JSON object from the Output Format section.`;
 
-  let rawOutput;
+  // ---------------------------------------------------------------------------
+  // Model escalation helper — per CLAUDE.md: start Fast (Haiku), escalate to
+  // Balanced (Sonnet) only if results are poor. Ceiling is Sonnet — Opus is
+  // reserved for tasks requiring deep reasoning, not structured research agents.
+  // Two escalation triggers: (1) Haiku exhausts maxIter, (2) Haiku output fails
+  // JSON parsing. In both cases we retry once with Sonnet before giving up.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Attempt a single model call. Returns { raw, escalated } where escalated=true
+   * means Sonnet was used. Throws only if both Haiku AND Sonnet fail.
+   */
+  async function attemptWithEscalation() {
+    // Skip Haiku entirely when sonnetOnly=true (e.g. financials always exceeds
+    // Haiku's 200k context limit — running Haiku first wastes tokens and time)
+    if (!sonnetOnly) {
+      // --- Haiku attempt ---
+      let haikusErr  = null;
+      let rawHaiku   = null;
+      try {
+        rawHaiku = await callClaude({
+          model:      'claude-haiku-4-5-20251001',
+          system:     systemPrompt,
+          userPrompt,
+          tools:      RESEARCH_TOOLS,
+          maxTokens:  8096,
+          maxIter:    50, // Research agents make many tool calls (6+ searches + gov data)
+        });
+      } catch (err) {
+        haikusErr = err;
+      }
+
+      // If Haiku succeeded, try to parse. If parse succeeds, we're done.
+      if (!haikusErr) {
+        try {
+          const parsed = parseJSON(rawHaiku);
+          return { parsed, escalated: false };
+        } catch (_parseErr) {
+          // Parse failed — escalate to Sonnet (trigger 2)
+          console.warn(`      ⚠ ${agentName}: Haiku output failed JSON parse — escalating to Sonnet`);
+        }
+      } else {
+        // Haiku call itself threw (trigger 1: iteration exhaustion or API error)
+        console.warn(`      ⚠ ${agentName}: Haiku failed (${haikusErr.message.slice(0, 120)}) — escalating to Sonnet`);
+      }
+    }
+
+    // --- Sonnet (escalation or sonnetOnly direct start) ---
+    let rawSonnet;
+    try {
+      rawSonnet = await callClaude({
+        model:      'claude-sonnet-4-6',
+        system:     systemPrompt,
+        userPrompt,
+        tools:      RESEARCH_TOOLS,
+        maxTokens:  8096,
+        maxIter:    20, // Sonnet converges faster — lower ceiling to control cost
+      });
+    } catch (sonnetErr) {
+      // Both models failed — surface original Haiku error if available, else Sonnet's
+      throw haikusErr || sonnetErr;
+    }
+
+    // Parse Sonnet output — if this fails too, let it throw naturally
+    const parsed = parseJSON(rawSonnet);
+    return { parsed, escalated: true };
+  }
+
+  // Run with escalation logic, catching terminal failures
+  let parsed;
+  let escalated = false;
   try {
-    rawOutput = await callClaude({
-      model:      'claude-haiku-4-5-20251001',
-      system:     systemPrompt,
-      userPrompt,
-      tools:      RESEARCH_TOOLS,
-      maxTokens:  8096,
-      maxIter:    50, // Research agents make many tool calls (6+ searches + gov data)
-    });
+    ({ parsed, escalated } = await attemptWithEscalation());
   } catch (err) {
-    // Log and save failure to DB — non-critical agents continue, critical ones rethrow
-    console.error(`      ✗ ${agentName} failed: ${err.message.slice(0, 200)}`);
+    // Both Haiku and Sonnet failed (or parse failed after Sonnet)
+    console.error(`      ✗ ${agentName} failed after escalation: ${err.message.slice(0, 200)}`);
     await saveAgentOutput({
-      report_id:  context.reportId,
-      agent_name: `research_${agentName}`,
-      status:     'failed',
-      output:     { error: err.message },
+      report_id:   context.reportId,
+      agent_name:  `research_${agentName}`,
+      status:      'failed',
+      output_data: { error: err.message },
     });
     return null;
   }
 
-  // Parse the JSON output
-  let parsed;
-  try {
-    parsed = parseJSON(rawOutput);
-  } catch (parseErr) {
-    console.error(`      ✗ ${agentName} output parse failed: ${parseErr.message.slice(0, 200)}`);
-    await saveAgentOutput({
-      report_id:  context.reportId,
-      agent_name: `research_${agentName}`,
-      status:     'failed',
-      output:     { error: `JSON parse failed: ${parseErr.message}`, raw: rawOutput.slice(0, 500) },
-    });
-    return null;
+  if (escalated) {
+    console.log(`      ↑ ${agentName} completed via Sonnet escalation`);
   }
 
   // Save the structured output to the DB
   await saveAgentOutput({
-    report_id:  context.reportId,
-    agent_name: `research_${agentName}`,
-    status:     'complete',
-    output:     parsed,
+    report_id:   context.reportId,
+    agent_name:  `research_${agentName}`,
+    status:      'complete',
+    output_data: parsed,
   });
 
   // Persist source citations from the agent output
@@ -711,13 +813,130 @@ async function runMarketingAgent(context) {
   return runResearchAgent('marketing', context);
 }
 async function runFinancialsAgent(context) {
-  return runResearchAgent('financials', context);
+  // Financials always exceeds Haiku's 200k context limit (12+ tool calls accumulate
+  // too much context). Skip the Haiku attempt and go straight to Sonnet.
+  return runResearchAgent('financials', context, { sonnetOnly: true });
 }
 async function runOriginOpsAgent(context) {
   return runResearchAgent('origin_ops', context);
 }
 async function runLegalAgent(context) {
   return runResearchAgent('legal', context);
+}
+
+// ---------------------------------------------------------------------------
+// Pre-run intelligence briefings (Perplexity)
+// ---------------------------------------------------------------------------
+
+/**
+ * Calls Perplexity once before the research agents run to analyse the venture
+ * itself — what type of business it is, which regulatory bodies matter, what the
+ * critical success factors are, and which research dimensions to prioritise.
+ *
+ * This makes the system adaptive: a solar-panel proposition gets DOE/EPA framing;
+ * a food proposition gets FDA/USDA framing — without any workflow rewrites.
+ * Agents read this brief and naturally skip tools that aren't relevant.
+ *
+ * Non-fatal — if Perplexity fails the brief is null and agents fall back to
+ * their generic workflow SOPs.
+ *
+ * @param {Object} proposition - Proposition row.
+ * @returns {string|null} Synthesised venture intelligence brief, or null.
+ */
+function runVentureIntelligence(proposition) {
+  console.log('\n  Running venture intelligence brief (Perplexity)...');
+
+  // Build a rich, structured prompt so Perplexity returns actionable framing
+  const parts = [
+    `Business venture analysis: "${proposition.title}".`,
+    proposition.description ? `Description: ${proposition.description}.` : '',
+    `Product type: ${proposition.product_type || 'physical product'}.`,
+    proposition.industry   ? `Industry: ${proposition.industry}.`            : '',
+    proposition.origin_country  ? `Origin country: ${proposition.origin_country}.`   : '',
+    proposition.target_country  ? `Target market: ${proposition.target_country}.`    : '',
+    proposition.target_demographic ? `Target demographic: ${proposition.target_demographic}.` : '',
+  ].filter(Boolean).join(' ');
+
+  const query = `${parts}
+
+For a business like this, provide a structured intelligence brief covering:
+1. Venture classification — what type of business is this and what are the key business model dynamics?
+2. Critical success factors — the 3-5 things that will determine whether this succeeds or fails.
+3. Highest-risk unknowns — what a researcher should investigate most urgently.
+4. Relevant regulatory bodies — which government agencies, trade bodies, and standards organisations apply (be specific to the product and countries involved).
+5. Research priorities — which dimensions (market sizing, regulatory path, competitive landscape, supply chain, financials) matter most for this specific venture.
+6. Useful data sources — which databases, industry associations, or benchmarks are most relevant.
+Keep the answer factual and specific to this venture. Avoid generic business advice.`;
+
+  try {
+    const result = execPython('tools/search_perplexity.py', [
+      '--query', query,
+      '--model', 'sonar',
+    ]);
+
+    const brief = result.answer;
+    if (!brief || brief.length < 100) {
+      console.warn('  ⚠ Venture intelligence brief too short — skipping');
+      return null;
+    }
+
+    console.log(`  ✓ Venture intelligence brief: ${brief.length} chars, ${(result.sources || []).length} citations`);
+    return brief;
+  } catch (err) {
+    console.warn(`  ⚠ Venture intelligence brief failed (non-fatal): ${err.message.slice(0, 120)}`);
+    return null;
+  }
+}
+
+/**
+ * Calls Perplexity once to get a current-events snapshot of the market landscape.
+ * Surfaces recent regulatory changes, market shifts, new competitors, and
+ * trade/political risks that static workflow queries might miss.
+ *
+ * This is Layer 1 context (what's happening right now) vs. venture intelligence
+ * which is Layer 2 (what matters for this type of business).
+ *
+ * Non-fatal — agents proceed with their generic workflows if this fails.
+ *
+ * @param {Object} proposition - Proposition row.
+ * @returns {string|null} Synthesised landscape brief, or null.
+ */
+function runCurrentLandscapeBriefing(proposition) {
+  console.log('  Running current landscape briefing (Perplexity)...');
+
+  const product = proposition.product_type || proposition.title;
+  const origin  = proposition.origin_country  ? `from ${proposition.origin_country}` : '';
+  const target  = proposition.target_country  ? `entering the ${proposition.target_country} market` : '';
+  const year    = new Date().getFullYear();
+
+  const query = `Current market intelligence briefing (${year}): ${product} ${origin} ${target}.
+
+Provide a factual snapshot covering:
+1. Regulatory developments — any significant rule changes, enforcement actions, or pending regulations in the past 12 months.
+2. Market trends — key demand shifts, pricing movements, or consumer behaviour changes right now.
+3. Competitive landscape — notable new entrants, funding rounds, acquisitions, or exits recently.
+4. Trade and political factors — tariffs, import restrictions, bilateral agreements, or geopolitical risks currently affecting this market.
+5. Recent news — anything in the last 6 months that someone launching this business right now must know.
+Be specific and cite dates where possible. Avoid historical background — focus on what is current.`;
+
+  try {
+    const result = execPython('tools/search_perplexity.py', [
+      '--query', query,
+      '--model', 'sonar',
+    ]);
+
+    const brief = result.answer;
+    if (!brief || brief.length < 100) {
+      console.warn('  ⚠ Landscape briefing too short — skipping');
+      return null;
+    }
+
+    console.log(`  ✓ Landscape briefing: ${brief.length} chars, ${(result.sources || []).length} citations`);
+    return brief;
+  } catch (err) {
+    console.warn(`  ⚠ Landscape briefing failed (non-fatal): ${err.message.slice(0, 120)}`);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -735,17 +954,33 @@ async function runLegalAgent(context) {
 async function runResearchAgents(context) {
   console.log('\n  Running research agents (sequential)...');
 
+  // Inter-agent delay — Anthropic enforces a 50,000 input-token-per-minute rate
+  // limit. Each agent sends 15–40k tokens (workflow + briefs + tool results).
+  // Without a gap, back-to-back agents exhaust the minute budget and trigger 429s.
+  // 30 seconds gives the limit window time to partially reset between agents.
+  const INTER_AGENT_DELAY_MS = 30_000;
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
   const outputs = {};
 
   outputs.market_overview = await runMarketOverviewAgent(context);
+  await sleep(INTER_AGENT_DELAY_MS);
   outputs.competitors      = await runCompetitorsAgent(context);
+  await sleep(INTER_AGENT_DELAY_MS);
   outputs.regulatory       = await runRegulatoryAgent(context);
+  await sleep(INTER_AGENT_DELAY_MS);
   outputs.production       = await runProductionAgent(context);
+  await sleep(INTER_AGENT_DELAY_MS);
   outputs.packaging        = await runPackagingAgent(context);
+  await sleep(INTER_AGENT_DELAY_MS);
   outputs.distribution     = await runDistributionAgent(context);
+  await sleep(INTER_AGENT_DELAY_MS);
   outputs.marketing        = await runMarketingAgent(context);
+  await sleep(INTER_AGENT_DELAY_MS);
   outputs.financials       = await runFinancialsAgent(context);
+  await sleep(INTER_AGENT_DELAY_MS);
   outputs.origin_ops       = await runOriginOpsAgent(context);
+  await sleep(INTER_AGENT_DELAY_MS);
   outputs.legal            = await runLegalAgent(context);
 
   return outputs;
@@ -865,7 +1100,7 @@ async function runAssemblerAgent(context, agentOutputs) {
       const prevRows = await getAgentOutputsByReportId(previousReportId);
       previousOutputs = {};
       for (const row of prevRows) {
-        previousOutputs[row.agent_name] = row.output;
+        previousOutputs[row.agent_name] = row.output_data;
       }
       console.log(`  ✓ Loaded ${prevRows.length} previous agent outputs for "What Changed"`);
     } catch (err) {
@@ -1375,22 +1610,35 @@ async function runProposition(proposition, force) {
     await updateReportStatus(report.id, 'running');
     console.log('✓ Report status → running');
 
-    // 4. Build the shared run context
+    // 4. Run Perplexity pre-briefings — both are non-fatal; null means agents
+    //    fall back to their generic workflow SOPs. Run sequentially (single API).
+    const ventureIntelligence   = runVentureIntelligence(proposition);
+    const landscapeBriefing     = runCurrentLandscapeBriefing(proposition);
+
+    // 5. Build the shared run context (briefings passed to every research agent)
     const context = {
-      reportId:         report.id,
+      reportId:           report.id,
       proposition,
       client,
-      runNumber:        report.run_number,
-      previousReportId: report.previous_report_id,
+      runNumber:          report.run_number,
+      previousReportId:   report.previous_report_id,
+      ventureIntelligence,   // Perplexity: venture type, critical factors, relevant agencies
+      landscapeBriefing,     // Perplexity: current market events, regulatory changes, news
     };
 
-    // 5. Run all 10 research sub-agents
+    // 6. Run all 10 research sub-agents
     const agentOutputs = await runResearchAgents(context);
 
     // 6. Quality gate — validates outputs before assembly
     checkQuality(agentOutputs);
 
-    // 7. Run assembler — synthesizes, builds PDF, uploads, emails, marks complete
+    // 7. Pre-assembler cooldown — research agents drain the 50k TPM budget.
+    // Wait 2 minutes so the rate limit window resets before the assembler's
+    // large single-shot Sonnet call. Assembler has 5 retry attempts if needed.
+    console.log('\n  Cooling down 2 minutes before assembler (rate limit recovery)...');
+    await sleep(120_000);
+
+    // 8. Run assembler — synthesizes, builds PDF, uploads, emails, marks complete
     await runAssemblerAgent(context, agentOutputs);
 
     // NOTE: updateReportStatus('complete') is called inside runAssemblerAgent()

@@ -205,7 +205,9 @@ def fetch_cbp_industry(naics: str, geography: str = "us:1", year: int = 2021) ->
     for attempt in range(1, MAX_RETRIES + 1):
         time.sleep(FIXED_DELAY_SEC)
         try:
-            resp = httpx.get(raw_url, timeout=30)
+            # follow_redirects=True required — Census API redirects some endpoints
+            # (e.g. CBP 2021) to updated URLs; httpx defaults to no redirect following
+            resp = httpx.get(raw_url, timeout=30, follow_redirects=True)
         except httpx.RequestError as exc:
             if attempt == MAX_RETRIES:
                 raise RuntimeError(f"[census CBP] Network error: {exc}") from exc
