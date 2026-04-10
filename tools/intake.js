@@ -36,6 +36,8 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 
 const { createClient, createProposition } = require('../db');
 
+// Optional: pass --org-id to link this client to an existing organization
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -219,7 +221,7 @@ async function sendNotificationEmail(client, proposition) {
           <tr><td style="padding: 8px 0; color: #555;"><strong>Phone</strong></td>
               <td style="padding: 8px 0;">${client.phone || '—'}</td></tr>
           <tr><td style="padding: 8px 0; color: #555;"><strong>Company</strong></td>
-              <td style="padding: 8px 0;">${client.company || '—'}</td></tr>
+              <td style="padding: 8px 0;">${client.company_name || '—'}</td></tr>
         </table>
 
         <div style="background: #fff; border-left: 4px solid #C8A94A; padding: 16px 20px; margin-bottom: 24px;">
@@ -306,6 +308,7 @@ async function main() {
     weights,
     how_heard:   args['how-heard'] || null,
     notes:       args.notes || null,
+    org_id:      args['org-id'] || null,
   };
 
   // Validate
@@ -325,12 +328,14 @@ async function main() {
   if (inputData.notes)     contextParts.push(`Notes: ${inputData.notes}`);
 
   // 1. Create client record
+  // organization_id is optional — pass --org-id to link this contact to an existing org
   const client = await createClient({
-    name:    inputData.name,
-    email:   inputData.email,
-    phone:   inputData.phone,
-    company: inputData.company,
-    status:  'prospect',
+    name:            inputData.name,
+    email:           inputData.email,
+    phone:           inputData.phone,
+    company_name:    inputData.company,   // DB column is company_name
+    status:          'prospect',
+    organization_id: inputData.org_id || null,
   });
   console.log(`✓ Client created: ${client.id}`);
 

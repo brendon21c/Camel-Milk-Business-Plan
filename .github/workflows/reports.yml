@@ -1,0 +1,74 @@
+name: Monthly Report Run
+
+# Runs on the 1st of each month at 6:00 AM UTC (1 AM Central).
+# Generates and delivers the report for each active proposition.
+#
+# To add a new proposition: duplicate the "Run report" step and update
+# the --proposition-id value. Each proposition gets its own step so
+# failures are reported individually and one bad run doesn't block others.
+#
+# Manual trigger: go to Actions → Monthly Report Run → Run workflow.
+# The --force flag skips the "already ran this month" guard so you can
+# re-run at any time without waiting for the next calendar month.
+
+on:
+  schedule:
+    - cron: '0 6 1 * *'   # 06:00 UTC on the 1st of every month
+  workflow_dispatch:        # manual trigger from GitHub Actions UI
+    inputs:
+      force:
+        description: 'Pass --force to skip the already-ran guard'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  run-reports:
+    name: Generate reports
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Write all secrets to a .env file so dotenv picks them up normally.
+      - name: Write .env from secrets
+        run: |
+          cat <<EOF > .env
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          BRAVE_SEARCH_KEY=${{ secrets.BRAVE_SEARCH_KEY }}
+          RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
+          OPEN_FDA_API_KEY=${{ secrets.OPEN_FDA_API_KEY }}
+          YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
+          REDDIT_ENABLED=${{ secrets.REDDIT_ENABLED }}
+          EXCHANGE_RATE_API_KEY=${{ secrets.EXCHANGE_RATE_API_KEY }}
+          CENSUS_API_KEY=${{ secrets.CENSUS_API_KEY }}
+          PERPLEXITY_API_KEY=${{ secrets.PERPLEXITY_API_KEY }}
+          USDA_FDC_API_KEY=${{ secrets.USDA_FDC_API_KEY }}
+          USDA_NASS_API_KEY=${{ secrets.USDA_NASS_API_KEY }}
+          CRUNCHBASE_ENABLED=${{ secrets.CRUNCHBASE_ENABLED }}
+          EOF
+
+      # ── Active propositions ───────────────────────────────────────────────
+      # Add one step per proposition. Copy this block and update the ID.
+      # The step name shows up in the GitHub Actions log and failure emails.
+
+      - name: Run report — B & I Camel Milk
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          node run.js --proposition-id 54f51272-d819-4d82-825a-15603ed48654 $FORCE_FLAG

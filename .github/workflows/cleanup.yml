@@ -1,0 +1,42 @@
+name: Weekly Cleanup
+
+# Runs every Sunday at 2:00 AM UTC (9 PM Saturday Central).
+# Deletes completed reports older than 6 months, failed reports older than 7 days,
+# and expired api_cache entries. Safe to run at any time — uses --confirm to apply.
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'   # 02:00 UTC every Sunday
+  workflow_dispatch:        # also runnable manually from GitHub Actions UI
+
+jobs:
+  cleanup:
+    name: Prune old data
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Write all secrets to a .env file so dotenv picks them up normally.
+      # This mirrors the local .env without ever committing secrets.
+      - name: Write .env from secrets
+        run: |
+          cat <<EOF > .env
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
+          EOF
+
+      - name: Run cleanup (prune + confirm)
+        run: node tools/cleanup.js --prune --confirm

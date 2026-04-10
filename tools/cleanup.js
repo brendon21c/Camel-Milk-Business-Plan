@@ -14,12 +14,13 @@
  *   - report_sources rows linked to those reports
  *   - agent_outputs rows linked to those reports (belt-and-suspenders — normally gone post-run)
  *   - Supabase Storage files: {proposition_id}/{reportId}.pdf and {reportId}_content.json
+ *   - reports rows (status = 'failed') older than 7 days + any orphaned agent_outputs
  *   - api_cache entries older than 7 days
  *
  * What is NEVER deleted:
  *   - clients rows
  *   - propositions rows
- *   - reports with status 'failed' or 'running' (left for debugging)
+ *   - reports with status 'running' (active run in progress)
  *   - The most recent completed report per proposition, regardless of age
  */
 
@@ -34,7 +35,8 @@ const supabase = createClient(
 );
 
 const REPORT_RETENTION_DAYS = 180; // 6 months
-const CACHE_TTL_DAYS        = 7;
+const FAILED_REPORT_TTL_DAYS = 7;  // failed reports deleted after 7 days — error already emailed at failure time
+const CACHE_TTL_DAYS         = 7;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -172,6 +174,68 @@ async function pruneOldReports(dryRun) {
 }
 
 // ---------------------------------------------------------------------------
+// Failed report pruning — 7-day TTL
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes failed report rows (and any orphaned agent_outputs) older than FAILED_REPORT_TTL_DAYS.
+ * The error message and failure alert are emailed to Brendon at failure time, so there is no
+ * operational value in keeping these rows beyond a short debugging window.
+ * Note: agent_outputs are also deleted immediately at failure time in run.js, but this acts
+ * as a belt-and-suspenders sweep for any that slipped through.
+ *
+ * @param {boolean} dryRun - If true, log what would be deleted without deleting.
+ */
+async function pruneFailedReports(dryRun) {
+  const cutoff = daysAgo(FAILED_REPORT_TTL_DAYS);
+  console.log(`\nFailed report cutoff: ${new Date(cutoff).toDateString()} (${FAILED_REPORT_TTL_DAYS} days)`);
+
+  const { data: failed, error: fetchErr } = await supabase
+    .from('reports')
+    .select('id, proposition_id, created_at, error_message')
+    .eq('status', 'failed')
+    .lt('created_at', cutoff);
+
+  if (fetchErr) throw new Error(`Could not fetch failed reports: ${fetchErr.message}`);
+  if (!failed.length) {
+    console.log('  No failed reports older than 7 days found.');
+    return;
+  }
+
+  console.log(`  Found ${failed.length} failed report(s) to delete`);
+
+  for (const report of failed) {
+    const age = Math.round((Date.now() - new Date(report.created_at)) / (1000 * 60 * 60 * 24));
+    console.log(`\n  Failed report ${report.id} (${age} days old)`);
+
+    if (dryRun) {
+      console.log(`    [dry-run] Error was: ${(report.error_message || 'none').slice(0, 120)}`);
+      console.log(`    [dry-run] Would delete agent_outputs rows`);
+      console.log(`    [dry-run] Would delete reports row`);
+      continue;
+    }
+
+    // Delete any orphaned agent_outputs (normally gone at failure time, but sweep anyway)
+    const { error: agentErr } = await supabase
+      .from('agent_outputs')
+      .delete()
+      .eq('report_id', report.id);
+
+    if (agentErr) console.warn(`    ⚠ agent_outputs delete failed: ${agentErr.message}`);
+    else console.log(`    ✓ agent_outputs deleted`);
+
+    // Delete the report row
+    const { error: reportErr } = await supabase
+      .from('reports')
+      .delete()
+      .eq('id', report.id);
+
+    if (reportErr) console.warn(`    ⚠ reports row delete failed: ${reportErr.message}`);
+    else console.log(`    ✓ Failed report ${report.id} deleted`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Cache sweep — 7-day TTL
 // ---------------------------------------------------------------------------
 
@@ -230,6 +294,7 @@ async function main() {
   console.log(`Started: ${new Date().toISOString()}`);
 
   await pruneOldReports(dryRun);
+  await pruneFailedReports(dryRun);
   await sweepCache(dryRun);
 
   console.log('\nDone.');

@@ -27,6 +27,86 @@ async function createClient(data) {
 }
 
 // ---------------------------------------------------------------------------
+// Organizations
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a new organization record.
+ * An "organization" is a company or entity that can have multiple client contacts.
+ * Admins are managed separately via addOrganizationAdmin().
+ * @param {Object} data - Fields matching the `organizations` table schema (name).
+ * @returns {Object} The inserted row.
+ */
+async function createOrganization(data) {
+  const { data: row, error } = await supabase
+    .from('organizations')
+    .insert(data)
+    .select()
+    .single();
+
+  if (error) throw new Error(`createOrganization failed: ${error.message}`);
+  return row;
+}
+
+/**
+ * Returns all admins for a given organization.
+ * Admin records are independent of the clients table — removing someone as a client
+ * does not affect their admin status.
+ * @param {string} organizationId - Primary key of the organization.
+ * @returns {Array} Array of organization_admins rows (email, name, created_at).
+ */
+async function getOrganizationAdmins(organizationId) {
+  const { data: rows, error } = await supabase
+    .from('organization_admins')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(`getOrganizationAdmins failed for org ${organizationId}: ${error.message}`);
+  return rows;
+}
+
+/**
+ * Adds an admin to an organization.
+ * Uses upsert so calling it twice for the same email is safe.
+ * @param {string} organizationId - Primary key of the organization.
+ * @param {string} email          - Admin's email address.
+ * @param {string} [name]         - Admin's display name (optional).
+ * @returns {Object} The upserted row.
+ */
+async function addOrganizationAdmin(organizationId, email, name) {
+  const { data: row, error } = await supabase
+    .from('organization_admins')
+    .upsert(
+      { organization_id: organizationId, email, name: name || null },
+      { onConflict: 'organization_id,email' }
+    )
+    .select()
+    .single();
+
+  if (error) throw new Error(`addOrganizationAdmin failed for org ${organizationId}, email ${email}: ${error.message}`);
+  return row;
+}
+
+/**
+ * Fetches all client contacts belonging to a given organization.
+ * Used when you need to reach every point of contact at a company —
+ * e.g. sending reports or proposals to multiple people.
+ * @param {string} organizationId - Primary key of the organization.
+ * @returns {Array} Array of client rows for that organization.
+ */
+async function getClientsByOrganizationId(organizationId) {
+  const { data: rows, error } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(`getClientsByOrganizationId failed for org ${organizationId}: ${error.message}`);
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
 // Propositions
 // ---------------------------------------------------------------------------
 
@@ -36,7 +116,9 @@ async function createClient(data) {
  * will investigate (e.g. "Is the US camel milk market viable in 2026?").
  *
  * Schema fields:
- *   client_id, title, description, industry, product_type,
+ *   organization_id — FK to organizations; the company that owns this proposition
+ *   client_id       — FK to clients; the primary contact who receives report emails
+ *   title, description, industry, product_type,
  *   origin_country, target_country, target_demographic,
  *   estimated_budget, additional_context,
  *   schedule_type ('monthly'|'weekly'|'quarterly'|'on_demand') — default 'monthly'
@@ -81,38 +163,96 @@ async function updatePropositionSchedule(propositionId, schedule) {
 }
 
 /**
- * Returns all propositions whose next_run_at is due (i.e. <= now).
+ * Returns all propositions whose next_run_at is due (i.e. <= now),
+ * restricted to propositions whose owning organization is 'active'.
+ * Flipping an org to 'inactive' or 'cancelled' immediately halts their reports.
  * Called by the orchestrator on a schedule to find what needs to run.
  * Only returns propositions where schedule_type is not 'on_demand'.
  * @returns {Array} Array of proposition rows ready to be run.
  */
 async function getDuePropositions() {
+  // Join to organizations so we can gate on org status in one query.
+  // Propositions without an organization_id (legacy data) are excluded — they
+  // cannot be validated as 'active' and should not run automatically.
   const { data: rows, error } = await supabase
     .from('propositions')
-    .select('*')
+    .select('*, organizations!inner(status)')
     .neq('schedule_type', 'on_demand')
-    .lte('next_run_at', new Date().toISOString());
+    .lte('next_run_at', new Date().toISOString())
+    .eq('organizations.status', 'active');
 
   if (error) throw new Error(`getDuePropositions failed: ${error.message}`);
-  return rows;
+
+  // Strip the nested organizations object — callers expect plain proposition rows
+  return rows.map(({ organizations: _org, ...proposition }) => proposition);
 }
 
 /**
- * Marks a proposition's last_run_at as now and advances next_run_at
- * based on its schedule_type and schedule_day.
+ * Marks a proposition's last_run_at as now and either advances next_run_at
+ * (retainer) or flips schedule_type to 'on_demand' (starter/pro) once the
+ * plan's included run count is exhausted.
+ *
+ * Plan run limits:
+ *   starter  — 1 run total  → on_demand after run 1
+ *   pro      — 2 runs total → on_demand after run 2
+ *   retainer — unlimited    → always advances next_run_at
+ *
  * Called by the orchestrator after a report run completes successfully.
  * @param {string} propositionId - Primary key of the proposition.
  * @param {string} scheduleType  - 'monthly'|'weekly'|'quarterly'
  * @param {number} scheduleDay   - Day of month for monthly cadence.
- * @returns {Object} The updated row.
+ * @returns {Object} The updated proposition row.
  */
 async function advancePropositionSchedule(propositionId, scheduleType, scheduleDay) {
-  // Calculate the next run timestamp based on schedule type
-  const now = new Date();
-  let nextRun;
+  // Fetch plan_tier and count of completed reports for this proposition.
+  // We need both to decide whether to advance or retire the schedule.
+  const [propResult, countResult] = await Promise.all([
+    supabase
+      .from('propositions')
+      .select('plan_tier')
+      .eq('id', propositionId)
+      .single(),
+    supabase
+      .from('reports')
+      .select('*', { count: 'exact', head: true })
+      .eq('proposition_id', propositionId)
+      .eq('status', 'complete'),
+  ]);
 
+  if (propResult.error) throw new Error(`advancePropositionSchedule: could not fetch plan_tier: ${propResult.error.message}`);
+  if (countResult.error) throw new Error(`advancePropositionSchedule: could not count reports: ${countResult.error.message}`);
+
+  const planTier   = propResult.data.plan_tier;
+  const runCount   = countResult.count ?? 0;
+
+  // Determine run limit for this plan tier
+  const RUN_LIMITS = { starter: 1, pro: 2, retainer: Infinity };
+  const limit = RUN_LIMITS[planTier] ?? Infinity;
+
+  const now = new Date();
+
+  if (runCount >= limit) {
+    // Plan exhausted — retire the schedule so it never auto-runs again.
+    // The proposition and org stay active; Brendon can manually re-run or upsell.
+    console.log(`  Plan limit reached (${planTier}: ${runCount}/${limit} runs) — retiring schedule to on_demand`);
+
+    const { data: row, error } = await supabase
+      .from('propositions')
+      .update({
+        schedule_type: 'on_demand',
+        last_run_at:   now.toISOString(),
+      })
+      .eq('id', propositionId)
+      .select()
+      .single();
+
+    if (error) throw new Error(`advancePropositionSchedule failed for proposition ${propositionId}: ${error.message}`);
+    return row;
+  }
+
+  // Plan still has runs remaining — advance next_run_at to the next cycle
+  let nextRun;
   if (scheduleType === 'monthly') {
-    // Advance to the same day next month
     nextRun = new Date(now.getFullYear(), now.getMonth() + 1, scheduleDay);
   } else if (scheduleType === 'weekly') {
     nextRun = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -285,6 +425,48 @@ async function getClientById(clientId) {
     .single();
 
   if (error) throw new Error(`getClientById failed for client ${clientId}: ${error.message}`);
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// Proposition Recipients
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns all clients who are configured to receive reports for a given proposition.
+ * Used by the assembler to build the recipient list for email delivery.
+ * Returns full client rows (not just IDs) so callers have name + email ready.
+ * @param {string} propositionId - Primary key of the proposition.
+ * @returns {Array} Array of client rows, ordered by when they were added as recipients.
+ */
+async function getPropositionRecipients(propositionId) {
+  const { data: rows, error } = await supabase
+    .from('proposition_recipients')
+    .select('clients(*)')
+    .eq('proposition_id', propositionId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(`getPropositionRecipients failed for proposition ${propositionId}: ${error.message}`);
+
+  // Unwrap the nested join — each row is { clients: { ...clientRow } }
+  return rows.map(r => r.clients);
+}
+
+/**
+ * Adds a client as a recipient for a proposition.
+ * Uses upsert so calling it twice for the same pair is safe.
+ * @param {string} propositionId - Primary key of the proposition.
+ * @param {string} clientId      - Primary key of the client to add.
+ * @returns {Object} The upserted row.
+ */
+async function addPropositionRecipient(propositionId, clientId) {
+  const { data: row, error } = await supabase
+    .from('proposition_recipients')
+    .upsert({ proposition_id: propositionId, client_id: clientId }, { onConflict: 'proposition_id,client_id' })
+    .select()
+    .single();
+
+  if (error) throw new Error(`addPropositionRecipient failed for proposition ${propositionId}, client ${clientId}: ${error.message}`);
   return row;
 }
 
@@ -467,6 +649,12 @@ async function activateProposition(propositionId, data) {
 // ---------------------------------------------------------------------------
 
 module.exports = {
+  // Organizations
+  createOrganization,
+  getOrganizationAdmins,
+  addOrganizationAdmin,
+  getClientsByOrganizationId,
+
   // Clients
   createClient,
   getClientById,
@@ -487,6 +675,10 @@ module.exports = {
   updateReportStatus,
   updateReportPdfUrl,
   updateReportError,
+
+  // Proposition recipients
+  getPropositionRecipients,
+  addPropositionRecipient,
 
   // Agent outputs
   saveAgentOutput,

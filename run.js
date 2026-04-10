@@ -45,6 +45,7 @@ const {
   saveReportSource,
   advancePropositionSchedule,
   deleteAgentOutputsByReportId,
+  getPropositionRecipients,
 } = require('./db');
 
 // ---------------------------------------------------------------------------
@@ -1424,10 +1425,14 @@ Now produce the complete content JSON.`;
     console.log(`    ✓ Content JSON uploaded to Storage`);
   }
 
-  // 12. Email the report to the client
+  // 12. Email the report to all recipients, then send one admin copy listing everyone
   const viabilityScore = contentJson.viability_score || {};
-  await sendReportEmail(client, proposition, pdfPath, reportMonth, viabilityScore, confidence);
-  console.log(`    ✓ Report emailed to ${client.email}`);
+  for (const recipient of context.recipients) {
+    await sendReportEmail(recipient, proposition, pdfPath, reportMonth, viabilityScore, confidence);
+    console.log(`    ✓ Report emailed to ${recipient.email}`);
+  }
+  await sendAdminReportCopy(context.recipients, proposition, pdfPath, reportMonth, viabilityScore, confidence);
+  console.log(`    ✓ Admin copy sent (${context.recipients.length} recipient(s) notified)`);
 
   // 13. Mark report complete — assembler owns this transition
   await updateReportStatus(reportId, 'complete');
@@ -1451,18 +1456,20 @@ Now produce the complete content JSON.`;
 // ---------------------------------------------------------------------------
 
 /**
- * Sends the completed report PDF to the client via Resend.
- * Attaches the PDF as base64 so the client receives it directly.
- * Also sends an admin copy to Brendon.
+ * Sends the completed report PDF to a single recipient via Resend.
+ * Personalized with the recipient's name. Called once per recipient in a loop.
+ * Admin copy is sent separately via sendAdminReportCopy() after all recipient emails.
  *
- * @param {Object} client         - Client row.
+ * @param {Object} recipient      - Client row for this recipient.
  * @param {Object} proposition    - Proposition row.
  * @param {string} pdfPath        - Local path to the generated PDF.
  * @param {string} reportMonth    - Human-readable month string (e.g. "April 2026").
  * @param {Object} viabilityScore - Score object { overall, verdict, factors }.
  * @param {Object|null} confidence - Confidence score object or null.
  */
-async function sendReportEmail(client, proposition, pdfPath, reportMonth, viabilityScore, confidence) {
+async function sendReportEmail(recipient, proposition, pdfPath, reportMonth, viabilityScore, confidence) {
+  // Alias so the rest of this function reads naturally
+  const client = recipient;
   const pdfBuffer = fs.readFileSync(pdfPath);
   const pdfBase64 = pdfBuffer.toString('base64');
   const filename  = `McKeever_${proposition.title.replace(/[^a-z0-9]+/gi, '_')}_${reportMonth.replace(' ', '_')}.pdf`;
@@ -1542,37 +1549,9 @@ async function sendReportEmail(client, proposition, pdfPath, reportMonth, viabil
     </div>
   `;
 
-  // ── Admin copy to Brendon ─────────────────────────────────────────────────
-
-  const adminHtml = `
-    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-      <div style="background:#1C3557;padding:24px 32px;">
-        <h1 style="color:#C8A94A;font-size:22px;margin:0;">McKeever Consulting</h1>
-        <p style="color:#8A9BB0;font-size:13px;margin:4px 0 0;">Admin Copy — Report Delivered</p>
-      </div>
-
-      <div style="padding:32px;background:#F7F8FA;border:1px solid #e0e0e0;">
-        <h2 style="color:#1C3557;margin-top:0;">Report delivered to ${client.name}</h2>
-
-        <table style="width:100%;border-collapse:collapse;">
-          <tr><td style="padding:8px 0;color:#555;width:160px;"><strong>Client</strong></td>
-              <td>${client.name} &lt;${client.email}&gt;</td></tr>
-          <tr><td style="padding:8px 0;color:#555;"><strong>Proposition</strong></td>
-              <td>${proposition.title}</td></tr>
-          <tr><td style="padding:8px 0;color:#555;"><strong>Verdict</strong></td>
-              <td><strong style="color:${verdictColour};">${verdict} (${overall}/5.0)</strong></td></tr>
-          <tr><td style="padding:8px 0;color:#555;"><strong>Confidence</strong></td>
-              <td>${confidence ? `${confidence.score}/100 — ${confidence.interpretation}` : 'Unavailable'}</td></tr>
-          <tr><td style="padding:8px 0;color:#555;"><strong>Report Period</strong></td>
-              <td>${reportMonth}</td></tr>
-        </table>
-      </div>
-    </div>
-  `;
-
   const attachment = { filename, content: pdfBase64 };
 
-  // Send to client
+  // Send personalized email to this recipient
   const clientRes = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -1592,8 +1571,64 @@ async function sendReportEmail(client, proposition, pdfPath, reportMonth, viabil
     const body = await clientRes.text();
     throw new Error(`Resend error (client email) ${clientRes.status}: ${body}`);
   }
+}
 
-  // Send admin copy to Brendon
+/**
+ * Sends a single admin copy to Brendon after all recipient emails are delivered.
+ * Lists every recipient who received the report so Brendon has a full delivery record.
+ *
+ * @param {Array}       recipients    - All client rows who received the report.
+ * @param {Object}      proposition   - Proposition row.
+ * @param {string}      pdfPath       - Local path to the generated PDF.
+ * @param {string}      reportMonth   - Human-readable month string (e.g. "April 2026").
+ * @param {Object}      viabilityScore - Score object { overall, verdict, factors }.
+ * @param {Object|null} confidence    - Confidence score object or null.
+ */
+async function sendAdminReportCopy(recipients, proposition, pdfPath, reportMonth, viabilityScore, confidence) {
+  const pdfBuffer = fs.readFileSync(pdfPath);
+  const pdfBase64 = pdfBuffer.toString('base64');
+  const filename  = `McKeever_${proposition.title.replace(/[^a-z0-9]+/gi, '_')}_${reportMonth.replace(' ', '_')}.pdf`;
+
+  const overall = viabilityScore.overall ?? '—';
+  const verdict = viabilityScore.verdict ?? '—';
+
+  const verdictColour = {
+    Strong:   '#2e7d32',
+    Moderate: '#f57c00',
+    Weak:     '#c62828',
+  }[verdict] || '#1C3557';
+
+  // Build a row for each recipient so Brendon can see exactly who got the report
+  const recipientRows = recipients
+    .map(r => `<tr><td style="padding:6px 0;color:#555;width:160px;"><strong>Recipient</strong></td>
+                    <td>${r.name} &lt;${r.email}&gt;</td></tr>`)
+    .join('\n');
+
+  const adminHtml = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+      <div style="background:#1C3557;padding:24px 32px;">
+        <h1 style="color:#C8A94A;font-size:22px;margin:0;">McKeever Consulting</h1>
+        <p style="color:#8A9BB0;font-size:13px;margin:4px 0 0;">Admin Copy — Report Delivered</p>
+      </div>
+
+      <div style="padding:32px;background:#F7F8FA;border:1px solid #e0e0e0;">
+        <h2 style="color:#1C3557;margin-top:0;">Report delivered to ${recipients.length} recipient(s)</h2>
+
+        <table style="width:100%;border-collapse:collapse;">
+          ${recipientRows}
+          <tr><td style="padding:8px 0;color:#555;"><strong>Proposition</strong></td>
+              <td>${proposition.title}</td></tr>
+          <tr><td style="padding:8px 0;color:#555;"><strong>Verdict</strong></td>
+              <td><strong style="color:${verdictColour};">${verdict} (${overall}/5.0)</strong></td></tr>
+          <tr><td style="padding:8px 0;color:#555;"><strong>Confidence</strong></td>
+              <td>${confidence ? `${confidence.score}/100 — ${confidence.interpretation}` : 'Unavailable'}</td></tr>
+          <tr><td style="padding:8px 0;color:#555;"><strong>Report Period</strong></td>
+              <td>${reportMonth}</td></tr>
+        </table>
+      </div>
+    </div>
+  `;
+
   const adminRes = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -1605,7 +1640,7 @@ async function sendReportEmail(client, proposition, pdfPath, reportMonth, viabil
       to:          [ADMIN_EMAIL],
       subject:     `[Admin Copy] Report delivered — ${proposition.title} ${reportMonth}`,
       html:        adminHtml,
-      attachments: [attachment],
+      attachments: [{ filename, content: pdfBase64 }],
     }),
   });
 
@@ -1710,9 +1745,15 @@ async function runProposition(proposition, force) {
   let report = null;
 
   try {
-    // 1. Fetch the client for email delivery
-    const client = await getClientById(proposition.client_id);
-    console.log(`Client:      ${client.name} <${client.email}>`);
+    // 1. Fetch report recipients — falls back to primary contact if none configured
+    let recipients = await getPropositionRecipients(proposition.id);
+    if (!recipients.length) {
+      const fallback = await getClientById(proposition.client_id);
+      recipients = [fallback];
+    }
+    // Primary contact is used for the assembler prompt and report content
+    const client = recipients[0];
+    console.log(`Recipients:  ${recipients.map(r => `${r.name} <${r.email}>`).join(', ')}`);
 
     // 2. Create the report record
     report = await createReportRecord(proposition);
@@ -1730,7 +1771,8 @@ async function runProposition(proposition, force) {
     const context = {
       reportId:           report.id,
       proposition,
-      client,
+      client,             // primary contact — used for assembler prompt and report content
+      recipients,         // all contacts who receive the report email
       runNumber:          report.run_number,
       previousReportId:   report.previous_report_id,
       ventureIntelligence,   // Perplexity: venture type, critical factors, relevant agencies
@@ -1779,6 +1821,16 @@ async function runProposition(proposition, force) {
         console.error(`  Report ${report.id} marked as failed.`);
       } catch (dbErr) {
         console.error(`  Warning: could not mark report as failed in DB: ${dbErr.message}`);
+      }
+
+      // Clean up agent_outputs immediately — they are mid-run scratch data and have
+      // no value after a failure. The error is already captured in error_message and
+      // emailed via the failure alert below.
+      try {
+        await deleteAgentOutputsByReportId(report.id);
+        console.error(`  Agent outputs for report ${report.id} deleted.`);
+      } catch (cleanErr) {
+        console.error(`  Warning: could not delete agent outputs: ${cleanErr.message}`);
       }
     }
 

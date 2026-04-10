@@ -100,7 +100,46 @@ Option B (more robust): Add an `industry_category` substitution block at the top
 
 Recommendation: Start with Option A (already partially working via venture intelligence) and move to Option B if Option A produces poor results for non-food industries.
 
-#### 5. Test propositions to validate V2
+#### 5. Consultant Intelligence Brief (admin-only)
+
+**What it is:** A private, candid debrief generated from the same research data as the client report — sent only to Brendon after every successful run. Not polished. Not filtered for the client. Written like a smart colleague briefing you before a meeting.
+
+**Why it matters:** Delivering a report is a data transfer. Consulting is knowing what the data means for *this client*, what they should really be worried about, and what questions to ask them. This brief is how you build that skill — every run gives you a private analytical layer to study and eventually internalize.
+
+**When it runs:** After the main report is generated and delivered. Uses the same `agent_outputs` already in the DB — no additional API calls to research agents. One new Sonnet call.
+
+**What it contains:**
+
+| Section | Description |
+|---|---|
+| Plain-language summary | What this business actually is and what the data shows, in 2–3 paragraphs. No jargon. |
+| The real story | What stands out in the research — the 2–3 findings that actually matter for whether this works |
+| Opportunities to surface | Things the data hints at that the client may not have considered — angles worth bringing up |
+| Challenges to flag | Red flags, structural risks, or market realities the client needs to hear directly |
+| Where the data was thin | Research gaps and what that uncertainty means for confidence in the analysis |
+| Independent research ideas | Things Brendon can investigate himself that the system can't automate — industry contacts, on-the-ground checks, expert calls |
+| Questions to ask the client | Conversation starters for a follow-up — gaps in their thinking, assumptions to pressure-test |
+| Honest viability take | Brendon's internal read: would you put money into this? What would need to be true for it to work? |
+
+**Tone:** Direct and candid. Written to Brendon, not to the client. Should read like a trusted analyst telling you what they actually think, not what they'd put in a formal document.
+
+**Implementation:**
+- New workflow: `workflows/assemble_consultant_brief.md`
+- New function in `run.js`: `runConsultantBriefAgent()` — called after `sendAdminReportCopy()`
+- New script: `tools/generate_consultant_brief_pdf.py` — separate PDF generator with distinct visual treatment
+- Model: Claude Sonnet (same as assembler — synthesis, not research)
+- Input: all 10 `agent_outputs` + assembled report content JSON + viability score + confidence score
+- Output: branded PDF — same McKeever Consulting brand but visually distinct (e.g. dark header marked "Internal / Confidential", different accent treatment so it's immediately clear this is not the client document)
+- Delivery: Resend email to `ADMIN_EMAIL` only with PDF attached, subject: `[Internal] Consultant Brief — {client name} — {month}`
+- Stored: uploaded to Supabase Storage alongside the client report (`{proposition_id}/{reportId}_consultant_brief.pdf`) so it's retrievable per run
+
+**Why PDF over email body:** This is a working document — something to open alongside the client report before a meeting, annotate, pull talking points from, and reference on a call. It should live as a file, not in an inbox.
+
+**Wishlist:** Consolidate the two admin emails into one. Instead of receiving the client report copy and the consultant brief as separate emails, send a single admin email with both PDFs attached — the client report and the consultant brief together. One email to open, both documents ready to review side by side. Resend supports multiple attachments so this is straightforward when implementing.
+
+**Note:** This feature doesn't depend on industry routing and could technically be backported to V1. Scoped to V2 because V1's priority is proving the core pipeline works first.
+
+#### 6. Test propositions to validate V2
 
 | Proposition | Industry category | Key non-food tools needed |
 |---|---|---|
