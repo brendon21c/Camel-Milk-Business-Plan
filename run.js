@@ -561,7 +561,8 @@ async function getPropositionsToRun(args) {
  */
 async function createReportRecord(proposition) {
   const history  = await getReportsByPropositionId(proposition.id);
-  const runNumber = history.length + 1;
+  // Count only completed runs — failed/crashed attempts don't count as real runs
+  const runNumber = history.filter(r => r.status === 'complete').length + 1;
 
   // The most recent completed report is the baseline for "What Changed"
   const previousCompleted = history.find(r => r.status === 'complete');
@@ -1249,23 +1250,90 @@ ${runNumber > 1 ? '- 14: What Changed This Month — delta bullets comparing pre
 
 Now produce the complete content JSON.`;
 
-  // 7. Call Claude Sonnet — pure synthesis, no tools needed
-  console.log('    Calling Claude Sonnet for report synthesis...');
-  const rawContent = await callClaude({
-    model:      'claude-sonnet-4-6',
-    system:     systemPrompt,
-    userPrompt,
-    tools:      [],        // No tools — assembler only synthesizes, does not search
-    maxTokens:  32_000,    // Full report JSON can be ~15-25k tokens
-    maxIter:    1,         // Single turn — no tool loops
-  });
+  // 7. Call Claude Sonnet via streaming — pure synthesis, no tools needed.
+  // Streaming is required here because the response is 15-25k tokens; a non-streaming
+  // request at that size can exceed the SDK's 10-minute timeout before the full response
+  // arrives. Streaming has no total-response timeout — only a between-chunks timeout —
+  // so it works regardless of generation time.
+  console.log('    Calling Claude Sonnet for report synthesis (streaming)...');
+  let rawContent;
+  let assemblerAttempts = 0;
+  while (true) {
+    assemblerAttempts++;
+    try {
+      rawContent = await anthropic.messages.stream({
+        model:      'claude-sonnet-4-6',
+        max_tokens: 32_000,    // Full report JSON can be ~15-25k tokens
+        system:     systemPrompt,
+        messages:   [{ role: 'user', content: userPrompt }],
+      }).finalText();
+      break; // success
+    } catch (streamErr) {
+      const is429 = streamErr.status === 429 ||
+        (streamErr.message && streamErr.message.includes('rate_limit_error'));
+      if (is429 && assemblerAttempts <= 5) {
+        const waitSec = 60 * assemblerAttempts; // 60s, 120s, 180s, 240s, 300s
+        console.warn(`      ⚠ Assembler rate limited (429) — waiting ${waitSec}s before retry ${assemblerAttempts}/5...`);
+        await new Promise(r => setTimeout(r, waitSec * 1000));
+      } else {
+        throw new Error(`Assembler Sonnet call failed after ${assemblerAttempts} attempt(s): ${streamErr.message}`);
+      }
+    }
+  }
 
-  // 8. Parse the content JSON
+  // 8. Parse the content JSON — with JSON repair retries.
+  // If Sonnet returns malformed JSON (truncated output, mismatched braces, etc.),
+  // we send a follow-up message showing the bad output and asking it to fix it.
+  // Each repair attempt costs ~$0.50-1 — far cheaper than losing the whole run.
+  // Max 3 repair attempts before giving up.
+  const MAX_JSON_REPAIRS = 3;
   let contentJson;
-  try {
-    contentJson = parseJSON(rawContent);
-  } catch (parseErr) {
-    throw new Error(`Assembler output parse failed: ${parseErr.message}. First 400 chars: ${rawContent.slice(0, 400)}`);
+  let parseMessages = [{ role: 'user', content: userPrompt }]; // conversation history for repairs
+
+  for (let attempt = 1; attempt <= MAX_JSON_REPAIRS + 1; attempt++) {
+    // On attempt 1, rawContent is already set from the streaming call above.
+    // On repair attempts, rawContent is set at the end of the previous iteration.
+    try {
+      contentJson = parseJSON(rawContent);
+      if (attempt > 1) {
+        console.log(`    ✓ JSON repaired on attempt ${attempt}`);
+      }
+      break; // valid JSON — exit the repair loop
+    } catch (parseErr) {
+      if (attempt > MAX_JSON_REPAIRS) {
+        // All repair attempts exhausted — surface a useful error
+        throw new Error(
+          `Assembler JSON parse failed after ${MAX_JSON_REPAIRS} repair attempt(s): ` +
+          `${parseErr.message}. First 400 chars: ${rawContent.slice(0, 400)}`
+        );
+      }
+
+      console.warn(`    ⚠ Assembler JSON parse failed (attempt ${attempt}/${MAX_JSON_REPAIRS}) — requesting repair from Sonnet...`);
+
+      // Build the repair conversation: show Sonnet what it returned and ask it to fix it
+      parseMessages.push({ role: 'assistant', content: rawContent });
+      parseMessages.push({
+        role: 'user',
+        content:
+          `Your previous response was not valid JSON and could not be parsed.\n\n` +
+          `Parse error: ${parseErr.message}\n\n` +
+          `Please return ONLY the corrected JSON object — no markdown fences, ` +
+          `no explanation, no text before or after. Fix any truncation, unclosed braces, ` +
+          `or invalid syntax. The structure must match the schema provided earlier.`,
+      });
+
+      // Stream the repair attempt
+      try {
+        rawContent = await anthropic.messages.stream({
+          model:      'claude-sonnet-4-6',
+          max_tokens: 32_000,
+          system:     systemPrompt,
+          messages:   parseMessages,
+        }).finalText();
+      } catch (repairErr) {
+        throw new Error(`Assembler JSON repair attempt ${attempt} failed: ${repairErr.message}`);
+      }
+    }
   }
 
   // 9. Write content JSON to .tmp/ for the PDF builder
@@ -1590,6 +1658,7 @@ async function sendFailureAlert(proposition, report, err) {
  * @param {boolean} force       - True if triggered on demand.
  */
 async function runProposition(proposition, force) {
+  const propStart = Date.now(); // track elapsed time for this proposition
   console.log(`\n${'─'.repeat(60)}`);
   console.log(`Proposition: ${proposition.title}`);
   console.log(`ID:          ${proposition.id}`);
@@ -1636,7 +1705,7 @@ async function runProposition(proposition, force) {
     // Wait 2 minutes so the rate limit window resets before the assembler's
     // large single-shot Sonnet call. Assembler has 5 retry attempts if needed.
     console.log('\n  Cooling down 2 minutes before assembler (rate limit recovery)...');
-    await sleep(120_000);
+    await new Promise(r => setTimeout(r, 120_000));
 
     // 8. Run assembler — synthesizes, builds PDF, uploads, emails, marks complete
     await runAssemblerAgent(context, agentOutputs);
@@ -1654,10 +1723,13 @@ async function runProposition(proposition, force) {
       console.log('✓ Proposition schedule advanced');
     }
 
-    console.log(`\n✓ Run complete — Report ID: ${report.id}`);
+    const elapsedMin = ((Date.now() - propStart) / 60_000).toFixed(1);
+    console.log(`\n✓ Run complete — Report ID: ${report.id} | Elapsed: ${elapsedMin} min`);
+    return { status: 'complete', title: proposition.title, reportId: report?.id, elapsedMin };
 
   } catch (err) {
-    console.error(`\n✗ Run failed: ${err.message}`);
+    const elapsedMin = ((Date.now() - propStart) / 60_000).toFixed(1);
+    console.error(`\n✗ Run failed: ${err.message} | Elapsed: ${elapsedMin} min`);
 
     if (report) {
       try {
@@ -1669,6 +1741,7 @@ async function runProposition(proposition, force) {
     }
 
     await sendFailureAlert(proposition, report, err);
+    return { status: 'failed', title: proposition.title, reportId: report?.id, elapsedMin, error: err.message };
   }
 }
 
@@ -1680,6 +1753,7 @@ async function runProposition(proposition, force) {
  * Entry point. Parses args, finds propositions to run, runs each one.
  */
 async function main() {
+  const startTime = Date.now(); // capture for elapsed time at end
   console.log('McKeever Consulting — Report Orchestrator');
   console.log(`Started: ${new Date().toISOString()}`);
 
@@ -1697,13 +1771,27 @@ async function main() {
     process.exit(0);
   }
 
+  const results = [];
   for (const proposition of propositions) {
-    await runProposition(proposition, args.force);
+    const result = await runProposition(proposition, args.force);
+    results.push(result);
   }
 
+  const elapsedMin = ((Date.now() - startTime) / 60_000).toFixed(1);
+  const completed = results.filter(r => r.status === 'complete').length;
+  const failed    = results.filter(r => r.status === 'failed').length;
+
   console.log(`\n${'─'.repeat(60)}`);
-  console.log(`Finished: ${new Date().toISOString()}`);
-  console.log(`Processed: ${propositions.length} proposition(s)`);
+  console.log(`Finished:  ${new Date().toISOString()}`);
+  console.log(`Elapsed:   ${elapsedMin} minutes`);
+  console.log(`Processed: ${propositions.length} proposition(s) — ${completed} completed, ${failed} failed`);
+
+  // Per-proposition outcome summary
+  for (const r of results) {
+    const icon  = r.status === 'complete' ? '✓' : '✗';
+    const label = r.status === 'complete' ? 'COMPLETE' : 'FAILED';
+    console.log(`  ${icon} [${label}] ${r.title} (${r.elapsedMin} min)${r.error ? ` — ${r.error.slice(0, 100)}` : ''}`);
+  }
 }
 
 main().catch(err => {
