@@ -401,6 +401,26 @@ async function saveReportSource(data) {
 }
 
 // ---------------------------------------------------------------------------
+// Cleanup helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes all agent_outputs rows for a given report.
+ * Called immediately after the assembler completes — these rows are only
+ * needed during the research-to-assembly window. Keeping them wastes storage
+ * (each row is a large JSONB blob; 10 per run × many runs = significant growth).
+ * @param {string} reportId - Primary key of the completed report.
+ */
+async function deleteAgentOutputsByReportId(reportId) {
+  const { error } = await supabase
+    .from('agent_outputs')
+    .delete()
+    .eq('report_id', reportId);
+
+  if (error) throw new Error(`deleteAgentOutputsByReportId failed for report ${reportId}: ${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
 // Status helpers
 // ---------------------------------------------------------------------------
 
@@ -478,4 +498,7 @@ module.exports = {
   // Cache
   getCachedApiResponse,
   setCachedApiResponse,
+
+  // Cleanup
+  deleteAgentOutputsByReportId,
 };

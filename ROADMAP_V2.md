@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-09
+**Last updated:** 2026-04-10
 
 ---
 
@@ -175,6 +175,47 @@ Likely implementation: `intake.js` branches on `--proposition-type` and prompts 
 
 ---
 
+## Web App — Post-V2 Phase
+
+**Timing:** After V2 is complete and validated.
+
+### Project structure decision (evaluate before starting)
+
+> **The web app should likely be a separate project that connects to this one — not built into this repo.**
+
+This pipeline is a backend report engine: it runs on a schedule or on-demand, calls APIs, and delivers PDFs. A web app is a different concern — client intake, admin dashboard, status tracking, report viewing. Mixing them risks bloating this repo and making both harder to maintain.
+
+**Recommended approach:** New project (e.g. `mckeever-consulting-web`) that talks to this engine via:
+- **Supabase** as the shared data layer (propositions, reports, clients already live there — the web app reads/writes the same DB)
+- **A trigger mechanism** to kick off report runs (a Supabase webhook, a lightweight API endpoint in this project, or a cron that polls the DB)
+
+This keeps the report engine clean and independently deployable. The web app becomes a front-end to the same data, not a wrapper around the engine.
+
+**Evaluate at project start:**
+- Is Supabase the right shared layer, or do we need an explicit API between the two?
+- Should report runs be triggered by a DB row insert (web app writes → engine picks up) or a direct API call?
+- Authentication model for the admin panel — Supabase Auth vs external provider
+
+### MCP — evaluate for the web app phase
+
+> **Review MCP (Model Context Protocol) before building the web app.** Do not assume the current tool architecture carries over unchanged.
+
+**What MCP is:** Anthropic's open standard for connecting AI to external tools and data. Instead of hand-rolling tool execution (as this project does via Python subprocesses), MCP servers expose tools over a standard protocol that any compatible client can use.
+
+**Why it may be relevant for the web app:**
+- The web app will likely need Claude-powered features (report Q&A, client onboarding assistance, admin summaries)
+- Rather than duplicating the tool layer, MCP servers could expose Brave Search, FDA, Census, USDA, etc. as shared services that both this pipeline and the web app consume
+- MCP is gaining broad adoption (OpenAI, Google DeepMind both support it as of 2025) — likely to be a stable foundation
+
+**What to evaluate:**
+1. Is MCP mature enough and well-supported by the time we start the web app?
+2. Would converting the existing Python tools to MCP servers provide enough benefit to justify the rewrite?
+3. Does the web app's Claude integration benefit from shared MCP servers, or is the tool usage different enough that it doesn't matter?
+
+**Decision rule:** If the web app needs Claude with tool access and the same tools this pipeline uses — MCP is worth it. If the web app's Claude usage is narrow (Q&A over existing report data, no external API calls) — skip MCP and keep it simple.
+
+---
+
 ## Architectural principles that carry through all phases
 
 1. **WAT stays intact.** Workflows → Agents → Tools. Adding a new industry or venture type means adding new workflow markdown files and optionally new tool scripts. The orchestrator (`run.js`) changes minimally.
@@ -186,6 +227,8 @@ Likely implementation: `intake.js` branches on `--proposition-type` and prompts 
 4. **Delivery pipeline is unchanged.** PDF → Supabase Storage → Resend email. The report format may grow more sections, but the delivery mechanism stays the same.
 
 5. **New propositions = new DB rows, not new code** (as much as possible). The goal in V2/V3 is that adding a new industry or venture type only requires new workflow markdown files and possibly one new tool script — not a rewrite of the orchestrator.
+
+6. **Data retention is automated.** `agent_outputs` are purged after every run. A monthly cron runs `node tools/cleanup.js --prune --confirm` to enforce the 6-month report retention window (reports, sources, Storage files) and sweep expired `api_cache` entries (7-day TTL). Set this up once the V1 end-to-end test passes and real client data starts accumulating.
 
 ---
 

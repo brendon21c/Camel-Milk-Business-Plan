@@ -338,10 +338,37 @@ def draw_cover_page(cv, meta: dict, score: dict):
     cv.line(1.4 * inch, label_y - 8, PAGE_W - 1.4 * inch, label_y - 8)
 
     # ── Proposition title ──────────────────────────────────────────────────────
-    title_y = PAGE_H - 2.7 * inch
-    cv.setFont('Montserrat-ExtraBold', 30)
+    # Wrap long titles onto multiple lines so text never clips at page edges.
+    title_y    = PAGE_H - 2.7 * inch
+    title_font = 'Montserrat-ExtraBold'
+    title_size = 30
+    max_title_w = PAGE_W - 2.0 * inch   # 1 inch margin each side
+
+    cv.setFont(title_font, title_size)
     cv.setFillColor(WHITE)
-    cv.drawCentredString(PAGE_W / 2, title_y, meta['proposition_title'])
+
+    raw_title = meta['proposition_title']
+    if cv.stringWidth(raw_title, title_font, title_size) <= max_title_w:
+        cv.drawCentredString(PAGE_W / 2, title_y, raw_title)
+    else:
+        # Split at word boundaries to fill lines up to max_title_w
+        words = raw_title.split(' ')
+        lines, current = [], ''
+        for word in words:
+            test = (current + ' ' + word).strip()
+            if cv.stringWidth(test, title_font, title_size) <= max_title_w:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+
+        line_h  = title_size * 1.25
+        start_y = title_y + ((len(lines) - 1) * line_h) / 2
+        for i, line in enumerate(lines):
+            cv.drawCentredString(PAGE_W / 2, start_y - i * line_h, line)
 
     cv.setFont('Montserrat-Bold', 14)
     cv.setFillColor(SILVER)
@@ -590,45 +617,50 @@ def render_callout(block: dict, styles: dict) -> list:
 
 def render_key_figures(block: dict, styles: dict) -> list:
     """
-    Render a horizontal strip of stat cards.
+    Render a horizontal strip of stat cards, max 4 per row.
     Each card shows a label (small, silver) above a value (large, navy bold).
-    Implemented as a single-row Table where each cell is a two-line card.
+    Items beyond 4 wrap onto a second row so cells are never too narrow to read.
     """
     items = block.get('items', [])
     if not items:
         return []
 
-    cells = []
-    for item in items:
-        label = Paragraph(item.get('label', ''), styles['kf_label'])
-        value = Paragraph(item.get('value', ''), styles['kf_value'])
-        cells.append([label, value])
+    # Cap columns at 4 so each cell is at least ~130pt wide (readable)
+    MAX_PER_ROW = 4
+    out = []
 
-    # Transpose so each item is a column
-    col_w = FRAME_W / len(items)
-    row   = []
-    for item in items:
-        cell_content = (
-            f'<font name="Montserrat-Medium" size="7.5" color="#8A9BB0">{item.get("label","")}</font>'
-            f'<br/>'
-            f'<font name="Montserrat-Bold" size="14" color="#1C3557">{item.get("value","")}</font>'
-        )
-        row.append(Paragraph(cell_content, styles['body']))
+    # Chunk items into rows of MAX_PER_ROW
+    for chunk_start in range(0, len(items), MAX_PER_ROW):
+        chunk = items[chunk_start:chunk_start + MAX_PER_ROW]
+        col_w = FRAME_W / len(chunk)
 
-    t = Table([row], colWidths=[col_w] * len(items))
-    t.setStyle(TableStyle([
-        ('BACKGROUND',    (0, 0), (-1, -1), OFFWHITE),
-        ('TOPPADDING',    (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-        ('LEFTPADDING',   (0, 0), (-1, -1), 12),
-        ('RIGHTPADDING',  (0, 0), (-1, -1), 12),
-        ('LINEABOVE',     (0, 0), (-1, 0),  1.5, GOLD),
-        ('LINEBELOW',     (0, 0), (-1, -1), 0.4, SILVER),
-        ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
-        ('ALIGN',         (0, 0), (-1, -1), 'LEFT'),
-    ]))
+        row = []
+        for item in chunk:
+            # Use 11pt for value to keep long strings (e.g. "$100,000–$300,000") on one line
+            cell_content = (
+                f'<font name="Montserrat-Medium" size="7.5" color="#8A9BB0">{item.get("label","")}</font>'
+                f'<br/>'
+                f'<font name="Montserrat-Bold" size="11" color="#1C3557">{item.get("value","")}</font>'
+            )
+            row.append(Paragraph(cell_content, styles['body']))
 
-    return [t, Spacer(1, 10)]
+        t = Table([row], colWidths=[col_w] * len(chunk))
+        t.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1, -1), OFFWHITE),
+            ('TOPPADDING',    (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
+            ('LINEABOVE',     (0, 0), (-1, 0),  1.5, GOLD),
+            ('LINEBELOW',     (0, 0), (-1, -1), 0.4, SILVER),
+            ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN',         (0, 0), (-1, -1), 'LEFT'),
+        ]))
+
+        out.extend([t, Spacer(1, 4)])
+
+    out.append(Spacer(1, 6))
+    return out
 
 
 def render_block(block: dict, styles: dict) -> list:
@@ -672,13 +704,26 @@ def render_toc(sections: list, styles: dict) -> list:
     out.append(rule)
     out.append(Spacer(1, 14))
 
+    # Build TOC rows — left column is a section symbol + number,
+    # right column is the section title. We do NOT show page numbers here
+    # because Platypus requires a two-pass build to resolve them accurately.
     toc_rows = []
     for s in sections:
-        num   = Paragraph(str(s.get('number', '')), styles['toc_number'])
+        # Skip standalone sections rendered outside the main sections loop
+        if s.get('id') in ('what_changed', 'sources'):
+            continue
+        num   = Paragraph(f'§{s.get("number", "")}', styles['toc_number'])
         title = Paragraph(s['title'], styles['toc_entry'])
         toc_rows.append([num, title])
 
-    toc_table = Table(toc_rows, colWidths=[0.5 * inch, FRAME_W - 0.5 * inch])
+    # Append what_changed and sources as final TOC entries if they exist in sections
+    for s in sections:
+        if s.get('id') in ('what_changed', 'sources'):
+            num   = Paragraph(f'§{s.get("number", "")}', styles['toc_number'])
+            title = Paragraph(s['title'], styles['toc_entry'])
+            toc_rows.append([num, title])
+
+    toc_table = Table(toc_rows, colWidths=[0.55 * inch, FRAME_W - 0.55 * inch])
     toc_table.setStyle(TableStyle([
         ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING',   (0, 0), (-1, -1), 0),
@@ -703,7 +748,11 @@ def render_score_breakdown(score: dict, styles: dict) -> list:
     out.append(Paragraph('Viability Score Breakdown', styles['subheading']))
 
     headers = ['Factor', 'Score', 'Weight', 'Rationale']
-    col_widths = [1.3 * inch, 0.65 * inch, 0.6 * inch, FRAME_W - 2.55 * inch]
+    # Factor: 1.3 inch (fits "Market Demand" at 9pt)
+    # Score:  0.65 inch (fits "Score" header at 9pt bold without wrap)
+    # Weight: 0.75 inch (fits "Weight" header at 9pt bold without wrap)
+    # Rationale: remainder — still ~330pt, more than enough for long text.
+    col_widths = [1.3 * inch, 0.65 * inch, 0.75 * inch, FRAME_W - 2.70 * inch]
 
     rows = []
     for f in score.get('factors', []):
@@ -908,20 +957,28 @@ def build_pdf(content: dict, output_path: str):
     story.extend(render_toc(content['sections'], styles))
     story.append(PageBreak())
 
-    # Pages 3+ — Content sections
+    # Pages 3+ — Content sections.
+    # Skip 'what_changed' and 'sources' here — they are rendered via their own
+    # dedicated calls below. The assembler may include them as regular sections,
+    # which would cause duplicate pages without this filter.
+    STANDALONE_IDS = {'what_changed', 'sources'}
     for section in content['sections']:
+        if section.get('id') in STANDALONE_IDS:
+            continue
         # Inject score breakdown into Executive Summary
         section_score = score if section.get('id') == 'executive_summary' else None
         story.extend(render_section(section, styles, score=section_score))
         story.append(PageBreak())
 
-    # What Changed — only on run 2+
+    # What Changed — only on run 2+.
+    # No forced PageBreak after it — Sources flows directly below on the same page
+    # (both are always short; forcing a break creates a mostly-empty Sources page).
     what_changed = content.get('what_changed')
     if what_changed:
         story.extend(render_what_changed(what_changed, styles))
-        story.append(PageBreak())
+        story.append(Spacer(1, 24))  # breathing room between the two tail sections
 
-    # Sources
+    # Sources — flows on the same page as What Changed (or starts fresh after last section)
     story.extend(render_sources(content.get('sources', []), styles))
 
     # Build the PDF

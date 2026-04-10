@@ -13,6 +13,10 @@
  *   # Run a specific proposition on demand (bypasses next_run_at check)
  *   node run.js --proposition-id <uuid> --force
  *
+ *   # Regenerate the PDF for an existing completed report (no agents, no email)
+ *   # Downloads the stored content JSON, rebuilds the PDF, saves to outputs/ for review
+ *   node run.js --regen-pdf --report-id <uuid>
+ *
  * Architecture (WAT framework):
  *   Workflows (instructions) → Agents (Claude — reasoning/synthesis)
  *   → Tools (Python scripts — deterministic execution)
@@ -31,6 +35,7 @@ const {
   getClientById,
   getDuePropositions,
   getReportsByPropositionId,
+  getReportById,
   getAgentOutputsByReportId,
   createReport,
   updateReportStatus,
@@ -39,6 +44,7 @@ const {
   saveAgentOutput,
   saveReportSource,
   advancePropositionSchedule,
+  deleteAgentOutputsByReportId,
 } = require('./db');
 
 // ---------------------------------------------------------------------------
@@ -500,22 +506,31 @@ function loadWorkflow(filename) {
 
 /**
  * Parses CLI arguments from process.argv.
- * @returns {{ propositionId: string|undefined, force: boolean }}
+ * @returns {{ propositionId: string|undefined, force: boolean, regenPdf: boolean, reportId: string|undefined }}
  */
 function parseArgs() {
   const args   = process.argv.slice(2);
-  const result = { propositionId: undefined, force: false };
+  const result = { propositionId: undefined, force: false, regenPdf: false, reportId: undefined };
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--proposition-id' && args[i + 1]) {
       result.propositionId = args[++i];
     } else if (args[i] === '--force') {
       result.force = true;
+    } else if (args[i] === '--regen-pdf') {
+      result.regenPdf = true;
+    } else if (args[i] === '--report-id' && args[i + 1]) {
+      result.reportId = args[++i];
     }
   }
 
   if (result.force && !result.propositionId) {
     console.error('Error: --force requires --proposition-id <uuid>');
+    process.exit(1);
+  }
+
+  if (result.regenPdf && !result.reportId) {
+    console.error('Error: --regen-pdf requires --report-id <uuid>');
     process.exit(1);
   }
 
@@ -1391,6 +1406,24 @@ Now produce the complete content JSON.`;
   await updateReportPdfUrl(reportId, pdfUrl);
   console.log(`    ✓ PDF uploaded to Storage`);
 
+  // 11b. Upload the content JSON to Storage alongside the PDF.
+  //      This enables --regen-pdf to rebuild the PDF from stored data without
+  //      re-running any agents. Stored at {proposition_id}/{reportId}_content.json.
+  const contentStoragePath = `${proposition.id}/${reportId}_content.json`;
+  const { error: contentUploadError } = await supabase.storage
+    .from('reports')
+    .upload(contentStoragePath, JSON.stringify(contentJson, null, 2), {
+      contentType: 'application/json',
+      upsert:      true,
+    });
+
+  if (contentUploadError) {
+    // Non-fatal — log a warning but don't abort. The PDF is already delivered.
+    console.warn(`    ⚠ Content JSON upload failed (non-fatal): ${contentUploadError.message}`);
+  } else {
+    console.log(`    ✓ Content JSON uploaded to Storage`);
+  }
+
   // 12. Email the report to the client
   const viabilityScore = contentJson.viability_score || {};
   await sendReportEmail(client, proposition, pdfPath, reportMonth, viabilityScore, confidence);
@@ -1400,8 +1433,17 @@ Now produce the complete content JSON.`;
   await updateReportStatus(reportId, 'complete');
   console.log('  ✓ Report status → complete');
 
-  // 14. Clean up content JSON (PDF stays in outputs/ for local reference)
+  // 14. Clean up — local temp files and DB agent_outputs.
+  //     agent_outputs are large JSONB blobs only needed during the research→assembly
+  //     window. Delete them now that the PDF is built and delivered.
   try { fs.unlinkSync(contentFile); } catch (_) { /* Non-fatal */ }
+  try { fs.unlinkSync(pdfPath);     } catch (_) { /* Non-fatal */ }
+  try {
+    await deleteAgentOutputsByReportId(reportId);
+    console.log('  ✓ Agent outputs purged');
+  } catch (err) {
+    console.warn(`  ⚠ Agent output cleanup failed (non-fatal): ${err.message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1746,6 +1788,77 @@ async function runProposition(proposition, force) {
 }
 
 // ---------------------------------------------------------------------------
+// PDF regeneration (--regen-pdf)
+// ---------------------------------------------------------------------------
+
+/**
+ * Rebuilds the PDF for an existing completed report without re-running any agents.
+ * Downloads the content JSON from Supabase Storage, runs generate_report_pdf.py,
+ * and saves the result to outputs/ for local review.
+ * Does NOT re-email — call is for formatting review / formatting fixes only.
+ *
+ * @param {string} reportId - UUID of the completed report to regenerate.
+ */
+async function regenPdfFromStorage(reportId) {
+  console.log(`\nRegenerating PDF for report: ${reportId}`);
+
+  // 1. Fetch the report row to get proposition_id and the slug/date for the filename
+  const report = await getReportById(reportId);
+  if (!report) throw new Error(`Report ${reportId} not found in database`);
+
+  const proposition = await getPropositionById(report.proposition_id);
+  if (!proposition) throw new Error(`Proposition ${report.proposition_id} not found`);
+
+  // 2. Download the content JSON from Supabase Storage
+  const contentStoragePath = `${proposition.id}/${reportId}_content.json`;
+  const { data: fileData, error: downloadError } = await supabase.storage
+    .from('reports')
+    .download(contentStoragePath);
+
+  if (downloadError) {
+    throw new Error(
+      `Could not download content JSON from Storage (${contentStoragePath}): ${downloadError.message}\n` +
+      `Note: content JSON is only stored for reports run after this feature was added.`
+    );
+  }
+
+  // 3. Write content JSON to .tmp/ so the PDF script can read it
+  const tmpDir      = path.join(__dirname, '.tmp');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const contentFile = path.join(tmpDir, `${reportId}_content.json`);
+  const contentText = await fileData.text();
+  fs.writeFileSync(contentFile, contentText);
+  console.log(`  ✓ Content JSON downloaded`);
+
+  // 4. Determine output filename — mirror the normal naming convention
+  const slug         = proposition.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const reportMonth  = new Date(report.created_at).toISOString().slice(0, 7); // YYYY-MM
+  const outputsDir   = path.join(__dirname, 'outputs');
+  fs.mkdirSync(outputsDir, { recursive: true });
+  const pdfFilename  = `${slug}_${reportMonth}_regen.pdf`;
+  const pdfPath      = path.join(outputsDir, pdfFilename);
+  const pdfScript    = path.join(__dirname, 'tools', 'generate_report_pdf.py');
+
+  // 5. Run the PDF builder against the downloaded content JSON
+  console.log('  Building PDF...');
+  try {
+    execSync(
+      `${PYTHON} "${pdfScript}" --report-id "${reportId}" --content "${contentFile}" --output "${pdfPath}"`,
+      { stdio: 'inherit', cwd: __dirname, timeout: 120_000 }
+    );
+  } catch (err) {
+    throw new Error(`PDF generation failed: ${err.message}`);
+  }
+  console.log(`  ✓ PDF saved → ${pdfPath}`);
+
+  // 6. Clean up the local content JSON (already stored in Supabase)
+  try { fs.unlinkSync(contentFile); } catch (_) { /* Non-fatal */ }
+
+  console.log('\nReview the PDF at the path above.');
+  console.log('To re-upload and re-email, run the full pipeline with --force.');
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1758,6 +1871,12 @@ async function main() {
   console.log(`Started: ${new Date().toISOString()}`);
 
   const args = parseArgs();
+
+  // --regen-pdf: rebuild a PDF from stored content JSON, skip all agents and email
+  if (args.regenPdf) {
+    await regenPdfFromStorage(args.reportId);
+    return;
+  }
 
   let propositions;
   try {
