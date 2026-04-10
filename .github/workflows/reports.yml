@@ -13,7 +13,7 @@ name: Monthly Report Run
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # 06:00 UTC daily — getDuePropositions() decides what actually runs
+    - cron: '0 13 * * *'   # 13:00 UTC daily = 07:00 CST — getDuePropositions() decides what actually runs
   workflow_dispatch:        # manual trigger from GitHub Actions UI
     inputs:
       force:

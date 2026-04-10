@@ -6,7 +6,7 @@ name: Weekly Cleanup
 
 on:
   schedule:
-    - cron: '0 2 * * 0'   # 02:00 UTC every Sunday
+    - cron: '0 13 * * 0'   # 13:00 UTC every Sunday = 07:00 CST
   workflow_dispatch:        # also runnable manually from GitHub Actions UI
 
 jobs:
