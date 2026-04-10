@@ -191,8 +191,27 @@ Flag risks clearly. Cite figures. Every claim should be traceable to a source.
 | 11 | Financial Projections | financials | Use narrative_summary + unit economics table + startup capital |
 | 12 | Risk Assessment | legal + regulatory + origin_ops | Consolidate all risks. Rate each: likelihood × impact. |
 | 13 | Recommendations | All | 5–7 prioritised, actionable recommendations. Most important first. |
-| 14 | What Changed This Month | previous_outputs vs current | Run 2+ only. Bullet-point deltas per section. Skip on run 1. |
-| 15 | Sources | report_sources table | Full URL list, grouped by section |
+| 14 | Data Confidence | confidence score + agent outputs | Always present. Explain the score in plain language — see spec below. |
+| 15 | What Changed This Month | previous_outputs vs current | Run 2+ only. Bullet-point deltas per section. Skip on run 1. |
+| 16 | Sources | report_sources table | Full URL list, grouped by section |
+
+**Section 14 — Data Confidence spec:**
+
+This section makes the confidence score transparent and meaningful to the client. Include:
+
+1. **Score and label** — state the score (e.g. 79/100) and interpretation (High / Moderate / Low / Very Low)
+2. **Signal breakdown table** — one row per signal showing its weight, its score for this run, and a one-line explanation of what drove it:
+
+| Signal | Weight | Score | What drove it |
+|---|---|---|---|
+| Field Confidence Ratings | 45% | XX/100 | e.g. "Most fields rated high; medium ratings on Somalia supplier data" |
+| Agent Completion | 25% | XX/100 | e.g. "All 10 agents completed" or "Marketing agent failed, reducing score" |
+| Source Coverage | 20% | XX/100 | e.g. "Average 8 sources per agent; 2 agents below the 10-source target" |
+| Data Gaps | 10% | XX/100 | e.g. "12 data gaps flagged across all agents" |
+
+3. **Plain-English interpretation** — 2–3 sentences explaining what this score means in real-world terms. Name the specific sections most affected by uncertainty. Explain whether the viability verdict should be treated as definitive or directional.
+
+4. **Affected sections** — if any agents failed or produced predominantly low/medium confidence fields, name the specific report sections the client should read with more caution.
 
 ### 5. Generate PDF
 
@@ -327,6 +346,7 @@ Before generating the PDF, verify:
 - [ ] All 6 viability score factors are populated with a score and rationale
 - [ ] Overall viability score is between 1.0 and 5.0
 - [ ] Data confidence score is present (0–100) or explicitly set to null with reason noted
+- [ ] Section 14 (Data Confidence) is present with signal breakdown table and plain-English interpretation
 - [ ] If confidence is Low or Very Low, a callout is present in the Executive Summary
 - [ ] Executive Summary is present and leads with the verdict
 - [ ] All 13 sections (or 14 on run 2+) have content — no empty sections

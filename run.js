@@ -69,7 +69,7 @@ const supabase = createSupabaseClient(
 
 // Admin email receives failure alerts; client never sees failures
 const ADMIN_EMAIL = 'brennon.mckeever@gmail.com';
-const FROM_EMAIL  = 'McKeever Consulting <onboarding@resend.dev>';
+const FROM_EMAIL  = 'McKeever Consulting <reports@mckeeverconsulting.org>';
 
 // Research agent names — must match workflow filenames (research_<name>.md)
 const RESEARCH_AGENTS = [
@@ -745,7 +745,7 @@ Synthesize the results and respond with ONLY the JSON object from the Output For
         system:     systemPrompt,
         userPrompt,
         tools:      RESEARCH_TOOLS,
-        maxTokens:  8096,
+        maxTokens:  16000, // Raised from 8096 — sonnetOnly agents (marketing, financials, packaging) can produce large JSON outputs
         maxIter:    20, // Sonnet converges faster — lower ceiling to control cost
       });
     } catch (sonnetErr) {
@@ -1057,6 +1057,9 @@ function checkQuality(agentOutputs) {
   }
 
   console.log(`  ✓ Quality gate passed (${complete.length}/10 agents complete)`);
+
+  // Return soft-failed agent names so the caller can attempt a retry
+  return failed;
 }
 
 // ---------------------------------------------------------------------------
@@ -1091,14 +1094,258 @@ function computeDataConfidence(reportId) {
 }
 
 // ---------------------------------------------------------------------------
+// Assembler agent — helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-section writing instructions for each report section.
+ * Injected into individual section prompts to keep each call focused.
+ */
+const ASSEMBLER_SECTION_INSTRUCTIONS = {
+  executive_summary:
+    `Write a maximum 1-page executive summary. Lead with the viability verdict and weighted score.
+     Include a key_figures block showing the overall viability score and data confidence score.
+     Write 3-5 key findings as a bullets block. List the top 3 risks and top 3 opportunities as bullets.
+     Reference the data confidence interpretation in the prose.`,
+
+  market_overview:
+    `Synthesise the market_overview agent output into a narrative section.
+     Cover market size, growth rate, and demand drivers. Include key figures as a key_figures block.
+     Discuss the target demographic in a paragraph.`,
+
+  competitor_analysis:
+    `Synthesise the competitors agent output. Use the narrative_summary as the foundation.
+     Include a table of key competitors with columns: Competitor | Product | Price Point | Channels | Key Differentiator.`,
+
+  regulatory_landscape:
+    `Synthesise the regulatory agent output. Flag any hard blockers prominently using callout blocks
+     with label "Regulatory Blocker". Cover FDA import requirements, labeling rules, and any
+     Somalia-specific trade restrictions or sanctions flags.`,
+
+  production_equipment:
+    `Synthesise the production agent output. Cover the production process and key technical requirements.
+     Include a table of key equipment with columns: Equipment | Purpose | Estimated Cost.`,
+
+  packaging:
+    `Synthesise the packaging agent output. Cover packaging options and their trade-offs.
+     Include a table with columns: Format | Material | MOQ | Cost Per Unit | Pros | Cons.`,
+
+  distribution_strategy:
+    `Synthesise the distribution agent output. Cover the recommended channel mix and entry requirements.
+     Include a table with columns: Channel | Entry Requirement | Margin Impact | Best For.`,
+
+  marketing_influencers:
+    `Synthesise the marketing agent output. Cover key marketing channels and target audience segments.
+     If influencer data is available, include a table with columns: Platform | Audience | Opportunity.
+     Cover compliant health claim language — what can and cannot be said under FDA guidelines.`,
+
+  financial_projections:
+    `Synthesise the financials agent output. Include a unit economics table with columns:
+     Metric | Value (showing Revenue, COGS, Gross Margin %, Operating Costs, Net Margin per unit).
+     Include a startup capital table with columns: Item | Estimated Cost.
+     Cover break-even timeline and 3-year trajectory in prose.`,
+
+  risk_assessment:
+    `Consolidate risks from the legal, regulatory, and origin_ops agent outputs.
+     Include a risk table with columns: Risk | Category | Likelihood | Impact | Mitigation.
+     Use High / Medium / Low for Likelihood and Impact. At least 5 risks required.`,
+
+  recommendations:
+    `Provide 5-7 prioritised, actionable recommendations drawn from all research.
+     Most critical first. Each recommendation must be a concrete next step, not vague advice.
+     Use a numbered bullets block.`,
+
+  data_confidence:
+    `Write the Data Confidence section explaining the score in plain language.
+     (1) A key_figures block showing the score (e.g. 79/100) and interpretation label.
+     (2) A table with columns: Signal | Weight | What Drove It — covering all 4 signals:
+         Field Confidence Ratings (45%), Agent Completion (25%), Source Coverage (20%), Data Gaps (10%).
+     (3) A paragraph explaining in plain English what this score means in real-world terms.
+         Name specific sections with lower confidence. State whether the viability verdict
+         should be treated as definitive or directional.
+     (4) If any research agents failed, name the affected report sections explicitly.`,
+};
+
+/**
+ * Makes a streaming Sonnet call and returns the text.
+ * Retries automatically on 429 rate limits and transient stream terminations.
+ * Throws if all retry attempts are exhausted.
+ *
+ * @param {string} systemPrompt
+ * @param {Array}  messages      - Conversation history array for the API call.
+ * @param {number} maxTokens     - Output token ceiling for this call.
+ */
+async function streamSonnetCall(systemPrompt, messages, maxTokens) {
+  let attempts = 0;
+  while (true) {
+    attempts++;
+    try {
+      return await anthropic.messages.stream({
+        model:      'claude-sonnet-4-6',
+        max_tokens: maxTokens,
+        system:     systemPrompt,
+        messages,
+      }).finalText();
+    } catch (err) {
+      const is429        = err.status === 429 || (err.message && err.message.includes('rate_limit_error'));
+      const isTerminated = err.message && err.message.includes('terminated');
+      if ((is429 || isTerminated) && attempts <= 3) {
+        const waitSec = is429 ? 60 * attempts : 30;
+        const reason  = is429 ? 'rate limited (429)' : 'stream terminated';
+        console.warn(`      ⚠ Sonnet ${reason} — waiting ${waitSec}s (attempt ${attempts}/3)...`);
+        await new Promise(r => setTimeout(r, waitSec * 1000));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
+/**
+ * Calls Sonnet with a prompt, attempts to parse the JSON response, and retries
+ * up to maxRepairs times on parse failure. Each repair sends the bad output back
+ * to Sonnet with the parse error so it can self-correct.
+ *
+ * Returns parsed JSON on success.
+ * Returns null if hardFail=false and all attempts are exhausted.
+ * Throws if hardFail=true and all attempts are exhausted.
+ *
+ * @param {string}  systemPrompt
+ * @param {string}  userPrompt
+ * @param {number}  maxTokens   - Output ceiling for this section.
+ * @param {number}  maxRepairs  - How many repair cycles to attempt (default 2).
+ * @param {boolean} hardFail    - If true, throw on total failure instead of returning null.
+ */
+async function callWithRepair(systemPrompt, userPrompt, maxTokens, maxRepairs = 2, hardFail = false) {
+  const messages = [{ role: 'user', content: userPrompt }];
+  let rawContent;
+
+  // Initial generation attempt
+  try {
+    rawContent = await streamSonnetCall(systemPrompt, messages, maxTokens);
+  } catch (err) {
+    const msg = `Initial generation failed: ${err.message}`;
+    if (hardFail) throw new Error(msg);
+    console.warn(`      ✗ ${msg}`);
+    return null;
+  }
+
+  // Parse + repair loop — attempt 0 is the initial parse, attempts 1..maxRepairs are repairs
+  for (let repair = 0; repair <= maxRepairs; repair++) {
+    try {
+      return parseJSON(rawContent);
+    } catch (parseErr) {
+      if (repair === maxRepairs) {
+        // All repair attempts exhausted
+        const msg = `JSON parse failed after ${maxRepairs} repair(s): ${parseErr.message}`;
+        if (hardFail) throw new Error(msg);
+        console.warn(`      ✗ ${msg}`);
+        return null;
+      }
+
+      console.warn(`      ⚠ JSON parse failed — repair attempt ${repair + 1}/${maxRepairs}...`);
+
+      // Show Sonnet what it returned and ask it to fix the specific error
+      messages.push({ role: 'assistant', content: rawContent });
+      messages.push({
+        role:    'user',
+        content: `Your response was not valid JSON.\n\nParse error: ${parseErr.message}\n\n` +
+                 `Return ONLY the corrected JSON — no markdown fences, no explanation, ` +
+                 `no text before or after the JSON object.`,
+      });
+
+      try {
+        rawContent = await streamSonnetCall(systemPrompt, messages, maxTokens);
+      } catch (repairErr) {
+        const msg = `Repair attempt ${repair + 1} stream failed: ${repairErr.message}`;
+        if (hardFail) throw new Error(msg);
+        console.warn(`      ✗ ${msg}`);
+        return null;
+      }
+    }
+  }
+}
+
+/**
+ * Builds a compact structural audit view of the content JSON for the Haiku review pass.
+ * Much smaller than the full JSON — sends structure and metadata, not prose content.
+ * This keeps the review call cheap and fast.
+ *
+ * @param {Object} contentJson - Fully assembled content JSON.
+ * @returns {Object} Compact audit representation.
+ */
+function buildAuditView(contentJson) {
+  return {
+    viability_score: {
+      overall: contentJson.viability_score?.overall,
+      verdict: contentJson.viability_score?.verdict,
+      factors: (contentJson.viability_score?.factors || []).map(f => ({
+        name:         f.name,
+        score:        f.score,
+        hasRationale: !!(f.rationale && f.rationale.trim()),
+      })),
+    },
+    sections: (contentJson.sections || []).map(s => ({
+      id:             s.id,
+      title:          s.title,
+      blockCount:     s.blocks?.length || 0,
+      isPlaceholder:  s.blocks?.some(b => b.label === 'Section Unavailable') || false,
+      blocks: (s.blocks || []).map(b => ({
+        type:       b.type,
+        // Structural check per block type — not the content itself
+        isEmpty:    b.type === 'paragraph'   ? !b.text?.trim() :
+                    b.type === 'table'       ? (!b.headers?.length || !b.rows?.length) :
+                    b.type === 'bullets'     ? !b.items?.length :
+                    b.type === 'callout'     ? !b.text?.trim() :
+                    b.type === 'key_figures' ? !b.items?.length : false,
+      })),
+    })),
+    sourceCount:    contentJson.sources?.length || 0,
+    hasWhatChanged: Array.isArray(contentJson.what_changed) && contentJson.what_changed.length > 0,
+  };
+}
+
+/**
+ * Build a compact text-only view of the report's prose content for the proofread pass.
+ *
+ * Only paragraph, bullets, and callout blocks are included — tables and key_figures
+ * are data blocks that the proofreader should not alter. The view is indexed by
+ * section_id and block_index so patches returned by the model can be applied directly.
+ *
+ * @param {Object} contentJson - Fully assembled content JSON.
+ * @returns {string} Human-readable multi-section text view.
+ */
+function buildProofreadView(contentJson) {
+  const lines = [];
+  for (const section of (contentJson.sections || [])) {
+    lines.push(`\n=== [${section.id}] ${section.title} ===`);
+    for (const [i, block] of (section.blocks || []).entries()) {
+      if (block.type === 'paragraph') {
+        lines.push(`PARA ${i}: ${block.text}`);
+      } else if (block.type === 'bullets') {
+        // Show label + items so the proofreader can spot repeated bullet points
+        const label = block.label ? `(${block.label}) ` : '';
+        lines.push(`BULLETS ${i} ${label}| ${(block.items || []).join(' | ')}`);
+      } else if (block.type === 'callout') {
+        lines.push(`CALLOUT ${i} (${block.label || ''}): ${block.text}`);
+      }
+      // tables and key_figures intentionally omitted
+    }
+  }
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Assembler agent
 // ---------------------------------------------------------------------------
 
 /**
- * Runs the assembler agent (Claude Sonnet).
- * Synthesizes all 10 research outputs into a complete report, computes the
- * viability score, writes the content JSON, generates the PDF, uploads to
- * Supabase Storage, and delivers by email.
+ * Runs the assembler agent using a section-by-section approach.
+ *
+ * Instead of one giant 25k-token Sonnet call (which reliably produces malformed JSON),
+ * we make one small call per report section (~2-6k tokens each). Each call has a
+ * 2-cycle repair loop. A Haiku quality pass runs after assembly. The content JSON is
+ * uploaded to Storage BEFORE PDF build so it's recoverable if PDF fails.
  *
  * This function owns the final `updateReportStatus('complete')` transition.
  *
@@ -1106,7 +1353,7 @@ function computeDataConfidence(reportId) {
  * @param {Object} agentOutputs - Map of agent_name → parsed research output.
  */
 async function runAssemblerAgent(context, agentOutputs) {
-  console.log('\n  Running assembler (Claude Sonnet)...');
+  console.log('\n  Running assembler (section-by-section)...');
 
   const { reportId, proposition, client, runNumber, previousReportId } = context;
 
@@ -1132,8 +1379,8 @@ async function runAssemblerAgent(context, agentOutputs) {
   }
 
   // 4. Build the report month string for file naming and display
-  const now         = new Date();
-  const reportMonth = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const now          = new Date();
+  const reportMonth  = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const reportYYYYMM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   // 5. Build the proposition slug for file naming
@@ -1143,47 +1390,40 @@ async function runAssemblerAgent(context, agentOutputs) {
     .replace(/^-|-$/g, '')
     .slice(0, 60);
 
-  // 6. Build the assembler prompt
+  // 6. System prompt — shared across all section calls
   const systemPrompt = `You are the report assembler for McKeever Consulting's Business Viability Intelligence System.
-
-Your role is to synthesise the outputs of 10 research agents into a complete, professional business viability report.
+Your role is to write ONE specific section of a professional business viability report.
 
 CRITICAL RULES:
-1. Compute the viability score from the research outputs using the scoring guide in the workflow
-2. Write all report sections in plain, professional English — no bullet-point walls, use paragraphs
+1. Your response must be ONLY the JSON object specified — no markdown code fences, no text before or after
+2. Write all prose in plain, professional English — paragraphs, not bullet-point walls
 3. Every claim must be traceable to the research data provided — do not invent figures
-4. Your response must be ONLY the content JSON object following the exact schema provided
-5. Do not wrap it in markdown code fences — raw JSON only
-6. Do not include any text before or after the JSON
-7. Every section must have at least 1 paragraph block — no empty sections`;
+4. Every block must have non-empty content — no empty strings, no placeholder text`;
 
-  const userPrompt = `Assemble a complete viability report from the research outputs below.
-
-## ASSEMBLER WORKFLOW
+  // 7. Build the shared research context — injected into every section prompt.
+  // All research data is included in every call so sections can cross-reference freely.
+  const researchContext = `## ASSEMBLER WORKFLOW (scoring guide and section guidance)
 ${assemblerWorkflow}
 
 ## REPORT METADATA
 \`\`\`json
 ${JSON.stringify({
-  report_id:          reportId,
-  proposition_id:     proposition.id,
-  client_id:          client.id,
-  run_number:         runNumber,
-  previous_report_id: previousReportId,
-  proposition: {
-    title:              proposition.title,
-    product_type:       proposition.product_type,
-    industry:           proposition.industry,
-    origin_country:     proposition.origin_country  || null,
-    target_country:     proposition.target_country,
-    target_demographic: proposition.target_demographic || null,
-    factor_weights:     proposition.factor_weights,
-  },
-  client: {
-    name:  client.name,
-    email: client.email,
-  },
-}, null, 2)}
+    report_id:          reportId,
+    proposition_id:     proposition.id,
+    client_id:          client.id,
+    run_number:         runNumber,
+    previous_report_id: previousReportId,
+    proposition: {
+      title:              proposition.title,
+      product_type:       proposition.product_type,
+      industry:           proposition.industry,
+      origin_country:     proposition.origin_country  || null,
+      target_country:     proposition.target_country,
+      target_demographic: proposition.target_demographic || null,
+      factor_weights:     proposition.factor_weights,
+    },
+    client: { name: client.name, email: client.email },
+  }, null, 2)}
 \`\`\`
 
 ## DATA CONFIDENCE SCORE (pre-computed)
@@ -1196,15 +1436,34 @@ ${JSON.stringify(confidence || { score: null, interpretation: 'Unavailable', des
 ${JSON.stringify(agentOutputs, null, 2)}
 \`\`\`
 
-${previousOutputs ? `## PREVIOUS REPORT OUTPUTS (for "What Changed" section)
-\`\`\`json
-${JSON.stringify(previousOutputs, null, 2)}
-\`\`\`` : '## PREVIOUS REPORT OUTPUTS\nThis is run #1 — no previous outputs. Omit the "What Changed" section.'}
+${previousOutputs
+    ? `## PREVIOUS REPORT OUTPUTS (for "What Changed")\n\`\`\`json\n${JSON.stringify(previousOutputs, null, 2)}\n\`\`\``
+    : '## PREVIOUS REPORT OUTPUTS\nRun #1 — no previous outputs.'}`;
 
-## CONTENT JSON SCHEMA
-Produce a JSON object matching this exact structure:
+  // Block schema reminder injected into every section prompt
+  const blockSchema = `Block types available:
+{ "type": "paragraph",   "text": "..." }
+{ "type": "bullets",     "label": "Optional heading", "items": ["...", "..."] }
+{ "type": "table",       "headers": ["Col1","Col2"], "rows": [["a","b"]] }
+{ "type": "callout",     "label": "Key Finding", "text": "..." }
+{ "type": "key_figures", "items": [{"label": "...", "value": "..."}] }`;
 
-\`\`\`
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  // 20s between section calls — each call sends ~20k input tokens; 20s keeps us
+  // safely within the 50k TPM rate limit window shared with research agents.
+  const INTER_SECTION_DELAY_MS = 20_000;
+
+  // ── Call 1: Meta + Viability Score ────────────────────────────────────────
+  // Hard fail — viability verdict is the core deliverable. No placeholder possible.
+  console.log('    [1/15] Computing viability score...');
+  const metaViabilityPrompt = `${researchContext}
+
+## YOUR TASK
+Compute the viability score from the research data. Apply the factor weights from the proposition.
+Score each factor 1–5 using the scoring guide in the workflow above. Calculate the weighted overall score.
+
+## OUTPUT SCHEMA
+Return ONLY this JSON object (no markdown fences, no other text):
 {
   "meta": {
     "proposition_title": "${proposition.title}",
@@ -1213,163 +1472,294 @@ Produce a JSON object matching this exact structure:
     "report_date":       "${reportMonth}",
     "run_number":        ${runNumber},
     "data_confidence": {
-      "score":          <0-100 number or null>,
-      "interpretation": "<High|Moderate|Low|Very Low|Unavailable>",
-      "description":    "<one sentence>"
+      "score":          ${confidence?.score ?? null},
+      "interpretation": "${confidence?.interpretation ?? 'Unavailable'}",
+      "description":    "${(confidence?.description ?? 'Confidence tool failed.').replace(/"/g, '\\"')}"
     }
   },
   "viability_score": {
-    "overall": <weighted score rounded to 1 decimal — range 1.0-5.0>,
+    "overall": <weighted score rounded to 1 decimal, range 1.0–5.0>,
     "verdict": "<Strong|Moderate|Weak>",
     "factors": [
-      {
-        "name":     "<factor_key>",
-        "label":    "<Human-readable label>",
-        "score":    <1-5>,
-        "weight":   <0-1>,
-        "rationale": "<one sentence plain English>"
-      }
-      // 6 factors total: market_demand, regulatory, competitive, financial, supply_chain, risk
+      { "name": "<factor_key>", "label": "<Human-readable label>", "score": <1-5>, "weight": <0-1>, "rationale": "<one sentence>" }
     ]
-  },
-  "sections": [
-    {
-      "id":     "<snake_case_section_id>",
-      "title":  "<Section Title>",
-      "number": <section number>,
-      "blocks": [
-        { "type": "paragraph",   "text": "..." },
-        { "type": "bullets",     "label": "Optional heading", "items": ["...", "..."] },
-        { "type": "table",       "headers": ["Col1","Col2"], "rows": [["a","b"]] },
-        { "type": "callout",     "label": "Key Finding", "text": "..." },
-        { "type": "key_figures", "items": [{"label": "...", "value": "..."}] }
-      ]
-    }
-    // Sections 3-13 always present. Section 14 (what_changed) only on run 2+.
-    // Section 15 (sources) always present.
-  ],
-  "sources": [
-    { "url": "...", "title": "...", "agent_name": "...", "retrieved_at": "<ISO timestamp>" }
-  ],
-  "what_changed": ${runNumber > 1 ? '["<bullet 1>", "<bullet 2>"]' : 'null'}
+  }
+}`;
+
+  const metaViability = await callWithRepair(systemPrompt, metaViabilityPrompt, 3000, 2, true);
+  const meta           = metaViability.meta;
+  const viabilityScore = metaViability.viability_score;
+  console.log(`    ✓ Viability: ${viabilityScore.overall} — ${viabilityScore.verdict}`);
+  await sleep(INTER_SECTION_DELAY_MS);
+
+  // Viability score summary injected into all subsequent section calls for cohesion
+  const viabilityContext = `## VIABILITY SCORE (pre-computed — use as reference in your section)
+\`\`\`json
+${JSON.stringify(viabilityScore, null, 2)}
+\`\`\``;
+
+  // ── Calls 2–13: Prose sections ────────────────────────────────────────────
+  const SECTION_SPECS = [
+    { callNum:  2, num: 3,  id: 'executive_summary',     title: 'Executive Summary',       maxTokens: 6000 },
+    { callNum:  3, num: 4,  id: 'market_overview',       title: 'Market Overview',         maxTokens: 6000 },
+    { callNum:  4, num: 5,  id: 'competitor_analysis',   title: 'Competitor Analysis',     maxTokens: 6000 },
+    { callNum:  5, num: 6,  id: 'regulatory_landscape',  title: 'Regulatory Landscape',    maxTokens: 6000 },
+    { callNum:  6, num: 7,  id: 'production_equipment',  title: 'Production & Equipment',  maxTokens: 6000 },
+    { callNum:  7, num: 8,  id: 'packaging',             title: 'Packaging',               maxTokens: 6000 },
+    { callNum:  8, num: 9,  id: 'distribution_strategy', title: 'Distribution Strategy',   maxTokens: 6000 },
+    { callNum:  9, num: 10, id: 'marketing_influencers', title: 'Marketing & Influencers', maxTokens: 6000 },
+    { callNum: 10, num: 11, id: 'financial_projections', title: 'Financial Projections',   maxTokens: 6000 },
+    { callNum: 11, num: 12, id: 'risk_assessment',       title: 'Risk Assessment',         maxTokens: 6000 },
+    { callNum: 12, num: 13, id: 'recommendations',       title: 'Recommendations',         maxTokens: 4000 },
+    { callNum: 13, num: 14, id: 'data_confidence',       title: 'Data Confidence',         maxTokens: 4000 },
+  ];
+
+  const sections = [];
+
+  for (const spec of SECTION_SPECS) {
+    console.log(`    [${spec.callNum}/15] Section ${spec.num}: ${spec.title}...`);
+
+    const sectionPrompt = `${researchContext}
+
+${viabilityContext}
+
+## YOUR TASK
+Write section ${spec.num}: ${spec.title}
+
+${ASSEMBLER_SECTION_INSTRUCTIONS[spec.id]}
+
+## OUTPUT SCHEMA
+Return ONLY this JSON object:
+{
+  "id":     "${spec.id}",
+  "title":  "${spec.title}",
+  "number": ${spec.num},
+  "blocks": [ <one or more blocks — at least 1 paragraph required> ]
 }
-\`\`\`
 
-Sections to include (in order):
-- 3: Executive Summary — 1 page max, leads with verdict, key findings, top 3 risks, top 3 opportunities. Include data confidence as a key_figures block.
-- 4: Market Overview
-- 5: Competitor Analysis
-- 6: Regulatory Landscape — flag any hard blockers prominently
-- 7: Production & Equipment
-- 8: Packaging
-- 9: Distribution Strategy
-- 10: Marketing & Influencers
-- 11: Financial Projections — include unit economics table and startup capital table
-- 12: Risk Assessment — rate each risk: likelihood × impact
-- 13: Recommendations — 5-7 prioritised, actionable items
-${runNumber > 1 ? '- 14: What Changed This Month — delta bullets comparing previous and current outputs' : ''}
-- ${runNumber > 1 ? '15' : '14'}: Sources — full URL list grouped by section
+${blockSchema}`;
 
-Now produce the complete content JSON.`;
+    const result = await callWithRepair(systemPrompt, sectionPrompt, spec.maxTokens, 2, false);
 
-  // 7. Call Claude Sonnet via streaming — pure synthesis, no tools needed.
-  // Streaming is required here because the response is 15-25k tokens; a non-streaming
-  // request at that size can exceed the SDK's 10-minute timeout before the full response
-  // arrives. Streaming has no total-response timeout — only a between-chunks timeout —
-  // so it works regardless of generation time.
-  console.log('    Calling Claude Sonnet for report synthesis (streaming)...');
-  let rawContent;
-  let assemblerAttempts = 0;
-  while (true) {
-    assemblerAttempts++;
-    try {
-      rawContent = await anthropic.messages.stream({
-        model:      'claude-sonnet-4-6',
-        max_tokens: 32_000,    // Full report JSON can be ~15-25k tokens
-        system:     systemPrompt,
-        messages:   [{ role: 'user', content: userPrompt }],
-      }).finalText();
-      break; // success
-    } catch (streamErr) {
-      const is429 = streamErr.status === 429 ||
-        (streamErr.message && streamErr.message.includes('rate_limit_error'));
-      if (is429 && assemblerAttempts <= 5) {
-        const waitSec = 60 * assemblerAttempts; // 60s, 120s, 180s, 240s, 300s
-        console.warn(`      ⚠ Assembler rate limited (429) — waiting ${waitSec}s before retry ${assemblerAttempts}/5...`);
-        await new Promise(r => setTimeout(r, waitSec * 1000));
-      } else {
-        throw new Error(`Assembler Sonnet call failed after ${assemblerAttempts} attempt(s): ${streamErr.message}`);
-      }
-    }
-  }
-
-  // 8. Parse the content JSON — with JSON repair retries.
-  // If Sonnet returns malformed JSON (truncated output, mismatched braces, etc.),
-  // we send a follow-up message showing the bad output and asking it to fix it.
-  // Each repair attempt costs ~$0.50-1 — far cheaper than losing the whole run.
-  // Max 3 repair attempts before giving up.
-  const MAX_JSON_REPAIRS = 3;
-  let contentJson;
-  let parseMessages = [{ role: 'user', content: userPrompt }]; // conversation history for repairs
-
-  for (let attempt = 1; attempt <= MAX_JSON_REPAIRS + 1; attempt++) {
-    // On attempt 1, rawContent is already set from the streaming call above.
-    // On repair attempts, rawContent is set at the end of the previous iteration.
-    try {
-      contentJson = parseJSON(rawContent);
-      if (attempt > 1) {
-        console.log(`    ✓ JSON repaired on attempt ${attempt}`);
-      }
-      break; // valid JSON — exit the repair loop
-    } catch (parseErr) {
-      if (attempt > MAX_JSON_REPAIRS) {
-        // All repair attempts exhausted — surface a useful error
-        throw new Error(
-          `Assembler JSON parse failed after ${MAX_JSON_REPAIRS} repair attempt(s): ` +
-          `${parseErr.message}. First 400 chars: ${rawContent.slice(0, 400)}`
-        );
-      }
-
-      console.warn(`    ⚠ Assembler JSON parse failed (attempt ${attempt}/${MAX_JSON_REPAIRS}) — requesting repair from Sonnet...`);
-
-      // Build the repair conversation: show Sonnet what it returned and ask it to fix it
-      parseMessages.push({ role: 'assistant', content: rawContent });
-      parseMessages.push({
-        role: 'user',
-        content:
-          `Your previous response was not valid JSON and could not be parsed.\n\n` +
-          `Parse error: ${parseErr.message}\n\n` +
-          `Please return ONLY the corrected JSON object — no markdown fences, ` +
-          `no explanation, no text before or after. Fix any truncation, unclosed braces, ` +
-          `or invalid syntax. The structure must match the schema provided earlier.`,
+    if (result) {
+      sections.push(result);
+      console.log(`    ✓ Section ${spec.num} complete`);
+    } else {
+      // Non-fatal — insert a placeholder callout and continue
+      sections.push({
+        id:     spec.id,
+        title:  spec.title,
+        number: spec.num,
+        blocks: [{
+          type:  'callout',
+          label: 'Section Unavailable',
+          text:  `The ${spec.title} section could not be generated for this run due to a technical error. It will be included in the next scheduled report.`,
+        }],
       });
-
-      // Stream the repair attempt
-      try {
-        rawContent = await anthropic.messages.stream({
-          model:      'claude-sonnet-4-6',
-          max_tokens: 32_000,
-          system:     systemPrompt,
-          messages:   parseMessages,
-        }).finalText();
-      } catch (repairErr) {
-        throw new Error(`Assembler JSON repair attempt ${attempt} failed: ${repairErr.message}`);
-      }
+      console.warn(`    ⚠ Section ${spec.num} failed after repairs — placeholder inserted`);
     }
+
+    await sleep(INTER_SECTION_DELAY_MS);
   }
 
-  // 9. Write content JSON to .tmp/ for the PDF builder
+  // ── Call 14: What Changed (run 2+ only) ───────────────────────────────────
+  let whatChanged = null;
+  if (runNumber > 1 && previousOutputs) {
+    console.log('    [14/15] What Changed...');
+    const whatChangedPrompt = `${researchContext}
+
+${viabilityContext}
+
+## YOUR TASK
+Compare the previous report outputs with the current report outputs and produce a list of
+meaningful delta bullets for the "What Changed This Month" section.
+
+Focus on: new findings, changed figures, resolved or new risks, regulatory updates, market shifts.
+Ignore minor wording differences — only include substantive changes.
+
+## OUTPUT SCHEMA
+Return ONLY a JSON array of strings (not an object):
+["<change bullet 1>", "<change bullet 2>", ...]`;
+
+    whatChanged = await callWithRepair(systemPrompt, whatChangedPrompt, 3000, 2, false);
+    if (whatChanged) {
+      console.log('    ✓ What Changed complete');
+    } else {
+      whatChanged = ['What Changed data could not be generated for this run.'];
+      console.warn('    ⚠ What Changed failed — placeholder inserted');
+    }
+    await sleep(INTER_SECTION_DELAY_MS);
+  }
+
+  // ── Call 15: Sources ──────────────────────────────────────────────────────
+  console.log('    [15/15] Sources...');
+  const sourcesPrompt = `${researchContext}
+
+## YOUR TASK
+Compile the complete list of sources cited across all research agent outputs.
+Extract all URLs from the "sources" arrays within each agent output.
+Include every unique source — do not deduplicate unless the exact same URL appears twice.
+
+## OUTPUT SCHEMA
+Return ONLY a JSON array (not an object):
+[
+  { "url": "...", "title": "...", "agent_name": "research_<name>", "retrieved_at": "<ISO timestamp or null>" }
+]`;
+
+  const sources = await callWithRepair(systemPrompt, sourcesPrompt, 4000, 2, false) || [];
+  console.log(`    ✓ Sources compiled (${sources.length} entries)`);
+
+  // ── Assemble final content JSON ───────────────────────────────────────────
+  const contentJson = { meta, viability_score: viabilityScore, sections, sources, what_changed: whatChanged };
+
+  // ── Haiku quality review pass ─────────────────────────────────────────────
+  // Sends a compact structural audit view (not the full JSON) to keep this call cheap.
+  // Haiku checks for empty blocks, placeholder sections, missing viability data, etc.
+  // Returns a list of issues — we log them. Non-fatal: run always continues past here.
+  console.log('    Running quality review (Haiku)...');
+  try {
+    const auditView    = buildAuditView(contentJson);
+    const reviewPrompt = `You are a quality reviewer for a business report JSON. Review the structural audit below and return a JSON array of any issues found. If no issues, return [].
+
+Issue format: { "section_id": "...", "issue": "...", "severity": "warning|error" }
+
+Check for:
+- Sections with blockCount 0 or isPlaceholder true
+- Blocks where isEmpty is true
+- Viability score factors with score 0 or hasRationale false
+- sourceCount below 8
+- hasWhatChanged false on run ${runNumber} ${runNumber > 1 ? '(expected true)' : '(ok if false — run 1)'}
+
+AUDIT VIEW:
+${JSON.stringify(auditView, null, 2)}`;
+
+    const reviewResult = await anthropic.messages.create({
+      model:     'claude-haiku-4-5-20251001',
+      max_tokens: 1000, // Small — just listing issues
+      messages:  [{ role: 'user', content: reviewPrompt }],
+    });
+
+    const reviewText   = reviewResult.content[0]?.text || '[]';
+    const issues       = parseJSON(reviewText);
+    const errors       = issues.filter(i => i.severity === 'error');
+    const warnings     = issues.filter(i => i.severity === 'warning');
+
+    if (issues.length === 0) {
+      console.log('    ✓ Quality review passed — no issues found');
+    } else {
+      if (errors.length)   console.warn(`    ⚠ Quality review: ${errors.length} error(s) — ${errors.map(i => i.section_id + ': ' + i.issue).join('; ')}`);
+      if (warnings.length) console.log(`    ℹ Quality review: ${warnings.length} warning(s) — ${warnings.map(i => i.section_id + ': ' + i.issue).join('; ')}`);
+    }
+  } catch (reviewErr) {
+    // Non-fatal — a review failure never blocks delivery
+    console.warn(`    ⚠ Quality review failed (non-fatal): ${reviewErr.message.slice(0, 120)}`);
+  }
+
+  // ── Proofread pass (Sonnet) ───────────────────────────────────────────────
+  // Sends a compact text-only view of all prose sections to Sonnet.
+  // Returns targeted patches (section_id + block_index + new_text) that fix:
+  //   1. Cross-section repetition — same fact restated in multiple sections
+  //   2. Clarity — verbose or awkward sentences
+  // Patches are applied in-place to contentJson before PDF build.
+  // Non-fatal: a parse failure or Sonnet error never blocks delivery.
+  console.log('    Running proofread pass (Sonnet)...');
+  try {
+    const proofreaderView = buildProofreadView(contentJson);
+    const proofreadPrompt = `You are an editorial proofreader for a professional business viability report.
+
+Review the section content below and return a JSON array of text patches to fix:
+1. REPETITION: passages that restate a specific fact, figure, or claim already made in a prior section (cross-section only — within-section structure is fine)
+2. CLARITY: sentences that are verbose, ambiguous, or awkward enough to reduce readability
+
+Patch format:
+{ "section_id": "<id from [section_id] header>", "block_index": <integer from PARA/BULLETS/CALLOUT prefix>, "new_text": "<replacement text>" }
+
+Rules:
+- For PARA blocks: new_text replaces the full paragraph text
+- For BULLETS blocks: new_text is a \\n-delimited list of the replacement bullet items (same count or fewer)
+- For CALLOUT blocks: new_text replaces the callout body text
+- Do NOT alter tables or key_figures — omit them entirely
+- Keep the same professional tone and approximate length — reduce redundancy, don't change meaning
+- Only patch when the improvement is clear. Return [] if the report reads cleanly.
+- Return ONLY the JSON array — no markdown, no explanation
+
+REPORT CONTENT:
+${proofreaderView}`;
+
+    const proofreadResult = await anthropic.messages.create({
+      model:      'claude-sonnet-4-6',
+      max_tokens:  4000,
+      messages:   [{ role: 'user', content: proofreadPrompt }],
+    });
+
+    const proofreadText = proofreadResult.content[0]?.text || '[]';
+    const patches       = parseJSON(proofreadText);
+    let patchesApplied  = 0;
+
+    if (Array.isArray(patches) && patches.length > 0) {
+      // Build a lookup map: section_id → section object
+      const sectionMap = {};
+      for (const s of (contentJson.sections || [])) {
+        sectionMap[s.id] = s;
+      }
+
+      for (const patch of patches) {
+        const section = sectionMap[patch.section_id];
+        if (!section) continue;
+
+        const block = section.blocks?.[patch.block_index];
+        if (!block || typeof patch.new_text !== 'string' || !patch.new_text.trim()) continue;
+
+        if (block.type === 'paragraph') {
+          block.text = patch.new_text;
+          patchesApplied++;
+        } else if (block.type === 'bullets') {
+          // new_text is \\n-delimited replacement items
+          const newItems = patch.new_text.split('\n').map(s => s.trim()).filter(Boolean);
+          if (newItems.length > 0) {
+            block.items = newItems;
+            patchesApplied++;
+          }
+        } else if (block.type === 'callout') {
+          block.text = patch.new_text;
+          patchesApplied++;
+        }
+      }
+      console.log(`    ✓ Proofread: ${patches.length} suggestion(s), ${patchesApplied} patch(es) applied`);
+    } else {
+      console.log('    ✓ Proofread: no changes needed');
+    }
+  } catch (proofreadErr) {
+    // Non-fatal — a proofread failure never blocks delivery
+    console.warn(`    ⚠ Proofread pass failed (non-fatal): ${proofreadErr.message.slice(0, 120)}`);
+  }
+
+  // ── Write content JSON to .tmp/ ───────────────────────────────────────────
   const tmpDir      = path.join(__dirname, '.tmp');
   fs.mkdirSync(tmpDir, { recursive: true });
-
   const contentFile = path.join(tmpDir, `${reportId}_content.json`);
   fs.writeFileSync(contentFile, JSON.stringify(contentJson, null, 2));
-  console.log(`    ✓ Content JSON written: ${contentFile}`);
+  console.log(`    ✓ Content JSON written`);
 
-  // 10. Run the PDF builder
-  const outputsDir = path.join(__dirname, 'outputs');
+  // ── Upload content JSON to Storage BEFORE PDF build ───────────────────────
+  // Critical order: if PDF generation fails, the content JSON is already in Storage
+  // so Brendon can run --regen-pdf to rebuild without re-running any agents.
+  const contentStoragePath = `${proposition.id}/${reportId}_content.json`;
+  const { error: contentUploadError } = await supabase.storage
+    .from('reports')
+    .upload(contentStoragePath, JSON.stringify(contentJson, null, 2), {
+      contentType: 'application/json',
+      upsert:      true,
+    });
+  if (contentUploadError) {
+    console.warn(`    ⚠ Content JSON upload failed (non-fatal): ${contentUploadError.message}`);
+  } else {
+    console.log('    ✓ Content JSON uploaded to Storage');
+  }
+
+  // ── Build PDF ─────────────────────────────────────────────────────────────
+  const outputsDir  = path.join(__dirname, 'outputs');
   fs.mkdirSync(outputsDir, { recursive: true });
-
   const pdfFilename = `${slug}_${reportYYYYMM}.pdf`;
   const pdfPath     = path.join(outputsDir, pdfFilename);
   const pdfScript   = path.join(__dirname, 'tools', 'generate_report_pdf.py');
@@ -1385,61 +1775,36 @@ Now produce the complete content JSON.`;
   }
   console.log(`    ✓ PDF generated: ${pdfFilename}`);
 
-  // 11. Upload PDF to Supabase Storage (reports bucket)
+  // ── Upload PDF to Supabase Storage ────────────────────────────────────────
   const storagePath = `${proposition.id}/${reportId}.pdf`;
   const pdfBuffer   = fs.readFileSync(pdfPath);
 
   const { error: uploadError } = await supabase.storage
     .from('reports')
-    .upload(storagePath, pdfBuffer, {
-      contentType: 'application/pdf',
-      upsert:      true,   // Overwrite if re-running the same report
-    });
+    .upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
 
   if (uploadError) {
     throw new Error(`Supabase Storage upload failed: ${uploadError.message}`);
   }
 
-  // Store the storage path (not a signed URL) so the DB record never expires.
-  // Signed URLs are short-lived — storing one would cause 403s after 7 days.
-  // Generate a fresh signed URL on demand (e.g. web app, admin access) when needed.
+  // Store the storage path (not a signed URL) — signed URLs expire after 7 days.
+  // Generate fresh signed URLs on demand from the web app or admin panel.
   await updateReportPdfUrl(reportId, storagePath);
-  console.log(`    ✓ PDF uploaded to Storage`);
+  console.log('    ✓ PDF uploaded to Storage');
 
-  // 11b. Upload the content JSON to Storage alongside the PDF.
-  //      This enables --regen-pdf to rebuild the PDF from stored data without
-  //      re-running any agents. Stored at {proposition_id}/{reportId}_content.json.
-  const contentStoragePath = `${proposition.id}/${reportId}_content.json`;
-  const { error: contentUploadError } = await supabase.storage
-    .from('reports')
-    .upload(contentStoragePath, JSON.stringify(contentJson, null, 2), {
-      contentType: 'application/json',
-      upsert:      true,
-    });
-
-  if (contentUploadError) {
-    // Non-fatal — log a warning but don't abort. The PDF is already delivered.
-    console.warn(`    ⚠ Content JSON upload failed (non-fatal): ${contentUploadError.message}`);
-  } else {
-    console.log(`    ✓ Content JSON uploaded to Storage`);
-  }
-
-  // 12. Email the report to all recipients, then send one admin copy listing everyone
-  const viabilityScore = contentJson.viability_score || {};
+  // ── Email recipients ──────────────────────────────────────────────────────
+  const viabilityScoreObj = contentJson.viability_score || {};
   for (const recipient of context.recipients) {
-    await sendReportEmail(recipient, proposition, pdfPath, reportMonth, viabilityScore, confidence);
+    await sendReportEmail(recipient, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence);
     console.log(`    ✓ Report emailed to ${recipient.email}`);
   }
-  await sendAdminReportCopy(context.recipients, proposition, pdfPath, reportMonth, viabilityScore, confidence);
+  await sendAdminReportCopy(context.recipients, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence);
   console.log(`    ✓ Admin copy sent (${context.recipients.length} recipient(s) notified)`);
 
-  // 13. Mark report complete — assembler owns this transition
+  // ── Mark complete + cleanup ───────────────────────────────────────────────
   await updateReportStatus(reportId, 'complete');
   console.log('  ✓ Report status → complete');
 
-  // 14. Clean up — local temp files and DB agent_outputs.
-  //     agent_outputs are large JSONB blobs only needed during the research→assembly
-  //     window. Delete them now that the PDF is built and delivered.
   try { fs.unlinkSync(contentFile); } catch (_) { /* Non-fatal */ }
   try { fs.unlinkSync(pdfPath);     } catch (_) { /* Non-fatal */ }
   try {
@@ -1781,8 +2146,48 @@ async function runProposition(proposition, force) {
     // 6. Run all 10 research sub-agents
     const agentOutputs = await runResearchAgents(context);
 
-    // 6. Quality gate — validates outputs before assembly
-    checkQuality(agentOutputs);
+    // 6. Quality gate — validates outputs before assembly.
+    // Returns list of soft-failed (non-critical) agents so we can retry them.
+    const softFailed = checkQuality(agentOutputs);
+
+    // 6b. Retry soft-failed agents once before proceeding to assembly.
+    // A single agent failure (e.g. max_tokens on a large output) is often transient.
+    // Retrying avoids running the full pipeline again just for one missing section.
+    if (softFailed.length > 0) {
+      // Map of agent name → runner function (preserves sonnetOnly flags)
+      const AGENT_RUNNERS = {
+        market_overview: runMarketOverviewAgent,
+        competitors:     runCompetitorsAgent,
+        regulatory:      runRegulatoryAgent,
+        production:      runProductionAgent,
+        packaging:       runPackagingAgent,
+        distribution:    runDistributionAgent,
+        marketing:       runMarketingAgent,
+        financials:      runFinancialsAgent,
+        origin_ops:      runOriginOpsAgent,
+        legal:           runLegalAgent,
+      };
+
+      console.log(`\n  Retrying soft-failed agents: ${softFailed.join(', ')}...`);
+      // Wait 60 seconds so the rate limit window partially resets before retry
+      await new Promise(r => setTimeout(r, 60_000));
+
+      for (const agentName of softFailed) {
+        const runner = AGENT_RUNNERS[agentName];
+        if (!runner) continue; // safety guard — should never happen
+        console.log(`  → retrying ${agentName}...`);
+        agentOutputs[agentName] = await runner(context);
+
+        if (agentOutputs[agentName]) {
+          console.log(`  ✓ ${agentName} retry succeeded`);
+        } else {
+          console.log(`  ✗ ${agentName} retry also failed — gap will be noted in report`);
+        }
+      }
+
+      // Re-run quality gate with updated outputs to confirm we're still good to proceed
+      checkQuality(agentOutputs);
+    }
 
     // 7. Pre-assembler cooldown — research agents drain the 50k TPM budget.
     // Wait 2 minutes so the rate limit window resets before the assembler's

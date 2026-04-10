@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-10 (Session 15 — marketing sonnetOnly fix, haikusErr scope fix, source floor raised to 8, Resend domain setup)
+**Last updated:** 2026-04-10 (Session 17 — PDF formatting fixes, proofread pass added. V1 fully stable.)
 
 ---
 
@@ -26,21 +26,14 @@ Pipeline: Perplexity briefings → research agents → assembler → branded PDF
 
 ## Status
 
-All pre-launch code fixes are complete. E2E test was run — pipeline succeeded but email delivery to client (Iman) is blocked until Resend domain is verified. Remaining before V1 launch:
+**V1 is live and stable.** E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever from `reports@mckeeverconsulting.org`. Proposition on `retainer` plan — will auto-run May 1 via GitHub Actions.
 
 | # | Item | Priority |
 |---|---|---|
-| 1 | Verify Resend domain (`mckeeverconsulting.org`) — DNS records added, awaiting propagation. Once verified: update `from` address in run.js, re-run E2E test | **← Current blocker** |
-| 2 | After successful re-run: flip proposition `plan_tier` back to `starter` in Supabase | High |
-| 3 | Fix Census CBP `JSONDecodeError` — malformed JSON occasionally returned; add response validation before `json.loads()` in `fetch_census_data.py` | Low |
-| 4 | Add `--hold` flag — stops after PDF generation, saves to `outputs/`, prompts for confirmation before emailing client | Low |
+| 1 | Fix Census CBP `JSONDecodeError` — malformed JSON occasionally returned; add response validation before `json.loads()` in `fetch_census_data.py` | Low |
+| 2 | Add `--hold` flag — stops after PDF generation, saves to `outputs/`, prompts for confirmation before emailing client | Low |
 
-**Fixes applied this session (all in `run.js` and workflow files):**
-- `runPackagingAgent()` — `{ sonnetOnly: true }` (Haiku token limit)
-- `runMarketingAgent()` — `{ sonnetOnly: true }` (Haiku token limit, 208k > 200k)
-- `haikusErr` — hoisted `let haikusErr = null` to outer scope of `attemptWithEscalation()` (was `ReferenceError` when Sonnet path ran)
-- Signed URL fix — stores storage path in `pdf_url` instead of a 7-day signed URL
-- Source floor raised to 8 in all 10 research workflow `.md` files (was 3) — improves confidence score
+**Note:** Proposition is currently set to `plan_tier = 'retainer'` in Supabase to allow the May auto-run test. After the May run confirms scheduling works, flip back to `starter`.
 
 ---
 
@@ -59,25 +52,25 @@ Running research agents (sequential)...
   → packaging ... ✓     ← runs Sonnet directly (sonnetOnly)
   → marketing ... ✓     ← runs Sonnet directly (sonnetOnly)
   → financials ... ✓    ← runs Sonnet directly (sonnetOnly)
-  ... (remaining agents use Haiku, any escalations logged with ↑)
+  ... (remaining agents use Haiku; escalations logged with ↑)
 ✓ Quality gate passed (10/10 agents complete)
 ✓ Data confidence: XX/100  (target: 80+)
 Calling Claude Sonnet for report synthesis...
+  [section-by-section: 15 calls, ~20s delay between each]
+  Running quality review (Haiku)...
+  Running proofread pass (Sonnet)...
 ✓ PDF generated  ✓ PDF uploaded to Storage  ✓ Report emailed to 2 recipients
 ✓ Admin copy sent  ✓ Run complete
 ```
 
-**Note:** proposition is currently set to `plan_tier = 'retainer'` in Supabase to allow the May auto-run test. After the May run confirms scheduling works, flip back to `starter`.
-
-
 **If things break:**
 | Issue | Fix |
 |---|---|
-| Assembler JSON parse fails | Add `console.log(rawContent.slice(0, 1000))` before `parseJSON()` in `runAssemblerAgent()` |
-| Resend 403 / domain not verified | Check Resend dashboard → Domains → `mckeeverconsulting.org`. All 3 TXT records (DKIM, SPF, DMARC) are in Namecheap DNS. May still be propagating (up to 48h). |
+| Assembler JSON parse fails | Add `console.log(rawContent.slice(0, 1000))` before `parseJSON()` in `callWithRepair()` |
+| Resend 403 / domain not verified | Check Resend dashboard → Domains → `mckeeverconsulting.org`. All 3 TXT records (DKIM, SPF, DMARC) are in Namecheap DNS. |
 | Storage upload fails | Confirm `reports` bucket exists and is private in Supabase dashboard |
 | USDA NASS returns no data | Sometimes down — `executeTool` catches and returns `{ error: ... }`, agent handles gracefully |
-| Census CBP returns malformed JSON | Known issue — low priority. Will cause `fetch_census_data.py` to throw; agent handles gracefully via `executeTool` error catching |
+| Census CBP returns malformed JSON | Known issue — low priority. `fetch_census_data.py` throws; agent handles gracefully via `executeTool` error catching |
 
 ---
 
@@ -178,12 +171,22 @@ FDA/USDA are food-biased. For non-food propositions, the venture intelligence br
 ### Quality gate
 - Hard fail: any critical agent null (`market_overview`, `regulatory`, `financials`, `origin_ops`)
 - Hard fail: more than 1 agent failed total
-- Soft fail: exactly 1 non-critical agent null — continues, gap noted in report
+- Soft fail: exactly 1 non-critical agent null — retries once, then continues with gap noted in report
 
-### Assembler
-- **Claude Sonnet** (`claude-sonnet-4-6`), no tools, max 32k tokens
-- Input: assemble_report.md + all 10 research outputs + confidence score + previous outputs (run 2+)
-- Output: content JSON → PDF → Supabase Storage (PDF + content JSON) → Resend email → `status = complete`
+### Assembler (section-by-section)
+- **Claude Sonnet** (`claude-sonnet-4-6`), no tools
+- 15 individual calls (~2–6k tokens each) instead of one giant call — eliminates JSON parse failures
+- Each call has a 2-cycle repair loop via `callWithRepair()`
+- 20s inter-section delay for TPM rate limit management
+- **Haiku quality review** — compact structural audit (empty blocks, placeholders, missing viability data). Non-fatal.
+- **Sonnet proofread pass** — text-only view of all prose sent to Sonnet; returns patches fixing cross-section repetition and clarity. Applied in-place before PDF build. Non-fatal.
+- Content JSON uploaded to Storage **before** PDF build — enables `--regen-pdf` recovery if PDF fails
+
+### PDF output (`tools/generate_report_pdf.py`)
+- ReportLab Platypus — block-based layout
+- Block types: `paragraph`, `bullets`, `table`, `callout`, `key_figures`
+- Table column widths are content-aware (proportional to max content length per column)
+- Brand: Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`, Montserrat font
 
 ### Multi-recipient delivery
 - `proposition_recipients` table controls who gets the report per proposition
@@ -203,7 +206,7 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 
 ## DB Schema
 
-**8 migrations run (001–008).** 
+**8 migrations run (001–008).**
 
 | Table | Purpose |
 |---|---|
@@ -271,7 +274,7 @@ USASpending.gov and SEC EDGAR require no key. All keys are also stored as GitHub
 | 6 | Agent architecture | Haiku (research, tool-use) → Sonnet (assembly, synthesis) |
 | 7 | Viability score | 6 factors × weights, each 1–5. 4–5=Strong / 2.5–3.9=Moderate / 1–2.4=Weak |
 | 8 | Data confidence | 0–100 score (field confidence 45%, completion 25%, sources 20%, gaps 10%) |
-| 9 | Quality gate | Hard fail: critical agent null or >1 agent failed. Soft fail: 1 non-critical null. |
+| 9 | Quality gate | Hard fail: critical agent null or >1 agent failed. Soft fail: 1 non-critical null (retries once). |
 | 10 | Brave throttling | 500ms delay + exponential backoff, max 3 retries |
 | 11 | Failure alerting | Email to Brendon only. Client never notified. Error logged to DB. agent_outputs deleted immediately on failure. |
 | 12 | Brand | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat. |
@@ -284,6 +287,7 @@ USASpending.gov and SEC EDGAR require no key. All keys are also stored as GitHub
 | 19 | Plan tier gating | Starter/Pro retire to `on_demand` after their run limit. Retainer advances indefinitely. |
 | 20 | Scheduling | GitHub Actions — cleanup weekly (Sunday 2 AM UTC), reports monthly (1st, 6 AM UTC). |
 | 21 | Admin independence | Brendon is admin of McKeever Consulting via `organization_admins` table — independent of his client record. Multiple admins supported. |
+| 22 | Assembler architecture | Section-by-section (15 Sonnet calls, 2-cycle repair each) + Haiku structural review + Sonnet proofread pass. Eliminates JSON parse failures. Content JSON uploaded before PDF build. |
 
 ---
 
@@ -293,6 +297,6 @@ See `ROADMAP_V2.md` for full detail.
 
 | Phase | Scope | Key work |
 |---|---|---|
-| V1 | Physical import/export (current) | End-to-end test → launch |
+| V1 | Physical import/export (current) | Complete and stable |
 | V2 | Any physical product, any industry | Industry-aware gov data routing, migration 009 (`industry_category`), new tool scripts (DOE, EPA, FDA device, ITC), workflow generalisation |
 | V3 | SaaS, services, digital, franchise | New workflow sets per venture type, dynamic agent selection, new data sources |

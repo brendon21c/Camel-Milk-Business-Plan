@@ -532,12 +532,49 @@ def render_bullets(block: dict, styles: dict) -> list:
     return out
 
 
+def estimate_col_widths(headers: list, rows: list, total_width: float) -> list:
+    """
+    Distribute column widths proportionally to the maximum content length found
+    in each column (header + first 6 data rows).
+
+    Why: Even distribution causes problems when columns have very different content —
+    e.g. a short "Score" column getting the same space as a wide "Description" column.
+    This heuristic narrows short columns and widens long ones, staying within
+    a per-column min/max clamp so no column becomes unreadably narrow or wastefully wide.
+    """
+    n = len(headers)
+    if n == 0:
+        return []
+
+    weights = []
+    for i, h in enumerate(headers):
+        # Measure max character length across header and first 6 rows of this column
+        lengths = [len(str(h))]
+        for row in rows[:6]:
+            if i < len(row):
+                lengths.append(len(str(row[i])))
+        weights.append(max(lengths))
+
+    total_weight = sum(weights) or 1
+    raw_widths   = [total_width * w / total_weight for w in weights]
+
+    # Clamp: no column narrower than 0.6" (readable) or wider than 3.5" (wasteful)
+    MIN_W   = 0.60 * inch
+    MAX_W   = 3.50 * inch
+    clamped = [max(MIN_W, min(MAX_W, w)) for w in raw_widths]
+
+    # Rescale so column widths always sum exactly to total_width
+    scale = total_width / sum(clamped)
+    return [w * scale for w in clamped]
+
+
 def render_table(block: dict, styles: dict) -> list:
     """
     Render a branded data table.
     'headers' is a list of column header strings.
     'rows'    is a list of lists (same width as headers).
-    Column widths are distributed evenly across the content frame.
+    Column widths default to a content-length heuristic (estimate_col_widths),
+    or can be overridden per-block with a 'col_widths' list.
     """
     headers = block.get('headers', [])
     rows    = block.get('rows', [])
@@ -546,8 +583,8 @@ def render_table(block: dict, styles: dict) -> list:
     if not n_cols:
         return []
 
-    # Auto-distribute column widths; override with 'col_widths' if provided
-    col_widths = block.get('col_widths') or [FRAME_W / n_cols] * n_cols
+    # Content-aware column widths — proportional to max content length per column
+    col_widths = block.get('col_widths') or estimate_col_widths(headers, rows, FRAME_W)
 
     # Wrap all cells as Paragraphs so long text wraps correctly
     def wrap(text, style):
@@ -712,14 +749,14 @@ def render_toc(sections: list, styles: dict) -> list:
         # Skip standalone sections rendered outside the main sections loop
         if s.get('id') in ('what_changed', 'sources'):
             continue
-        num   = Paragraph(f'§{s.get("number", "")}', styles['toc_number'])
+        num   = Paragraph(str(s.get("number", "")), styles['toc_number'])
         title = Paragraph(s['title'], styles['toc_entry'])
         toc_rows.append([num, title])
 
     # Append what_changed and sources as final TOC entries if they exist in sections
     for s in sections:
         if s.get('id') in ('what_changed', 'sources'):
-            num   = Paragraph(f'§{s.get("number", "")}', styles['toc_number'])
+            num   = Paragraph(str(s.get("number", "")), styles['toc_number'])
             title = Paragraph(s['title'], styles['toc_entry'])
             toc_rows.append([num, title])
 
