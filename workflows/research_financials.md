@@ -374,6 +374,6 @@ Before saving output, verify:
 - [ ] `margins.gross_margin_pct_estimate` is populated or flagged in `data_gaps`
 - [ ] `startup_capital_estimate` has at least a low/high range or an explicit note in `data_gaps`
 - [ ] If `estimated_budget` was provided in inputs, `narrative_summary` addresses whether it appears sufficient
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] All monetary values are in USD (or explicitly noted otherwise)
 - [ ] No field contains raw search result HTML or markdown — synthesised text only

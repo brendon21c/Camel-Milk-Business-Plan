@@ -282,5 +282,5 @@ Before saving output, verify:
 - [ ] `logistics_options` has at least one entry, even if partially populated
 - [ ] `export_requirements` has at least one entry, even if confidence is low
 - [ ] `overall_supply_chain_risk` is set and reflects the combined weight of all risk fields
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only

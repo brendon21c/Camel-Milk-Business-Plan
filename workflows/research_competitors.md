@@ -250,5 +250,5 @@ Before saving output, verify:
 - [ ] Every competitor in the array has `name`, `positioning`, `strengths`, and `weaknesses` populated
 - [ ] `market_gaps` has at least 1 entry based on evidence from search results, not assumed
 - [ ] `competitive_intensity` is set and justified by the number and activity of competitors found
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only

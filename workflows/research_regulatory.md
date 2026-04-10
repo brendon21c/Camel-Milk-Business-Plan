@@ -347,5 +347,5 @@ Before saving output, verify:
 - [ ] `labeling_requirements` has at least 2 entries
 - [ ] `regulatory_risks` has at least 1 entry
 - [ ] `overall_regulatory_complexity` is set to one of: `low`, `medium`, `high`, or `unknown`
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only

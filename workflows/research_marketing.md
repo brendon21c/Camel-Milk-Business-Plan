@@ -297,5 +297,5 @@ Before saving output, verify:
 - [ ] `marketing_channels` has at least 2 entries
 - [ ] `health_claims` is populated — if the product has known health claims, they must appear here with scientific support and FDA compliance assessed
 - [ ] Any health claim flagged `"scientific_support": "weak"` or `"fda_compliant": "unclear"` is also present in `data_gaps` with a plain-language risk note
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only

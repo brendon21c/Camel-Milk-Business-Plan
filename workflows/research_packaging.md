@@ -243,5 +243,5 @@ Before saving output, verify:
 - [ ] `recommended_format.rationale` explains the choice in terms of the specific product type and target market
 - [ ] `labeling_requirements` has at least 4 entries (regulatory requirements rarely number fewer)
 - [ ] `cost_at_scale` has at least one non-null value
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only

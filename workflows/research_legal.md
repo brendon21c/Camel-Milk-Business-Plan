@@ -230,4 +230,4 @@ Before saving output, verify:
 - [ ] `sanctions_or_restrictions` is explicitly addressed (even if `flagged: false`)
 - [ ] `customs_compliance` is populated
 - [ ] `narrative_summary` is present and written in plain English
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source

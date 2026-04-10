@@ -291,5 +291,5 @@ Before saving output, verify:
 - [ ] `narrative_summary` is present and written in plain English (no bullet points, no jargon)
 - [ ] At least one of `market_size.global_usd` or `market_size.target_country_usd` is populated
 - [ ] `demand_drivers` has at least 2 entries
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only

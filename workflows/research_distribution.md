@@ -224,6 +224,6 @@ Before saving output, verify:
 - [ ] `channels` array has at least 3 entries covering meaningfully different channel types
 - [ ] `recommended_entry_channel` is populated with a rationale (not just a name)
 - [ ] `customs_and_import_process` is present and describes the target-country import process
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
 - [ ] No proposition-specific details (product names, country names) are hard-coded in this file — all values come from inputs

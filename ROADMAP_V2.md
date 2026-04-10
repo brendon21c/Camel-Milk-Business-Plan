@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-10
+**Last updated:** 2026-04-10 (social media research added to V3)
 
 ---
 
@@ -211,6 +211,38 @@ const AGENT_MANIFEST = {
 The intake form needs to capture the right metadata per venture type. A SaaS proposition needs target customer segment, pricing model, and technical stack — not origin country and product weight.
 
 Likely implementation: `intake.js` branches on `--proposition-type` and prompts for the relevant fields.
+
+#### 5. Social media research and analysis
+
+Add a dedicated social media intelligence layer to the marketing agent — moving beyond web-search-based influencer lookups to direct API access for live data, client account audits, and trend signals.
+
+**Three use cases this unlocks:**
+- **Influencer discovery:** Find and score candidate creators by niche, audience size, engagement rate, and platform — not just names scraped from web results
+- **Client social media audit:** Pull a client's own account metrics (follower growth, top content, reach, engagement) and benchmark against competitors or industry norms
+- **Trend research:** Surface rising topics, hashtags, and content formats in a niche before they peak — useful for content strategy advice
+
+**Platform priority and build order:**
+
+| Priority | Platform | API | Notes |
+|---|---|---|---|
+| 1 | YouTube | YouTube Data API v3 | Already have API key. Channel search, subscriber counts, video performance, trending by category. Highest data quality of any platform. |
+| 2 | Reddit | Reddit API (PRAW) | Free, no approval needed. Best signal for community trends and micro-influencer discovery. Health/food niches are very active. |
+| 3 | Instagram | Meta Graph API | OAuth per client. Excellent for owned-account analytics (reach, impressions, top posts). Competitor/influencer research is restricted — client's own account only without special access. |
+| 4 | TikTok | TikTok Research API + Business API | Apply for Research API access early — approval takes time but is obtainable for business tools. Good for trend discovery and owned-account analytics. |
+| 5 | Pinterest | Pinterest API v5 | Free with app registration. Relevant for food/health/lifestyle clients — drives high purchase intent. |
+| 6 | X (Twitter) | X API v2 | Low priority. Basic tier is $100/mo with limited read access. Only worth it if a specific client's audience lives on X. |
+
+**Tools to build (when ready):**
+- `tools/search_youtube_influencers.py` — search channels by keyword/topic, return ranked list with stats
+- `tools/fetch_youtube_analytics.py` — pull owned channel metrics for a client audit
+- `tools/search_reddit_trends.py` — search subreddits by niche, surface trending posts and power users
+- `tools/fetch_instagram_analytics.py` — pull client's Instagram metrics via OAuth
+- `tools/fetch_tiktok_analytics.py` — client TikTok account metrics + Research API trend queries
+- `tools/fetch_pinterest_analytics.py` — owned account metrics and trending pin search
+
+**Workflow changes:** `research_marketing.md` currently uses Brave Search for all influencer and trend research. When these tools exist, update the workflow to call them first and fall back to Brave only when API data is unavailable or the platform isn't supported.
+
+**Note on Perplexity's role:** The existing `tools/search_perplexity.py` can complement direct API calls in this space. Perplexity's strength is synthesising information across many sources in natural language — it can answer questions like "who are the top 10 gut health creators on YouTube right now?" or "what TikTok trends are driving camel milk interest in 2026?" faster than assembling that picture from raw API results. The recommended pattern is: use Perplexity for **discovery and framing** (who to look at, what topics are trending, what the competitive landscape looks like), then use the platform-specific API tools for **verification and live data** (actual follower counts, engagement rates, recent content). This keeps Perplexity in a reasoning role and the APIs in an execution role — consistent with the WAT architecture.
 
 ---
 

@@ -703,9 +703,11 @@ Synthesize the results and respond with ONLY the JSON object from the Output For
   async function attemptWithEscalation() {
     // Skip Haiku entirely when sonnetOnly=true (e.g. financials always exceeds
     // Haiku's 200k context limit — running Haiku first wastes tokens and time)
+    // haikusErr is declared here (outer scope) so it's accessible in the Sonnet
+    // catch block below — needed to surface the original error if both models fail.
+    let haikusErr = null;
     if (!sonnetOnly) {
       // --- Haiku attempt ---
-      let haikusErr  = null;
       let rawHaiku   = null;
       try {
         rawHaiku = await callClaude({
@@ -821,13 +823,17 @@ async function runProductionAgent(context) {
   return runResearchAgent('production', context);
 }
 async function runPackagingAgent(context) {
-  return runResearchAgent('packaging', context);
+  // Packaging agent accumulates too much context across tool calls and reliably
+  // hits Haiku's max_tokens limit. Skip straight to Sonnet like financials.
+  return runResearchAgent('packaging', context, { sonnetOnly: true });
 }
 async function runDistributionAgent(context) {
   return runResearchAgent('distribution', context);
 }
 async function runMarketingAgent(context) {
-  return runResearchAgent('marketing', context);
+  // Marketing accumulates too much context across tool calls and reliably hits
+  // Haiku's 200k token limit. Skip straight to Sonnet like financials and packaging.
+  return runResearchAgent('marketing', context, { sonnetOnly: true });
 }
 async function runFinancialsAgent(context) {
   // Financials always exceeds Haiku's 200k context limit (12+ tool calls accumulate
@@ -1394,17 +1400,10 @@ Now produce the complete content JSON.`;
     throw new Error(`Supabase Storage upload failed: ${uploadError.message}`);
   }
 
-  // Create a signed URL valid for 7 days (for email attachment link)
-  const { data: signedData, error: signedError } = await supabase.storage
-    .from('reports')
-    .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
-
-  if (signedError) {
-    throw new Error(`Could not create signed URL: ${signedError.message}`);
-  }
-
-  const pdfUrl = signedData.signedUrl;
-  await updateReportPdfUrl(reportId, pdfUrl);
+  // Store the storage path (not a signed URL) so the DB record never expires.
+  // Signed URLs are short-lived — storing one would cause 403s after 7 days.
+  // Generate a fresh signed URL on demand (e.g. web app, admin access) when needed.
+  await updateReportPdfUrl(reportId, storagePath);
   console.log(`    ✓ PDF uploaded to Storage`);
 
   // 11b. Upload the content JSON to Storage alongside the PDF.

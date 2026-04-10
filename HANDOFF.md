@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-10 (Session 13 — multi-contact, org model, plan tier gating, GitHub Actions)
+**Last updated:** 2026-04-10 (Session 15 — marketing sonnetOnly fix, haikusErr scope fix, source floor raised to 8, Resend domain setup)
 
 ---
 
@@ -26,15 +26,21 @@ Pipeline: Perplexity briefings → research agents → assembler → branded PDF
 
 ## Status
 
-DB work this session is complete (migrations 006–008 run). Remaining before V1 launch:
+All pre-launch code fixes are complete. E2E test was run — pipeline succeeded but email delivery to client (Iman) is blocked until Resend domain is verified. Remaining before V1 launch:
 
 | # | Item | Priority |
 |---|---|---|
-| 1 | End-to-end test (command below) | **← Do this first** |
-| 2 | Add `'packaging'` to `sonnetOnly` list in `runResearchAgents()` — Haiku hits `max_tokens` on that agent | High |
-| 3 | Fix signed URL expiry — Supabase 7-day signed URLs stored in DB go dead; clients get a 403 after a week | High |
-| 4 | Fix Census CBP `JSONDecodeError` — malformed JSON occasionally returned; add response validation before `json.loads()` | Low |
-| 5 | Add `--hold` flag — stops after PDF generation, saves to `outputs/`, prompts for confirmation before emailing client | Low |
+| 1 | Verify Resend domain (`mckeeverconsulting.org`) — DNS records added, awaiting propagation. Once verified: update `from` address in run.js, re-run E2E test | **← Current blocker** |
+| 2 | After successful re-run: flip proposition `plan_tier` back to `starter` in Supabase | High |
+| 3 | Fix Census CBP `JSONDecodeError` — malformed JSON occasionally returned; add response validation before `json.loads()` in `fetch_census_data.py` | Low |
+| 4 | Add `--hold` flag — stops after PDF generation, saves to `outputs/`, prompts for confirmation before emailing client | Low |
+
+**Fixes applied this session (all in `run.js` and workflow files):**
+- `runPackagingAgent()` — `{ sonnetOnly: true }` (Haiku token limit)
+- `runMarketingAgent()` — `{ sonnetOnly: true }` (Haiku token limit, 208k > 200k)
+- `haikusErr` — hoisted `let haikusErr = null` to outer scope of `attemptWithEscalation()` (was `ReferenceError` when Sonnet path ran)
+- Signed URL fix — stores storage path in `pdf_url` instead of a 7-day signed URL
+- Source floor raised to 8 in all 10 research workflow `.md` files (was 3) — improves confidence score
 
 ---
 
@@ -50,22 +56,28 @@ Venture intelligence brief: X chars, Y citations    ← Perplexity call 1
 Landscape briefing: X chars, Y citations            ← Perplexity call 2
 Running research agents (sequential)...
   → market_overview ... ✓
-  ... (10 agents, any escalations logged with ↑)
+  → packaging ... ✓     ← runs Sonnet directly (sonnetOnly)
+  → marketing ... ✓     ← runs Sonnet directly (sonnetOnly)
+  → financials ... ✓    ← runs Sonnet directly (sonnetOnly)
+  ... (remaining agents use Haiku, any escalations logged with ↑)
 ✓ Quality gate passed (10/10 agents complete)
-✓ Data confidence: XX/100
+✓ Data confidence: XX/100  (target: 80+)
 Calling Claude Sonnet for report synthesis...
 ✓ PDF generated  ✓ PDF uploaded to Storage  ✓ Report emailed to 2 recipients
 ✓ Admin copy sent  ✓ Run complete
-  Plan limit reached (starter: 1/1 runs) — retiring schedule to on_demand
 ```
+
+**Note:** proposition is currently set to `plan_tier = 'retainer'` in Supabase to allow the May auto-run test. After the May run confirms scheduling works, flip back to `starter`.
+
 
 **If things break:**
 | Issue | Fix |
 |---|---|
 | Assembler JSON parse fails | Add `console.log(rawContent.slice(0, 1000))` before `parseJSON()` in `runAssemblerAgent()` |
-| Resend 403 error | Confirm `onboarding@resend.dev` is a verified sender in Resend dashboard |
+| Resend 403 / domain not verified | Check Resend dashboard → Domains → `mckeeverconsulting.org`. All 3 TXT records (DKIM, SPF, DMARC) are in Namecheap DNS. May still be propagating (up to 48h). |
 | Storage upload fails | Confirm `reports` bucket exists and is private in Supabase dashboard |
 | USDA NASS returns no data | Sometimes down — `executeTool` catches and returns `{ error: ... }`, agent handles gracefully |
+| Census CBP returns malformed JSON | Known issue — low priority. Will cause `fetch_census_data.py` to throw; agent handles gracefully via `executeTool` error catching |
 
 ---
 
@@ -264,7 +276,7 @@ USASpending.gov and SEC EDGAR require no key. All keys are also stored as GitHub
 | 11 | Failure alerting | Email to Brendon only. Client never notified. Error logged to DB. agent_outputs deleted immediately on failure. |
 | 12 | Brand | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat. |
 | 13 | Pricing | Starter $100 (1 run) / Pro $250 (2 runs) / Retainer $150/month (unlimited) |
-| 14 | Model escalation | Haiku → Sonnet on iteration exhaustion or JSON parse failure. Ceiling = Sonnet (not Opus). |
+| 14 | Model escalation | Haiku → Sonnet on iteration exhaustion or JSON parse failure. Ceiling = Sonnet (not Opus). `financials`, `packaging`, `marketing` skip Haiku entirely (`sonnetOnly: true`) — they reliably exceed Haiku's 200k token limit. |
 | 15 | Perplexity roles | (1) Fallback when Brave thin, (2) Venture intelligence brief, (3) Landscape briefing. Real-time web access is the reason. |
 | 16 | Industry adaptability | Venture intelligence brief steers agents away from irrelevant gov tools. Structural routing deferred to V2. |
 | 17 | Client model | Organizations own propositions. Contacts (clients) belong to orgs. Per-proposition recipient lists via `proposition_recipients`. |

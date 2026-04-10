@@ -258,5 +258,5 @@ Before saving output, verify:
 - [ ] `production_steps` has at least 3 entries
 - [ ] `total_equipment_capex_estimate` has at least a `low_usd` or `high_usd` value populated
 - [ ] `key_suppliers` has at least 2 entries
-- [ ] `sources` has at least 3 URLs
+- [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
