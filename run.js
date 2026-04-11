@@ -1612,14 +1612,25 @@ Return ONLY a JSON array (not an object):
   // ── Assemble final content JSON ───────────────────────────────────────────
   const contentJson = { meta, viability_score: viabilityScore, sections, sources, what_changed: whatChanged };
 
-  // ── Haiku quality review pass ─────────────────────────────────────────────
-  // Sends a compact structural audit view (not the full JSON) to keep this call cheap.
-  // Haiku checks for empty blocks, placeholder sections, missing viability data, etc.
-  // Returns a list of issues — we log them. Non-fatal: run always continues past here.
-  console.log('    Running quality review (Haiku)...');
+  // ── Haiku quality review + Sonnet repair loop ────────────────────────────
+  // Haiku audits the assembled report for structural errors (empty blocks,
+  // placeholder sections, missing viability data, etc.).
+  //
+  // If errors are found, we re-assemble each flagged section with Sonnet —
+  // passing the specific issue as context so it knows what to fix — then
+  // re-review. This repeats up to MAX_REPAIR_CYCLES times.
+  //
+  // After all cycles, any remaining issues are logged but never block delivery.
+  const MAX_REPAIR_CYCLES = 2;
+
   try {
-    const auditView    = buildAuditView(contentJson);
-    const reviewPrompt = `You are a quality reviewer for a business report JSON. Review the structural audit below and return a JSON array of any issues found. If no issues, return [].
+    for (let cycle = 0; cycle <= MAX_REPAIR_CYCLES; cycle++) {
+      const isLastCycle = cycle === MAX_REPAIR_CYCLES;
+      const cycleLabel  = cycle === 0 ? '' : ` (repair cycle ${cycle}/${MAX_REPAIR_CYCLES})`;
+      console.log(`    Running quality review (Haiku)${cycleLabel}...`);
+
+      const auditView    = buildAuditView(contentJson);
+      const reviewPrompt = `You are a quality reviewer for a business report JSON. Review the structural audit below and return a JSON array of any issues found. If no issues, return [].
 
 Issue format: { "section_id": "...", "issue": "...", "severity": "warning|error" }
 
@@ -1633,22 +1644,83 @@ Check for:
 AUDIT VIEW:
 ${JSON.stringify(auditView, null, 2)}`;
 
-    const reviewResult = await anthropic.messages.create({
-      model:     'claude-haiku-4-5-20251001',
-      max_tokens: 1000, // Small — just listing issues
-      messages:  [{ role: 'user', content: reviewPrompt }],
-    });
+      const reviewResult = await anthropic.messages.create({
+        model:     'claude-haiku-4-5-20251001',
+        max_tokens: 1000,
+        messages:  [{ role: 'user', content: reviewPrompt }],
+      });
 
-    const reviewText   = reviewResult.content[0]?.text || '[]';
-    const issues       = parseJSON(reviewText);
-    const errors       = issues.filter(i => i.severity === 'error');
-    const warnings     = issues.filter(i => i.severity === 'warning');
+      const reviewText = reviewResult.content[0]?.text || '[]';
+      const issues     = parseJSON(reviewText) || [];
+      const errors     = Array.isArray(issues) ? issues.filter(i => i.severity === 'error')   : [];
+      const warnings   = Array.isArray(issues) ? issues.filter(i => i.severity === 'warning') : [];
 
-    if (issues.length === 0) {
-      console.log('    ✓ Quality review passed — no issues found');
-    } else {
-      if (errors.length)   console.warn(`    ⚠ Quality review: ${errors.length} error(s) — ${errors.map(i => i.section_id + ': ' + i.issue).join('; ')}`);
-      if (warnings.length) console.log(`    ℹ Quality review: ${warnings.length} warning(s) — ${warnings.map(i => i.section_id + ': ' + i.issue).join('; ')}`);
+      if (errors.length === 0) {
+        // No errors — log any warnings and exit the review loop
+        if (warnings.length) console.log(`    ℹ Quality review: ${warnings.length} warning(s) — ${warnings.map(i => i.section_id + ': ' + i.issue).join('; ')}`);
+        console.log(`    ✓ Quality review passed${cycle > 0 ? ` after ${cycle} repair cycle(s)` : ''} — no errors`);
+        break;
+      }
+
+      if (isLastCycle) {
+        // All repair cycles exhausted — log unresolved errors and proceed (never block delivery)
+        console.warn(`    ⚠ Quality review: ${errors.length} error(s) unresolved after ${MAX_REPAIR_CYCLES} repair cycle(s) — ${errors.map(i => i.section_id + ': ' + i.issue).join('; ')}`);
+        if (warnings.length) console.log(`    ℹ Quality review: ${warnings.length} warning(s) — ${warnings.map(i => i.section_id + ': ' + i.issue).join('; ')}`);
+        break;
+      }
+
+      // Re-assemble each errored section with Sonnet, passing the specific issue
+      // as context so it knows exactly what to fix. Then loop back to re-review.
+      console.log(`    ⚠ Quality review: ${errors.length} error(s) — repairing sections...`);
+      for (const issue of errors) {
+        const spec = SECTION_SPECS.find(s => s.id === issue.section_id);
+        if (!spec) {
+          console.warn(`      ✗ No assembler spec for section '${issue.section_id}' — skipping`);
+          continue;
+        }
+
+        console.log(`      → Repairing '${spec.title}': ${issue.issue}`);
+
+        const repairPrompt = `${researchContext}
+
+${viabilityContext}
+
+## REPAIR CONTEXT
+This section was flagged by the quality reviewer with the following issue:
+"${issue.issue}"
+
+Address this issue directly — ensure no blocks are empty and all content is
+substantive and complete.
+
+## YOUR TASK
+Write section ${spec.num}: ${spec.title}
+
+${ASSEMBLER_SECTION_INSTRUCTIONS[spec.id]}
+
+## OUTPUT SCHEMA
+Return ONLY this JSON object:
+{
+  "id":     "${spec.id}",
+  "title":  "${spec.title}",
+  "number": ${spec.num},
+  "blocks": [ <one or more blocks — at least 1 paragraph required> ]
+}
+
+${blockSchema}`;
+
+        const repaired = await callWithRepair(systemPrompt, repairPrompt, spec.maxTokens, 2, false);
+
+        if (repaired) {
+          // Swap the repaired section into contentJson in-place
+          const idx = contentJson.sections.findIndex(s => s.id === spec.id);
+          if (idx !== -1) contentJson.sections[idx] = repaired;
+          console.log(`      ✓ '${spec.title}' repaired`);
+        } else {
+          console.warn(`      ✗ '${spec.title}' repair failed — keeping original`);
+        }
+
+        await sleep(INTER_SECTION_DELAY_MS);
+      }
     }
   } catch (reviewErr) {
     // Non-fatal — a review failure never blocks delivery
@@ -1665,11 +1737,16 @@ ${JSON.stringify(auditView, null, 2)}`;
   console.log('    Running proofread pass (Sonnet)...');
   try {
     const proofreaderView = buildProofreadView(contentJson);
-    const proofreadPrompt = `You are an editorial proofreader for a professional business viability report.
+    const proofreadPrompt = `You are an editorial proofreader for a professional business viability report delivered to paying clients.
+
+Your job is to make this report the best version it can be before it reaches the client.
 
 Review the section content below and return a JSON array of text patches to fix:
 1. REPETITION: passages that restate a specific fact, figure, or claim already made in a prior section (cross-section only — within-section structure is fine)
-2. CLARITY: sentences that are verbose, ambiguous, or awkward enough to reduce readability
+2. CONTRADICTION: figures or claims in one section that conflict with figures or claims in another (e.g. two sections cite different market sizes for the same metric — resolve to the most specific and sourced figure)
+3. VAGUE FINANCIALS: financial language that uses relative terms without supporting numbers — flag phrases like "significant revenue", "substantial cost savings", "considerable demand" and replace with specific language or remove the unsupported claim
+4. WEAK CONCLUSIONS: hedged or non-committal conclusions in Recommendations or Executive Summary that don't give the client a clear steer — replace with direct, actionable language
+5. CLARITY: sentences that are verbose, ambiguous, or awkward enough to reduce readability
 
 Patch format:
 { "section_id": "<id from [section_id] header>", "block_index": <integer from PARA/BULLETS/CALLOUT prefix>, "new_text": "<replacement text>" }
@@ -1680,7 +1757,7 @@ Rules:
 - For CALLOUT blocks: new_text replaces the callout body text
 - Do NOT alter tables or key_figures — omit them entirely
 - Keep the same professional tone and approximate length — reduce redundancy, don't change meaning
-- Only patch when the improvement is clear. Return [] if the report reads cleanly.
+- Only patch when the improvement is clear and material. Return [] if the report reads cleanly.
 - Return ONLY the JSON array — no markdown, no explanation
 
 REPORT CONTENT:

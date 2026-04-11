@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-10 (Session 17 — PDF formatting fixes, proofread pass added. V1 fully stable.)
+**Last updated:** 2026-04-11 (Session 18 — V1 loose ends closed. Census fix + quality repair loop + stronger proofread. Ready for V2.)
 
 ---
 
@@ -26,12 +26,17 @@ Pipeline: Perplexity briefings → research agents → assembler → branded PDF
 
 ## Status
 
-**V1 is live and stable.** E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever from `reports@mckeeverconsulting.org`. Proposition on `retainer` plan — will auto-run May 1 via GitHub Actions.
+**V1 is complete. All loose ends closed. Ready for V2.**
 
-| # | Item | Priority |
-|---|---|---|
-| 1 | Fix Census CBP `JSONDecodeError` — malformed JSON occasionally returned; add response validation before `json.loads()` in `fetch_census_data.py` | Low |
-| 2 | Add `--hold` flag — stops after PDF generation, saves to `outputs/`, prompts for confirmation before emailing client | Low |
+E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever from `reports@mckeeverconsulting.org`. Proposition on `retainer` plan — will auto-run May 1 via GitHub Actions.
+
+**Changes made in Session 18:**
+- **Census fix** — `fetch_census_data.py` now retries on malformed JSON (both ACS5 and CBP paths) and always emits structured JSON to stdout on failure. No more crashes, no more raw Python tracebacks reaching the agent.
+- **Quality review → repair loop** — if Haiku flags errors, Sonnet now re-assembles each flagged section with the specific issue as context, then Haiku re-reviews. Capped at 2 cycles. Non-fatal — never blocks delivery.
+- **Stronger proofread** — added CONTRADICTION (conflicting figures across sections), VAGUE FINANCIALS (relative terms without numbers), and WEAK CONCLUSIONS (hedged language in Recommendations/Executive Summary) checks. Existing repetition and clarity checks unchanged.
+- **`--hold` flag dropped** — decided against it. Pipeline should auto-send the best version it can produce, not require manual approval.
+
+**No open V1 items.**
 
 **Note:** Proposition is currently set to `plan_tier = 'retainer'` in Supabase to allow the May auto-run test. After the May run confirms scheduling works, flip back to `starter`.
 
@@ -57,8 +62,8 @@ Running research agents (sequential)...
 ✓ Data confidence: XX/100  (target: 80+)
 Calling Claude Sonnet for report synthesis...
   [section-by-section: 15 calls, ~20s delay between each]
-  Running quality review (Haiku)...
-  Running proofread pass (Sonnet)...
+  Running quality review (Haiku)...         ← if errors found, Sonnet repairs + re-reviews (max 2 cycles)
+  Running proofread pass (Sonnet)...        ← checks repetition, contradictions, vague financials, weak conclusions
 ✓ PDF generated  ✓ PDF uploaded to Storage  ✓ Report emailed to 2 recipients
 ✓ Admin copy sent  ✓ Run complete
 ```
@@ -70,7 +75,7 @@ Calling Claude Sonnet for report synthesis...
 | Resend 403 / domain not verified | Check Resend dashboard → Domains → `mckeeverconsulting.org`. All 3 TXT records (DKIM, SPF, DMARC) are in Namecheap DNS. |
 | Storage upload fails | Confirm `reports` bucket exists and is private in Supabase dashboard |
 | USDA NASS returns no data | Sometimes down — `executeTool` catches and returns `{ error: ... }`, agent handles gracefully |
-| Census CBP returns malformed JSON | Known issue — low priority. `fetch_census_data.py` throws; agent handles gracefully via `executeTool` error catching |
+| Census returns malformed JSON | Fixed — script retries up to 3 times then emits `{ error: "...", records: [] }`. Agent handles gracefully. |
 
 ---
 

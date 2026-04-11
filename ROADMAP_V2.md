@@ -139,7 +139,22 @@ Recommendation: Start with Option A (already partially working via venture intel
 
 **Note:** This feature doesn't depend on industry routing and could technically be backported to V1. Scoped to V2 because V1's priority is proving the core pipeline works first.
 
-#### 6. Test propositions to validate V2
+#### 6. Prompt caching on the assembler
+
+**Why:** The assembler sends the full research context (~150k tokens) to Sonnet once per section — 15 calls per run. Without caching, this costs ~$7.65 in input tokens alone, roughly 65% of total run cost. With prompt caching, subsequent calls pay the cached rate ($0.30/MTok vs $3.00/MTok), dropping assembler cost to ~$2. Saving of ~$5 per run.
+
+**Must be in place before V3.** V3 ventures (SaaS, services, digital) will produce larger and more varied agent outputs, making the context window even heavier. Caching becomes more valuable, not less, as the system scales.
+
+**Implementation:** Add explicit `cache_control: { type: "ephemeral" }` breakpoints to the assembler's API calls in `run.js`:
+- Mark the `system` prompt as cacheable (shared across all 15 section calls)
+- Mark the `researchContext` block as cacheable (same content across all 15 calls, changes only between runs)
+- Anthropic's SDK requires these markers to be set on the relevant content blocks in `messages` — the large block that doesn't change call-to-call is the right place
+
+**Expected savings:** ~$5 per run (~40% total cost reduction). At retainer pricing ($150/month), this makes each run margin-positive without any pricing change.
+
+**Note:** Verify the 5-minute cache TTL fits the inter-section delay (currently 20s). It does — 15 sections × 20s = 300s = exactly 5 minutes. Consider reducing the inter-section delay slightly (e.g. 18s) to stay safely within the TTL window if needed.
+
+#### 7. Test propositions to validate V2
 
 | Proposition | Industry category | Key non-food tools needed |
 |---|---|---|

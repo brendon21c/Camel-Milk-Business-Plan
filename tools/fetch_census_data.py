@@ -98,7 +98,20 @@ def call_census(year: int, dataset: str, variables: list[str],
             continue
 
         if resp.status_code == 200:
-            return resp.json()
+            try:
+                return resp.json()
+            except json.JSONDecodeError:
+                # Census API occasionally returns a 200 with malformed/empty body.
+                # Treat it like a transient error and retry — same as a rate limit.
+                if attempt == MAX_RETRIES:
+                    raise RuntimeError(
+                        f"[census] Malformed JSON after {MAX_RETRIES} attempts "
+                        f"(status 200). Body preview: {resp.text[:200]}"
+                    )
+                wait = 2 ** attempt
+                print(f"[census] Malformed JSON attempt {attempt}, retrying in {wait}s...", file=sys.stderr)
+                time.sleep(wait)
+                continue
 
         if resp.status_code == 429:
             wait = 2 ** attempt
@@ -215,8 +228,20 @@ def fetch_cbp_industry(naics: str, geography: str = "us:1", year: int = 2021) ->
             continue
 
         if resp.status_code == 200:
-            raw = resp.json()
-            break
+            try:
+                raw = resp.json()
+                break
+            except json.JSONDecodeError:
+                # Same occasional malformed-body issue as ACS5 — retry before giving up.
+                if attempt == MAX_RETRIES:
+                    raise RuntimeError(
+                        f"[census CBP] Malformed JSON after {MAX_RETRIES} attempts "
+                        f"(status 200). Body preview: {resp.text[:200]}"
+                    )
+                wait = 2 ** attempt
+                print(f"[census CBP] Malformed JSON attempt {attempt}, retrying in {wait}s...", file=sys.stderr)
+                time.sleep(wait)
+                continue
         if resp.status_code == 429:
             time.sleep(2 ** attempt)
             continue
@@ -268,9 +293,21 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.command == "acs5":
-        result = fetch_acs5_market_profile(geography=args.geography, year=args.year)
-    else:
-        result = fetch_cbp_industry(naics=args.naics, geography=args.geography, year=args.year)
+    try:
+        if args.command == "acs5":
+            result = fetch_acs5_market_profile(geography=args.geography, year=args.year)
+        else:
+            result = fetch_cbp_industry(naics=args.naics, geography=args.geography, year=args.year)
+    except Exception as exc:
+        # Always write valid JSON to stdout — even on failure — so execPython
+        # (in run.js) gets a parseable result and the agent receives a clean
+        # error object it can reason about rather than a raw Python traceback.
+        result = {
+            "error":   str(exc),
+            "source":  "US Census Bureau",
+            "dataset": getattr(args, "command", "unknown"),
+            "records": [],
+        }
+        print(f"[census] Fatal error: {exc}", file=sys.stderr)
 
     print(json.dumps(result, indent=2))
