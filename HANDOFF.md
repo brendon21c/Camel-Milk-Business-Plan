@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-11 (Session 18 — V1 loose ends closed. Census fix + quality repair loop + stronger proofread. Ready for V2.)
+**Last updated:** 2026-04-11 (Session 19 — V2 planning: international & multilingual research pipeline designed. Workflow + roadmap section added. Error handling strategy defined.)
 
 ---
 
@@ -26,19 +26,23 @@ Pipeline: Perplexity briefings → research agents → assembler → branded PDF
 
 ## Status
 
-**V1 is complete. All loose ends closed. Ready for V2.**
+**V1 is complete. V2 planning is underway.**
 
 E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever from `reports@mckeeverconsulting.org`. Proposition on `retainer` plan — will auto-run May 1 via GitHub Actions.
 
-**Changes made in Session 18:**
-- **Census fix** — `fetch_census_data.py` now retries on malformed JSON (both ACS5 and CBP paths) and always emits structured JSON to stdout on failure. No more crashes, no more raw Python tracebacks reaching the agent.
-- **Quality review → repair loop** — if Haiku flags errors, Sonnet now re-assembles each flagged section with the specific issue as context, then Haiku re-reviews. Capped at 2 cycles. Non-fatal — never blocks delivery.
-- **Stronger proofread** — added CONTRADICTION (conflicting figures across sections), VAGUE FINANCIALS (relative terms without numbers), and WEAK CONCLUSIONS (hedged language in Recommendations/Executive Summary) checks. Existing repetition and clarity checks unchanged.
-- **`--hold` flag dropped** — decided against it. Pipeline should auto-send the best version it can produce, not require manual approval.
-
-**No open V1 items.**
-
 **Note:** Proposition is currently set to `plan_tier = 'retainer'` in Supabase to allow the May auto-run test. After the May run confirms scheduling works, flip back to `starter`.
+
+### Session 19 — V2 planning (2026-04-11)
+- **International & multilingual research pipeline** — full 7-step SOP added as `workflows/international_research.md`. Covers keyword translation, country-targeted source discovery, language detection, translation service routing (DeepL for European, Google for Arabic/CJK), data normalization, agent handoff with source provenance tags, and gap flagging in output.
+- **Error handling strategy** — defined retry budgets, fallback chains, and failure-scoping rules for every step in the international pipeline. Key principle: fail at the source level, not the run level. Max 2 translation API calls per source document across all services. Translated content cached to `.tmp/` immediately so cost is never paid twice.
+- **V2 roadmap section 8** — international research added to `ROADMAP_V2.md` with 6 new tools to build, full API stack with costs, and a concrete test proposition (camel milk → UAE in Arabic).
+- **Market positioning discussion** — clarified that the tool is not the product; the consulting service built on top of it is. The consultant brief + meeting model is the primary differentiator. Not a saturated market if positioned as AI-powered consulting rather than AI business plan generation.
+
+### Session 18 — V1 close (2026-04-10)
+- **Census fix** — `fetch_census_data.py` retries on malformed JSON, always emits structured JSON to stdout on failure.
+- **Quality review → repair loop** — Haiku flags errors, Sonnet re-assembles flagged sections, Haiku re-reviews. Capped at 2 cycles. Non-fatal.
+- **Stronger proofread** — added CONTRADICTION, VAGUE FINANCIALS, and WEAK CONCLUSIONS checks.
+- **`--hold` flag dropped** — pipeline auto-sends best version it can produce.
 
 ---
 
@@ -122,7 +126,7 @@ All secrets are stored in GitHub repo → Settings → Secrets and variables →
 ```
 run.js              ← orchestrator (Node.js)
   ↓ reads
-workflows/          ← plain-language SOPs (11 files)
+workflows/          ← plain-language SOPs (13 files)
   ↓ tools called by
 tools/              ← Python scripts (execution layer)
 db.js               ← all Supabase queries
@@ -133,6 +137,9 @@ outputs/            ← generated PDFs (auto-deleted after upload + email)
 assets/             ← fonts (auto-downloaded), brand assets
 ROADMAP_V2.md       ← V2/V3 product vision and implementation plan
 ```
+
+**Workflows (13 total):**
+10 research agents (`research_market_overview`, `research_competitors`, `research_regulatory`, `research_production`, `research_packaging`, `research_distribution`, `research_marketing`, `research_financials`, `research_origin_ops`, `research_legal`) + `assemble_report` + `setup_website_project` + `international_research`
 
 ---
 
@@ -249,6 +256,8 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 
 ## API Keys (.env)
 
+**Currently active (V1):**
+
 | Key | Variable |
 |---|---|
 | Anthropic | `ANTHROPIC_API_KEY` |
@@ -264,6 +273,18 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 | YouTube | `YOUTUBE_API_KEY` |
 
 USASpending.gov and SEC EDGAR require no key. All keys are also stored as GitHub repo secrets for GitHub Actions.
+
+**To add for V2 — international research pipeline:**
+
+| Key | Variable | Notes |
+|---|---|---|
+| DeepL | `DEEPL_API_KEY` | 500k chars/month free. Best for European languages. Sign up: deepl.com/pro-api |
+| Google Cloud Translation | `GOOGLE_TRANSLATE_API_KEY` | 500k chars/month free. Best for Arabic, CJK, broad coverage. Enable in Google Cloud Console. |
+| MyMemory | `MYMEMORY_API_KEY` | 10k chars/day free. Fallback if both primaries are exhausted. Register: mymemory.translated.net |
+| UN Comtrade | `UN_COMTRADE_API_KEY` | Free, 500 req/hour. Bilateral trade flows between any two countries. Register: comtradeplus.un.org |
+| OpenCorporates | `OPENCORPORATES_API_KEY` | Free, rate-limited. 160M+ company records, 140+ jurisdictions. Register: opencorporates.com/api_accounts |
+
+GDELT, World Bank, IMF, and Eurostat require no key — fully open APIs.
 
 ---
 
@@ -303,5 +324,13 @@ See `ROADMAP_V2.md` for full detail.
 | Phase | Scope | Key work |
 |---|---|---|
 | V1 | Physical import/export (current) | Complete and stable |
-| V2 | Any physical product, any industry | Industry-aware gov data routing, migration 009 (`industry_category`), new tool scripts (DOE, EPA, FDA device, ITC), workflow generalisation |
-| V3 | SaaS, services, digital, franchise | New workflow sets per venture type, dynamic agent selection, new data sources |
+| V2 | Any physical product, any industry | Industry-aware gov data routing · migration 009 (`industry_category`) · new tool scripts (DOE, EPA, FDA device, ITC, translate, detect_language, normalize_international, GDELT, UN Comtrade, OpenCorporates) · workflow generalisation · consultant brief · prompt caching on assembler · international & multilingual research pipeline |
+| V3 | SaaS, services, digital, franchise | New workflow sets per venture type · dynamic agent selection · new data sources (Crunchbase, G2, BLS) · social media research layer (YouTube, Reddit, Instagram, TikTok) |
+| Web App | Admin panel + client intake | Separate project post-V2. Connects via Supabase as shared data layer. Evaluate MCP before starting. |
+
+**V2 build order (recommended):**
+1. Migration 009 + industry routing (unblocks non-food propositions)
+2. Consultant brief (high value, no new research infrastructure needed)
+3. Prompt caching on assembler (cost reduction, straightforward)
+4. New gov tool scripts as needed per test proposition
+5. International research pipeline (translate + detect + normalize tools + new API keys)

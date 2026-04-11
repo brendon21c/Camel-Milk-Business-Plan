@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-10 (social media research added to V3)
+**Last updated:** 2026-04-11 (international & multilingual research pipeline added to V2)
 
 ---
 
@@ -153,6 +153,75 @@ Recommendation: Start with Option A (already partially working via venture intel
 **Expected savings:** ~$5 per run (~40% total cost reduction). At retainer pricing ($150/month), this makes each run margin-positive without any pricing change.
 
 **Note:** Verify the 5-minute cache TTL fits the inter-section delay (currently 20s). It does — 15 sections × 20s = 300s = exactly 5 minutes. Consider reducing the inter-section delay slightly (e.g. 18s) to stay safely within the TTL window if needed.
+
+#### 8. International & Multilingual Research Pipeline
+
+**Goal:** When researching a market where the primary language is not English, the system should find, translate, and normalize local-language sources — not just rely on English-language coverage of that market. A UAE market analysis should pull Arabic regulatory portals and trade publications. A German market analysis should pull Bundesanzeiger filings and German trade press.
+
+**Why it matters for accuracy:** English-language reports about foreign markets are secondhand. They summarize local news, lag by days or weeks, and reflect Western framing. Primary local-language sources carry regulatory language, consumer sentiment, and business culture that never makes it into English coverage.
+
+**Workflow:** `workflows/international_research.md` — defines the full pipeline: keyword translation → source discovery → language detection → content translation → normalization → agent handoff.
+
+**New tools to build (in order):**
+
+| Tool | Purpose | Priority |
+|---|---|---|
+| `tools/translate_text.py` | Translate text to English. Routes to DeepL (European) or Google Cloud Translation (Arabic/CJK/other) based on source language. Returns translated text + metadata (service used, char count, source language). | High — needed for any non-English run |
+| `tools/detect_language.py` | Detect language of a text block using `lingua-py` (offline). Returns ISO 639-1 code + confidence score. Routes to translation if non-English; skips if already English. | High — companion to translate_text |
+| `tools/normalize_international_data.py` | Normalize translated content: convert dates to ISO format, retain local currency + USD equivalent, standardize number formatting, normalize units to metric. | Medium — build alongside first international test proposition |
+| `tools/fetch_gdelt_news.py` | Query GDELT Project API for news events by country and keyword. Returns multilingual news events with article URLs, publication date, tone score, and event codes. Free, no API key. | Medium — primary free source for international news |
+| `tools/fetch_opencorporates.py` | Look up company records by jurisdiction via OpenCorporates API. Returns local-language company data for 140+ countries. Free tier, rate-limited. | Medium — useful for competitor research in non-English markets |
+| `tools/fetch_un_comtrade.py` | Query UN Comtrade API for bilateral trade flows between any two countries at HS code level. Free with registration. Critical for import/export propositions researching non-US markets. | Medium — replaces Census tool when target market is not the US |
+
+**Translation APIs — recommended stack:**
+
+| Service | Free Tier | Paid Rate | Best For | Action |
+|---|---|---|---|---|
+| **DeepL API** | 500,000 chars/month | $25/1M chars | European languages (DE, FR, ES, IT, PL, etc.) | Sign up at deepl.com/pro-api. Add `DEEPL_API_KEY` to `.env`. |
+| **Google Cloud Translation** | 500,000 chars/month | $20/1M chars | Arabic, CJK, broad coverage (100+ languages) | Enable in Google Cloud Console. Add `GOOGLE_TRANSLATE_API_KEY` to `.env`. |
+| **MyMemory API** | 10,000 chars/day (free key) | Contact for paid | Low-volume fallback, emergency overflow | Register at mymemory.translated.net. Add `MYMEMORY_API_KEY` to `.env`. |
+
+Combined free tier: 1M chars/month. A typical research run translating 10 sources averages ~20,000 chars. You'd need 50 international runs/month before incurring any translation cost.
+
+**Language detection library (no API cost):**
+
+Install once: `pip install lingua-language-detector`
+
+`lingua-py` runs offline, supports 75 languages, and performs significantly better than `langdetect` on short text excerpts (partial page scrapes, captions, headers). No API key, no usage cost.
+
+**Free international data APIs to register for:**
+
+| API | What it provides | Action |
+|---|---|---|
+| **GDELT Project** | Global news events, 170 countries, 65 languages, every 15 min. Fully free, no key. | No signup needed. Document base URL in `.env` comments. |
+| **UN Comtrade** | Bilateral trade flows, all countries, HS code level. | Register at comtradeplus.un.org. Free tier: 500 req/hour. Add `UN_COMTRADE_API_KEY` to `.env`. |
+| **OpenCorporates API** | 160M+ company records, 140+ jurisdictions, local-language. | Register at opencorporates.com/api_accounts. Free rate-limited tier. Add `OPENCORPORATES_API_KEY` to `.env`. |
+| **World Bank API** | Economic indicators, all countries. | No key needed. Fully open. |
+| **IMF Data API** | Macroeconomic/financial indicators, all countries. | No key needed. Fully open. |
+| **Eurostat API** | EU statistical data in all EU languages. | No key needed. Fully open. |
+
+**How this fits in the pipeline:**
+
+```
+Keyword Translation → Source Discovery (Brave + Perplexity + GDELT) → Language Detection
+→ [if non-English] Translation (DeepL or Google) → Normalization → Research Agent
+```
+
+The translation layer is transparent to research agents — they receive English text with source metadata tags. The assembled report treats translated sources identically to English sources. Translation notes and gaps surface in the consultant brief's "Where the data was thin" section.
+
+**Proposition types that trigger this workflow:**
+
+Any proposition where `target_country` or `origin_country` has a non-English primary language. The `international_research.md` workflow should be referenced in each of the 10 research workflows with a conditional block: "If target or origin country is non-English, run Step 1 of `international_research.md` before beginning source discovery."
+
+**Test proposition for validation:**
+
+| Proposition | Target language | Key non-English sources |
+|---|---|---|
+| Camel milk powder, Somalia → UAE | Arabic | UAE Ministry of Climate Change & Environment, ESMA (Emirates Authority for Standardization), Arabic trade press |
+
+This is a natural V2 test since the current camel milk proposition targets the US (English). Running the same product against the UAE market is a clean before/after comparison.
+
+---
 
 #### 7. Test propositions to validate V2
 
