@@ -24,6 +24,7 @@
  *     --market "Canada" \
  *     --segment "health food consumers" \
  *     --plan "starter" \
+ *     --industry-category "food_beverage" \
  *     --weights '{"market_demand":5,"regulatory":3,"competitive":3,"financial":5,"supply_chain":3,"risk":3}' \
  *     --how-heard "Fiverr" \
  *     --notes "Focused on prairie provinces"
@@ -57,6 +58,18 @@ const VALID_TYPES = [
 
 // Valid plan tiers
 const VALID_PLANS = ['starter', 'pro', 'retainer'];
+
+// Valid industry categories (must match migration 009 CHECK constraint)
+const VALID_INDUSTRY_CATEGORIES = [
+  'food_beverage',
+  'energy_clean_tech',
+  'medical_devices',
+  'chemicals_materials',
+  'electronics',
+  'apparel_textiles',
+  'cosmetics',
+  'general_manufacturing',
+];
 
 // Pricing per plan — kept here so proposal generation and intake stay in sync
 const PLAN_PRICING = {
@@ -135,6 +148,11 @@ function validate(data) {
 
   if (data.plan && !VALID_PLANS.includes(data.plan)) {
     errors.push(`--plan must be one of: ${VALID_PLANS.join(', ')}`);
+  }
+
+  // industry_category is optional but must be a known value if provided
+  if (data.industry_category && !VALID_INDUSTRY_CATEGORIES.includes(data.industry_category)) {
+    errors.push(`--industry-category must be one of: ${VALID_INDUSTRY_CATEGORIES.join(', ')}`);
   }
 
   // Origin country required only for physical propositions
@@ -304,11 +322,12 @@ async function main() {
     origin:      args.origin || null,
     market:      args.market,
     segment:     args.segment || null,
-    plan:        args.plan ? args.plan.toLowerCase() : null,
+    plan:              args.plan ? args.plan.toLowerCase() : null,
+    industry_category: args['industry-category'] || null,
     weights,
-    how_heard:   args['how-heard'] || null,
-    notes:       args.notes || null,
-    org_id:      args['org-id'] || null,
+    how_heard:         args['how-heard'] || null,
+    notes:             args.notes || null,
+    org_id:            args['org-id'] || null,
   };
 
   // Validate
@@ -349,6 +368,7 @@ async function main() {
     target_country:     inputData.market,
     target_demographic: inputData.segment,
     plan_tier:          inputData.plan,
+    industry_category:  inputData.industry_category,
     factor_weights:     inputData.weights,
     additional_context: contextParts.join(' | ') || null,
     status:             'prospect',

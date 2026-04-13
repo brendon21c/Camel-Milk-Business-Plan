@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-13 (Session 20 — Sequencing revised: website before V2. MCP ruled out. Run trigger decided: GitHub Actions workflow_dispatch. Intake form must drive DB schema before V2 migrations are written.)
+**Last updated:** 2026-04-13 (Session 22 — Steps 1 & 2 complete. reports.yml already had proposition_id input. Migration 009 run. intake.js updated.)
 
 ---
 
@@ -8,6 +8,15 @@
 An automated business viability intelligence system. Generic by design — first proposition is camel milk powder export from Somalia to the US. Future propositions are new DB rows, no new code needed.
 
 Pipeline: Perplexity briefings → research agents → assembler → branded PDF → Resend email → client inbox.
+
+**There are now two projects:**
+
+| Project | Location | Purpose |
+|---|---|---|
+| `Camel-Milk-Business-Plan` | This repo | Backend report engine — agents, tools, PDF generation, scheduling |
+| `mckeever-consulting-website` | Sibling repo, also on Vercel | Client-facing website — landing page, intake form, admin panel |
+
+They share the same Supabase project. The website writes intake data; the backend reads it and delivers reports. The admin panel triggers backend runs via GitHub Actions `workflow_dispatch`.
 
 ---
 
@@ -24,29 +33,157 @@ Pipeline: Perplexity briefings → research agents → assembler → branded PDF
 
 ---
 
-## Status
+## Current State (as of 2026-04-13)
 
-**V1 is complete. V2 planning is underway.**
+### Backend — `Camel-Milk-Business-Plan` ✅ V1 complete
 
-E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever from `reports@mckeeverconsulting.org`. Proposition on `retainer` plan — will auto-run May 1 via GitHub Actions.
+- V1 pipeline fully working and tested
+- E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever
+- 9 migrations run (001–009)
+- **`proposition_id` input:** Present in `reports.yml` — targeted run step + scheduled fallback both wired correctly
+- **Migration 009:** Run ✅ — `industry_category` column live on `propositions`, camel milk proposition backfilled to `food_beverage`
+- **`intake.js`:** Updated to accept `--industry-category`, validates against allowed values, passes through to `createProposition`
+- **Pending for V2:** Industry routing, consultant brief, prompt caching, new gov tool scripts, international research pipeline
 
-**Note:** Proposition is currently set to `plan_tier = 'retainer'` in Supabase to allow the May auto-run test. After the May run confirms scheduling works, flip back to `starter`.
+**Note:** Proposition is currently set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
 
-### Session 19 — V2 planning (2026-04-11)
-- **International & multilingual research pipeline** — full 7-step SOP added as `workflows/international_research.md`. Covers keyword translation, country-targeted source discovery, language detection, translation service routing (DeepL for European, Google for Arabic/CJK), data normalization, agent handoff with source provenance tags, and gap flagging in output.
-- **Error handling strategy** — defined retry budgets, fallback chains, and failure-scoping rules for every step in the international pipeline. Key principle: fail at the source level, not the run level. Max 2 translation API calls per source document across all services. Translated content cached to `.tmp/` immediately so cost is never paid twice.
-- **V2 roadmap section 8** — international research added to `ROADMAP_V2.md` with 6 new tools to build, full API stack with costs, and a concrete test proposition (camel milk → UAE in Arabic).
-- **Market positioning discussion** — clarified that the tool is not the product; the consulting service built on top of it is. The consultant brief + meeting model is the primary differentiator. Not a saturated market if positioned as AI-powered consulting rather than AI business plan generation.
+### Website — `mckeever-consulting-website` 🔄 In progress
 
-### Session 18 — V1 close (2026-04-10)
-- **Census fix** — `fetch_census_data.py` retries on malformed JSON, always emits structured JSON to stdout on failure.
-- **Quality review → repair loop** — Haiku flags errors, Sonnet re-assembles flagged sections, Haiku re-reviews. Capped at 2 cycles. Non-fatal.
-- **Stronger proofread** — added CONTRADICTION, VAGUE FINANCIALS, and WEAK CONCLUSIONS checks.
-- **`--hold` flag dropped** — pipeline auto-sends best version it can produce.
+- **Stack:** Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui
+- **Deployment:** Vercel — landing page is live
+- **Bootstrapped with:** v0.app (free plan now at limit — not a blocker, development continues directly in codebase)
+- **CLAUDE.md:** Written and in place — contains full schema, pages, brand tokens, intake form question set, tech decisions
+- **Supabase:** NOT yet connected — `.env.local` needs keys, `lib/supabase.ts` not created yet
+- **What's built:** Landing page only
+- **What's not built:** `/intake`, `/admin`, `/admin/propositions`, `/admin/reports`, `/admin/clients`
 
 ---
 
-## End-to-End Test
+## What Is Next — Ordered Task List
+
+Steps 1–2 are complete. Remaining work is in the website project (`mckeever-consulting-website`).
+
+### ~~Step 1 — Backend: `reports.yml` proposition_id input~~ ✅ Already done
+`proposition_id` input was already present and correctly wired — targeted run step + scheduled fallback both in place.
+
+### ~~Step 2 — Backend: Migration 009 + `intake.js` update~~ ✅ Complete (2026-04-13)
+- `migrations/009_add_industry_category.sql` created and run in Supabase
+- `industry_category TEXT CHECK (...)` column live on `propositions`
+- Camel milk proposition backfilled to `food_beverage`
+- `tools/intake.js` updated: `--industry-category` flag, validation, passes through to `createProposition`
+
+### Step 3 — Website: Connect Supabase
+- `cd` into `mckeever-consulting-website`
+- `pnpm add @supabase/supabase-js`
+- Create `.env.local` with:
+  ```
+  NEXT_PUBLIC_SUPABASE_URL=https://vupnhlpwfqwmrysohhrq.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY=<from Supabase dashboard → Settings → API>
+  SUPABASE_SERVICE_KEY=<from Supabase dashboard → Settings → API>
+  GITHUB_TOKEN=<fine-grained PAT — Actions read/write on Camel-Milk-Business-Plan repo>
+  GITHUB_REPO_OWNER=<your GitHub username>
+  ```
+- Create `lib/supabase.ts` (browser/client-side, uses anon key)
+- Create `lib/supabase-server.ts` (server-side only, uses service key — never expose to browser)
+
+### Step 4 — Website: Build `/intake`
+Branching form. V2 physical proposition questions fully implemented. V3 types stubbed as "coming soon".
+
+**Question set (physical branch):**
+| Question | DB field |
+|---|---|
+| Client full name | `clients.name` |
+| Client email | `clients.email` |
+| Company name | `organizations.name` |
+| Product description | `propositions.description` |
+| Industry category | `propositions.industry_category` |
+| Proposition type | `propositions.proposition_type` (import/export or domestic) |
+| Origin country | `propositions.origin_country` (if import/export) |
+| Target market | `propositions.target_country` |
+| Plan tier | `propositions.plan_tier` (starter $100 / pro $250 / retainer $150/mo) |
+
+**On submit:** write to `clients`, `propositions`, `proposition_recipients` in Supabase. Send notification email to Brendon via the backend's Resend setup (or trigger from the backend — TBD).
+
+### Step 5 — Website: Build `/admin` (auth + dashboard)
+- Set up Supabase Auth — admin routes redirect to `/login` if unauthenticated
+- `/admin` dashboard: active propositions count, recent runs, client count
+
+### Step 6 — Website: Build `/admin/propositions`
+- List all propositions with status
+- **Run Now button** — calls GitHub Actions `workflow_dispatch` API:
+  ```
+  POST https://api.github.com/repos/{GITHUB_REPO_OWNER}/Camel-Milk-Business-Plan/actions/workflows/reports.yml/dispatches
+  Authorization: Bearer {GITHUB_TOKEN}
+  Body: { "ref": "main", "inputs": { "proposition_id": "<uuid>", "force": "true" } }
+  ```
+- **Live run status** — Supabase Realtime subscription on `reports` table, filters by `proposition_id`. Shows `running | complete | failed` in real time.
+
+### Step 7 — Website: Build `/admin/reports` and `/admin/clients`
+- `/admin/reports`: report history per proposition. View/download PDF via signed Supabase Storage URL (`reports` bucket, path `{proposition_id}/{reportId}.pdf`)
+- `/admin/clients`: manage organizations and clients. Activate/deactivate. Edit plan tier.
+
+### Step 8 — V2 End-to-End Test
+1. Open website `/intake` as a "client"
+2. Fill out form with a product idea (e.g. solar panels, China → US)
+3. Check `/admin/propositions` — new submission appears
+4. Hit **Run Now** → backend fires via GitHub Actions
+5. Watch status update live via Supabase Realtime
+6. Report generates, PDF delivered, view/download from `/admin/reports`
+
+---
+
+## V2 Backend Work (after website is live and tested)
+
+These are the remaining backend tasks for full V2 capability. Do these after the website E2E test passes.
+
+1. **Industry-aware gov data routing** — replace the flat `executeTool` switch with routing based on `industry_category`. Non-applicable tools return a structured "not applicable" so agents don't waste iterations.
+2. **New gov tool scripts** (build as needed per test proposition):
+   - `tools/fetch_doe_data.py` — DOE EIA + NREL (energy/solar)
+   - `tools/fetch_epa_data.py` — EPA regulatory + enforcement (chemicals, manufacturing)
+   - `tools/fetch_fda_device_data.py` — FDA 510(k) clearances + device recalls (medical)
+   - `tools/fetch_itc_data.py` — ITC trade remedy cases (any import)
+   - `tools/fetch_bls_data.py` — BLS employment + wage benchmarks
+   - `tools/fetch_bis_data.py` — BIS export control classifications
+3. **Workflow generalisation** — audit the 10 research workflows, remove food-specific hardcoding. Start with Option A (venture intelligence brief steers tool selection). Move to Option B (per-industry substitution blocks) only if results are poor.
+4. **Consultant Intelligence Brief** — new `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Delivered as a single admin email with both PDFs (client report + consultant brief) attached.
+5. **Prompt caching on the assembler** — add `cache_control: { type: "ephemeral" }` on the system prompt and research context blocks in the assembler's API calls. Saves ~$5/run (~40% total cost reduction).
+6. **International research pipeline** — `tools/translate_text.py`, `tools/detect_language.py`, `tools/normalize_international_data.py`, `tools/fetch_gdelt_news.py`, `tools/fetch_opencorporates.py`, `tools/fetch_un_comtrade.py`. New API keys needed: DeepL, Google Cloud Translation, MyMemory, UN Comtrade, OpenCorporates.
+
+**V2 test propositions:**
+| Proposition | Industry category | Key non-food tools needed |
+|---|---|---|
+| Solar panels, China → US | energy | DOE EIA, EPA, ITC |
+| Apparel / activewear, Bangladesh → US | apparel | CBP, FTC, CPSC |
+| Medical diagnostic device, Germany → US | medical | FDA device, CMS |
+| Consumer electronics, Taiwan → US | electronics | FCC, BIS, ITC |
+| Camel milk powder, Somalia → UAE | food_beverage + Arabic | translate_text, detect_language, GDELT, UAE Ministry sources |
+
+---
+
+## Session Log
+
+### Session 22 — Backend steps 1 & 2 complete (2026-04-13)
+- **`reports.yml`** — confirmed `proposition_id` input already present and correctly wired (targeted run + scheduled fallback)
+- **Migration 009** — `industry_category` column added to `propositions`, camel milk proposition backfilled to `food_beverage`, run in Supabase SQL Editor
+- **`intake.js`** — `--industry-category` flag added: validation against CHECK constraint values, passed through to `createProposition`
+- **Next:** Switch to `mckeever-consulting-website` — Step 3 (Connect Supabase)
+
+### Session 21 — Two-project state + V2 sequencing (2026-04-13)
+- **Website project created** — `mckeever-consulting-website` on Vercel, bootstrapped with v0.app
+- **Landing page deployed and live**
+- **CLAUDE.md written** for the website project — full schema, pages, brand tokens, intake form questions, tech decisions already documented there
+- **v0.app free plan at limit** — not a blocker. Development continues directly in the codebase from this point
+- **Full task order mapped** across both projects to reach V2 end-to-end test (see "What Is Next" above)
+- **Confirmed:** Supabase not yet connected to website project. No `/intake` or admin pages built yet.
+
+### Sessions 18–19 — V1 close + V2 planning (2026-04-10 to 2026-04-11)
+- V1 finalised: Census JSON retry fix, quality review/repair loop (Haiku flags → Sonnet repairs, max 2 cycles), stronger proofread checks, `--hold` flag dropped
+- International research pipeline SOP written (`workflows/international_research.md`) — see `ROADMAP_V2.md` for full detail
+- Market positioning locked: the consulting service (consultant brief + meeting) is the product, not the report generator
+
+---
+
+## End-to-End Test (V1)
 
 ```
 node run.js --proposition-id 54f51272-d819-4d82-825a-15603ed48654 --force
@@ -115,7 +252,7 @@ Two workflows in `.github/workflows/`:
 | Weekly Cleanup | `cleanup.yml` | Every Sunday, 2 AM UTC | Prunes old reports, failed reports, expired cache |
 
 Both have a manual "Run workflow" button in the GitHub Actions UI.
-`reports.yml` has a `--force` toggle for manual re-runs outside the normal schedule.
+`reports.yml` has a `--force` toggle and a `proposition_id` input for targeted runs from the admin panel.
 
 All secrets are stored in GitHub repo → Settings → Secrets and variables → Actions.
 
@@ -131,11 +268,12 @@ workflows/          ← plain-language SOPs (13 files)
 tools/              ← Python scripts (execution layer)
 db.js               ← all Supabase queries
 .env                ← all credentials
-.github/workflows/  ← GitHub Actions (scheduling)
+.github/workflows/  ← GitHub Actions (scheduling + on-demand trigger)
 outputs/            ← generated PDFs (auto-deleted after upload + email)
 .tmp/               ← disposable intermediates (auto-deleted after each step)
 assets/             ← fonts (auto-downloaded), brand assets
 ROADMAP_V2.md       ← V2/V3 product vision and implementation plan
+HANDOFF.md          ← this file
 ```
 
 **Workflows (13 total):**
@@ -218,7 +356,7 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 
 ## DB Schema
 
-**8 migrations run (001–008).**
+**9 migrations run (001–009).**
 
 | Table | Purpose |
 |---|---|
@@ -242,9 +380,9 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 
 **proposition_type values:** `physical_import_export | physical_domestic | saas_software | service_business | digital_product`
 
-Only `physical_import_export` and `physical_domestic` have workflows. V2 adds industry-aware routing. See ROADMAP_V2.md.
+Only `physical_import_export` and `physical_domestic` have workflows. V2 adds industry-aware routing.
 
-**Note:** Migration numbering — ROADMAP_V2.md references a migration 006 for `industry_category`. That number is now taken (organizations). The industry_category migration will be 009 when built.
+**industry_category values:** `food_beverage | energy_clean_tech | medical_devices | chemicals_materials | electronics | apparel_textiles | cosmetics | general_manufacturing`
 
 **Data retention:** See `tools/cleanup.js`. Rules:
 - Completed reports: 6-month window (always keeps most recent per proposition)
@@ -286,6 +424,16 @@ USASpending.gov and SEC EDGAR require no key. All keys are also stored as GitHub
 
 GDELT, World Bank, IMF, and Eurostat require no key — fully open APIs.
 
+**Website project `.env.local` (separate file in `mckeever-consulting-website`):**
+
+| Key | Variable | Notes |
+|---|---|---|
+| Supabase URL | `NEXT_PUBLIC_SUPABASE_URL` | Same project as backend |
+| Supabase anon key | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Safe to expose to browser |
+| Supabase service key | `SUPABASE_SERVICE_KEY` | Server-side only — never expose to browser |
+| GitHub token | `GITHUB_TOKEN` | Fine-grained PAT — Actions read/write on `Camel-Milk-Business-Plan` repo |
+| GitHub repo owner | `GITHUB_REPO_OWNER` | Your GitHub username |
+
 ---
 
 ## Locked Decisions
@@ -295,7 +443,7 @@ GDELT, World Bank, IMF, and Eurostat require no key — fully open APIs.
 | 1 | Research method | Claude Haiku (tool-use loop) + Brave Search + gov APIs |
 | 2 | Report structure | 14 sections + Sources + data confidence score |
 | 3 | Delivery | Resend email, PDF attached. All proposition recipients + Brendon admin copy. |
-| 4 | Run trigger | Scheduled (`next_run_at`) or `--force` |
+| 4 | Run trigger | Scheduled (`next_run_at`) or `--force`. Website uses GitHub Actions `workflow_dispatch`. |
 | 5 | Delta tracking | Full fresh report every run + "What Changed" section from run 2+ |
 | 6 | Agent architecture | Haiku (research, tool-use) → Sonnet (assembly, synthesis) |
 | 7 | Viability score | 6 factors × weights, each 1–5. 4–5=Strong / 2.5–3.9=Moderate / 1–2.4=Weak |
@@ -314,28 +462,21 @@ GDELT, World Bank, IMF, and Eurostat require no key — fully open APIs.
 | 20 | Scheduling | GitHub Actions — cleanup weekly (Sunday 2 AM UTC), reports monthly (1st, 6 AM UTC). |
 | 21 | Admin independence | Brendon is admin of McKeever Consulting via `organization_admins` table — independent of his client record. Multiple admins supported. |
 | 22 | Assembler architecture | Section-by-section (15 Sonnet calls, 2-cycle repair each) + Haiku structural review + Sonnet proofread pass. Eliminates JSON parse failures. Content JSON uploaded before PDF build. |
+| 23 | MCP | Ruled out (2026-04-13). Declining adoption, more problems than it solves. Tool layer stays as Python subprocesses. |
+| 24 | Website run trigger | GitHub Actions `workflow_dispatch` — no new servers needed. Admin panel calls GitHub API with `proposition_id` input. Website polls `reports` table via Supabase Realtime for live status. |
+| 25 | Website tech stack | Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui + Supabase JS client. Deployed on Vercel. |
+| 26 | Website auth | Supabase Auth for admin panel. Intake form is public. |
+| 27 | Website/backend separation | Separate repos. Shared Supabase project. No API layer between them — website reads/writes DB directly. |
 
 ---
 
-## Roadmap
+## Roadmap Summary
 
 See `ROADMAP_V2.md` for full detail.
 
-| Phase | Scope | Key work |
+| Phase | Status | Key work |
 |---|---|---|
-| V1 | Physical import/export | Complete and stable |
-| Website | Main page, intake form, basic admin panel | **Next.** Separate project. Connects via Supabase + GitHub Actions workflow_dispatch. MCP ruled out. |
-| V2 | Any physical product, any industry | Industry-aware gov data routing · migration 009 (`industry_category`) · new tool scripts (DOE, EPA, FDA device, ITC, translate, detect_language, normalize_international, GDELT, UN Comtrade, OpenCorporates) · workflow generalisation · consultant brief · prompt caching on assembler · international & multilingual research pipeline |
-| V3 | SaaS, services, digital, franchise | New workflow sets per venture type · dynamic agent selection · new data sources (Crunchbase, G2, BLS) · social media research layer (YouTube, Reddit, Instagram, TikTok) |
-
-**Sequencing rationale:** Website before V2 — intake form questions must drive the DB schema. Writing V2 migrations before the form exists causes rework.
-
-**Before starting the website build (one change needed here):**
-- Add a `proposition_id` input to `.github/workflows/reports.yml` — required for the admin panel's Run Now trigger
-
-**V2 build order (after website is live):**
-1. Migration 009 + industry routing (unblocks non-food propositions)
-2. Consultant brief (high value, no new research infrastructure needed)
-3. Prompt caching on assembler (cost reduction, straightforward)
-4. New gov tool scripts as needed per test proposition
-5. International research pipeline (translate + detect + normalize tools + new API keys)
+| V1 | ✅ Complete | Physical import/export pipeline. E2E tested. |
+| Website | 🔄 In progress | Landing page live. Intake form + admin panel not yet built. See task list above. |
+| V2 | Planned | Industry-aware routing · new gov tool scripts · workflow generalisation · consultant brief · prompt caching · international research pipeline |
+| V3 | Future | SaaS, services, digital, franchise — new workflow sets, dynamic agent selection, social media research layer |
