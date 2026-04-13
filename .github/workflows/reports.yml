@@ -14,13 +14,18 @@ name: Monthly Report Run
 on:
   schedule:
     - cron: '0 13 * * *'   # 13:00 UTC daily = 07:00 CST — getDuePropositions() decides what actually runs
-  workflow_dispatch:        # manual trigger from GitHub Actions UI
+  workflow_dispatch:        # manual trigger from GitHub Actions UI and admin panel Run Now button
     inputs:
       force:
         description: 'Pass --force to skip the already-ran guard'
         required: false
-        default: 'false'
+        default: false
         type: boolean
+      proposition_id:
+        description: 'Target a specific proposition ID (leave blank to run all due propositions)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   run-reports:
@@ -65,7 +70,24 @@ jobs:
       # Add one step per proposition. Copy this block and update the ID.
       # The step name shows up in the GitHub Actions log and failure emails.
 
+      # If a specific proposition_id was passed (e.g. from the admin panel Run Now button),
+      # run only that proposition. Otherwise fall through to the scheduled per-proposition steps below.
+      - name: Run report — targeted (admin panel trigger)
+        if: github.event.inputs.proposition_id != ''
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          node run.js --proposition-id ${{ github.event.inputs.proposition_id }} $FORCE_FLAG
+
+      # ── Active propositions ───────────────────────────────────────────────
+      # These steps run on the cron schedule or when no specific proposition_id was provided.
+      # Add one step per proposition. Copy this block and update the ID.
+      # The step name shows up in the GitHub Actions log and failure emails.
+
       - name: Run report — B & I Camel Milk
+        if: github.event_name == 'schedule' || github.event.inputs.proposition_id == ''
         run: |
           FORCE_FLAG=""
           if [ "${{ github.event.inputs.force }}" = "true" ]; then

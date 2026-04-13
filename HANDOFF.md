@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-11 (Session 19 — V2 planning: international & multilingual research pipeline designed. Workflow + roadmap section added. Error handling strategy defined.)
+**Last updated:** 2026-04-13 (Session 20 — Sequencing revised: website before V2. MCP ruled out. Run trigger decided: GitHub Actions workflow_dispatch. Intake form must drive DB schema before V2 migrations are written.)
 
 ---
 
@@ -323,12 +323,17 @@ See `ROADMAP_V2.md` for full detail.
 
 | Phase | Scope | Key work |
 |---|---|---|
-| V1 | Physical import/export (current) | Complete and stable |
+| V1 | Physical import/export | Complete and stable |
+| Website | Main page, intake form, basic admin panel | **Next.** Separate project. Connects via Supabase + GitHub Actions workflow_dispatch. MCP ruled out. |
 | V2 | Any physical product, any industry | Industry-aware gov data routing · migration 009 (`industry_category`) · new tool scripts (DOE, EPA, FDA device, ITC, translate, detect_language, normalize_international, GDELT, UN Comtrade, OpenCorporates) · workflow generalisation · consultant brief · prompt caching on assembler · international & multilingual research pipeline |
 | V3 | SaaS, services, digital, franchise | New workflow sets per venture type · dynamic agent selection · new data sources (Crunchbase, G2, BLS) · social media research layer (YouTube, Reddit, Instagram, TikTok) |
-| Web App | Admin panel + client intake | Separate project post-V2. Connects via Supabase as shared data layer. Evaluate MCP before starting. |
 
-**V2 build order (recommended):**
+**Sequencing rationale:** Website before V2 — intake form questions must drive the DB schema. Writing V2 migrations before the form exists causes rework.
+
+**Before starting the website build (one change needed here):**
+- Add a `proposition_id` input to `.github/workflows/reports.yml` — required for the admin panel's Run Now trigger
+
+**V2 build order (after website is live):**
 1. Migration 009 + industry routing (unblocks non-food propositions)
 2. Consultant brief (high value, no new research infrastructure needed)
 3. Prompt caching on assembler (cost reduction, straightforward)

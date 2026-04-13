@@ -9,11 +9,14 @@
 
 | Phase | Scope | Status |
 |---|---|---|
-| V1 | Physical import/export — any product, food-biased gov data | In progress (end-to-end test next) |
+| V1 | Physical import/export — any product, food-biased gov data | Complete |
+| Website | Main page, intake form, basic admin panel | Next — before V2 |
 | V2 | Any physical product, any industry — adaptive research | Planned |
 | V3 | General business ventures — SaaS, services, digital, franchise | Future |
 
 The foundation (WAT architecture, agent pipeline, PDF delivery) carries through all phases unchanged. Each phase adds capability on top without rebuilding from scratch.
+
+**Sequencing rationale:** The website intake form drives the DB schema. Building the form before V2 migrations locks in the right data model from the start — preventing schema patches and field backfills later. The admin panel also needs to be tested against the current (simpler) pipeline before V2 adds more complexity. Website first is the lower-rework path.
 
 ---
 
@@ -330,44 +333,62 @@ Add a dedicated social media intelligence layer to the marketing agent — movin
 
 ---
 
-## Web App — Post-V2 Phase
+## Website — Next Phase (Before V2)
 
-**Timing:** After V2 is complete and validated.
+**Timing:** Before V2. The intake form question set drives the DB schema — migrations must be written to match the form, not retrofitted after the fact.
 
-### Project structure decision (evaluate before starting)
+### Project structure
 
-> **The web app should likely be a separate project that connects to this one — not built into this repo.**
+> **The website is a separate project that connects to this one — not built into this repo.**
 
-This pipeline is a backend report engine: it runs on a schedule or on-demand, calls APIs, and delivers PDFs. A web app is a different concern — client intake, admin dashboard, status tracking, report viewing. Mixing them risks bloating this repo and making both harder to maintain.
+This pipeline is a backend report engine: it runs on a schedule or on-demand, calls APIs, and delivers PDFs. The website is a different concern — client intake, admin dashboard, status tracking, report viewing. Keeping them separate means both are easier to maintain and deploy independently.
 
-**Recommended approach:** New project (e.g. `mckeever-consulting-web`) that talks to this engine via:
-- **Supabase** as the shared data layer (propositions, reports, clients already live there — the web app reads/writes the same DB)
-- **A trigger mechanism** to kick off report runs (a Supabase webhook, a lightweight API endpoint in this project, or a cron that polls the DB)
+**How they connect:**
+- **Supabase** as the shared data layer — propositions, reports, clients, organizations all live there. The website reads and writes the same DB directly.
+- **GitHub Actions `workflow_dispatch`** as the run trigger — the admin panel's "Run Now" button calls the GitHub API to fire `reports.yml` with a `proposition_id` input. The engine runs, writes status to the `reports` table, and the web app polls or subscribes via Supabase Realtime for live updates.
+- **Supabase Storage** for report viewing — PDFs are already uploaded there. The web app requests a signed URL and renders them in-browser.
 
-This keeps the report engine clean and independently deployable. The web app becomes a front-end to the same data, not a wrapper around the engine.
+**One change needed in this project before the website can trigger runs:**
+Add a `proposition_id` input to `.github/workflows/reports.yml` so the admin panel can target a specific proposition. Two-line change — do this before starting the website build.
 
-**Evaluate at project start:**
-- Is Supabase the right shared layer, or do we need an explicit API between the two?
-- Should report runs be triggered by a DB row insert (web app writes → engine picks up) or a direct API call?
-- Authentication model for the admin panel — Supabase Auth vs external provider
+**Authentication model:** Supabase Auth for the admin panel. Simple, already integrated with the data layer.
 
-### MCP — evaluate for the web app phase
+### Intake form design
 
-> **Review MCP (Model Context Protocol) before building the web app.** Do not assume the current tool architecture carries over unchanged.
+The intake form is the most critical part of the website build. Its questions must be designed before V2 migrations are written — the form drives the schema, not the other way around.
 
-**What MCP is:** Anthropic's open standard for connecting AI to external tools and data. Instead of hand-rolling tool execution (as this project does via Python subprocesses), MCP servers expose tools over a standard protocol that any compatible client can use.
+The form needs to be **branching** — questions change based on proposition type:
 
-**Why it may be relevant for the web app:**
-- The web app will likely need Claude-powered features (report Q&A, client onboarding assistance, admin summaries)
-- Rather than duplicating the tool layer, MCP servers could expose Brave Search, FDA, Census, USDA, etc. as shared services that both this pipeline and the web app consume
-- MCP is gaining broad adoption (OpenAI, Google DeepMind both support it as of 2025) — likely to be a stable foundation
+```
+What type of venture is this?
+  → Physical product (import/export or domestic)
+      Industry category? (food, energy, medical, apparel, electronics...)
+      Origin country? Target market?
+      Product description?
+  → SaaS / Software          [V3]
+  → Service business         [V3]
+  → Digital product          [V3]
+  → Franchise / Marketplace  [V3]
+```
 
-**What to evaluate:**
-1. Is MCP mature enough and well-supported by the time we start the web app?
-2. Would converting the existing Python tools to MCP servers provide enough benefit to justify the rewrite?
-3. Does the web app's Claude integration benefit from shared MCP servers, or is the tool usage different enough that it doesn't matter?
+**For the website build:** Design V2 physical proposition questions fully. Stub out V3 types as "coming soon" — don't build them yet, but make the form component branching-aware from day one so V3 is an extension, not a rewrite.
 
-**Decision rule:** If the web app needs Claude with tool access and the same tools this pipeline uses — MCP is worth it. If the web app's Claude usage is narrow (Q&A over existing report data, no external API calls) — skip MCP and keep it simple.
+### Website scope (initial build)
+
+| Page / Feature | Notes |
+|---|---|
+| Main / landing page | McKeever Consulting brand, service overview, CTA to intake form |
+| Intake form | Branching form for physical propositions (V2 question set). Writes directly to Supabase. |
+| Admin panel — dashboard | Overview of active propositions, recent report runs, client list |
+| Admin panel — run reports | Trigger a run for any proposition via GitHub Actions dispatch. Live status via Supabase Realtime. |
+| Admin panel — view reports | Browse report history per proposition. Download or view PDFs from Supabase Storage. |
+| Admin panel — manage clients | View/edit organizations, clients, propositions. Activate/deactivate. |
+
+### MCP — ruled out (decided 2026-04-13)
+
+**Decision: Do not use MCP.** Research as of April 2026 shows MCP is seeing declining adoption — it hasn't delivered on its early promise and is causing more integration problems than it solves. Not worth the rewrite risk.
+
+**What this means for the web app:** The tool layer stays as-is (Python subprocess calls via `executeTool`). The web app connects to the engine via Supabase as the shared data layer, with a trigger mechanism (DB row insert the engine polls, or a lightweight API endpoint) to kick off report runs. No MCP refactor needed at any phase.
 
 ---
 
@@ -391,7 +412,10 @@ This keeps the report engine clean and independently deployable. The web app bec
 
 | Decision | Outcome | Rationale |
 |---|---|---|
+| Website before V2 | Build website first | Intake form questions must drive the DB schema — writing V2 migrations before the form exists causes rework. Admin panel also easier to build and test against the simpler V1 pipeline. |
+| MCP | Ruled out (2026-04-13) | Declining adoption, more problems than it solves. Tool layer stays as Python subprocesses. |
+| Run trigger | GitHub Actions workflow_dispatch | No new servers or infrastructure. Web app calls GitHub API → Actions fires run.js. Web app polls Supabase reports table for status. |
 | V2 before V3 | Physical products first | Shared research spine (supply chain, regulatory, manufacturing) makes generalisation lower risk |
 | Venture intelligence as bridge | Implement now, rely on it for V2 | Perplexity brief already makes agents adapt to industry — reduces workflow rewrite scope |
 | Option A workflow generalisation | Start with brief-driven adaptation | Less work, test it before committing to per-industry workflow blocks |
-| Industry category field | Add in migration 006 | Clean DB signal for gov tool routing — better than inferring from product description |
+| Industry category field | Add in migration 009 (not 006 — that number is taken) | Clean DB signal for gov tool routing — better than inferring from product description |
