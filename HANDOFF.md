@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-13 (Session 22 — Steps 1 & 2 complete. reports.yml already had proposition_id input. Migration 009 run. intake.js updated.)
+**Last updated:** 2026-04-14 (Session 23 — Migration 010 run. clients.phone, propositions.sourcing_notes/additional_info added. proposition_context table created. moddatetime extension enabled.)
 
 ---
 
@@ -42,6 +42,7 @@ They share the same Supabase project. The website writes intake data; the backen
 - 9 migrations run (001–009)
 - **`proposition_id` input:** Present in `reports.yml` — targeted run step + scheduled fallback both wired correctly
 - **Migration 009:** Run ✅ — `industry_category` column live on `propositions`, camel milk proposition backfilled to `food_beverage`
+- **Migration 010:** Run ✅ — `clients.phone`, `propositions.sourcing_notes`, `propositions.additional_info` added; `proposition_context` table created with RLS; `moddatetime` extension enabled
 - **`intake.js`:** Updated to accept `--industry-category`, validates against allowed values, passes through to `createProposition`
 - **Pending for V2:** Industry routing, consultant brief, prompt caching, new gov tool scripts, international research pipeline
 
@@ -73,18 +74,8 @@ Steps 1–2 are complete. Remaining work is in the website project (`mckeever-co
 - `tools/intake.js` updated: `--industry-category` flag, validation, passes through to `createProposition`
 
 ### Step 3 — Website: Connect Supabase
-- `cd` into `mckeever-consulting-website`
-- `pnpm add @supabase/supabase-js`
-- Create `.env.local` with:
-  ```
-  NEXT_PUBLIC_SUPABASE_URL=https://vupnhlpwfqwmrysohhrq.supabase.co
-  NEXT_PUBLIC_SUPABASE_ANON_KEY=<from Supabase dashboard → Settings → API>
-  SUPABASE_SERVICE_KEY=<from Supabase dashboard → Settings → API>
-  GITHUB_TOKEN=<fine-grained PAT — Actions read/write on Camel-Milk-Business-Plan repo>
-  GITHUB_REPO_OWNER=<your GitHub username>
-  ```
-- Create `lib/supabase.ts` (browser/client-side, uses anon key)
-- Create `lib/supabase-server.ts` (server-side only, uses service key — never expose to browser)
+- `.env.local` ✅ already populated (all keys present including `GITHUB_TOKEN` and `GITHUB_REPO_OWNER`)
+- Remaining: `pnpm add @supabase/supabase-js`, create `lib/supabase.ts` (browser, anon key) and `lib/supabase-server.ts` (server-side only, service key)
 
 ### Step 4 — Website: Build `/intake`
 Branching form. V2 physical proposition questions fully implemented. V3 types stubbed as "coming soon".
@@ -100,6 +91,9 @@ Branching form. V2 physical proposition questions fully implemented. V3 types st
 | Proposition type | `propositions.proposition_type` (import/export or domestic) |
 | Origin country | `propositions.origin_country` (if import/export) |
 | Target market | `propositions.target_country` |
+| Phone number | `clients.phone` | Required |
+| Sourcing notes | `propositions.sourcing_notes` | Optional — supplier/pricing info |
+| Additional info | `propositions.additional_info` | Optional — free-text catch-all |
 | Plan tier | `propositions.plan_tier` (starter $100 / pro $250 / retainer $150/mo) |
 
 **On submit:** write to `clients`, `propositions`, `proposition_recipients` in Supabase. Send notification email to Brendon via the backend's Resend setup (or trigger from the backend — TBD).
@@ -161,6 +155,14 @@ These are the remaining backend tasks for full V2 capability. Do these after the
 ---
 
 ## Session Log
+
+### Session 23 — Migration 010 run (2026-04-14)
+- **Migration 010** — run against shared Supabase project (`vupnhlpwfqwmrysohhrq`)
+- **`moddatetime` extension** — had to be enabled explicitly via CLI before migration could run (trigger on `proposition_context.updated_at` depends on it)
+- **New columns:** `clients.phone` (VARCHAR 50, NOT NULL default `''`), `propositions.sourcing_notes` (TEXT nullable), `propositions.additional_info` (TEXT nullable)
+- **New table:** `proposition_context` — admin enrichment per proposition, RLS enabled (service key only), indexed on `proposition_id`, auto-updating `updated_at`
+- **Migration tooling:** Used `npx supabase link` + `npx supabase db query --linked` — Supabase CLI access token stored as `SUPABASE_LOGIN_TOKEN` in `.env`
+- **Next:** Continue Step 3 — connect Supabase to `mckeever-consulting-website` and build `/intake`
 
 ### Session 22 — Backend steps 1 & 2 complete (2026-04-13)
 - **`reports.yml`** — confirmed `proposition_id` input already present and correctly wired (targeted run + scheduled fallback)
@@ -356,7 +358,7 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 
 ## DB Schema
 
-**9 migrations run (001–009).**
+**10 migrations run (001–010).**
 
 | Table | Purpose |
 |---|---|
@@ -369,6 +371,14 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 | `agent_outputs` | Temporary research data — deleted post-run (or at failure) |
 | `report_sources` | Source URLs cited in reports |
 | `api_cache` | Brave Search cache — 7-day TTL |
+| `proposition_context` | Admin-added enrichment per proposition — read by research engine when building prompts. Categories: `sourcing`, `market`, `regulatory`, `financial`, `competitor`, `other`. RLS enabled — service key only. |
+
+**New fields added in migration 010:**
+- `clients.phone` — VARCHAR(50), NOT NULL default `''`. Required on intake form.
+- `propositions.sourcing_notes` — TEXT, nullable. Supplier/pricing info from intake form.
+- `propositions.additional_info` — TEXT, nullable. Free-text catch-all from intake form.
+
+**Extensions enabled:** `moddatetime` — required for the `proposition_context.updated_at` trigger. Had to be activated explicitly despite being available in Supabase by default.
 
 **Organization status values:** `prospect | pending | active | cancelled | inactive`
 - `getDuePropositions()` only returns propositions from `active` orgs
