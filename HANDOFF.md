@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-14 (Session 23 — Migration 010 run. clients.phone, propositions.sourcing_notes/additional_info added. proposition_context table created. moddatetime extension enabled.)
+**Last updated:** 2026-04-15 (Session 24 — Step 2.5 complete. Website Steps 3–7 complete. V2 E2E test is the only remaining pre-V2 task.)
 
 ---
 
@@ -9,7 +9,7 @@ An automated business viability intelligence system. Generic by design — first
 
 Pipeline: Perplexity briefings → research agents → assembler → branded PDF → Resend email → client inbox.
 
-**There are now two projects:**
+**There are two projects:**
 
 | Project | Location | Purpose |
 |---|---|---|
@@ -33,175 +33,133 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ---
 
-## Current State (as of 2026-04-13)
+## Current State (as of 2026-04-15)
 
-### Backend — `Camel-Milk-Business-Plan` ✅ V1 complete
+### Backend — `Camel-Milk-Business-Plan` ✅ V1 + Step 2.5 complete
 
 - V1 pipeline fully working and tested
 - E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever
-- 9 migrations run (001–009)
-- **`proposition_id` input:** Present in `reports.yml` — targeted run step + scheduled fallback both wired correctly
-- **Migration 009:** Run ✅ — `industry_category` column live on `propositions`, camel milk proposition backfilled to `food_beverage`
-- **Migration 010:** Run ✅ — `clients.phone`, `propositions.sourcing_notes`, `propositions.additional_info` added; `proposition_context` table created with RLS; `moddatetime` extension enabled
-- **`intake.js`:** Updated to accept `--industry-category`, validates against allowed values, passes through to `createProposition`
+- 10 migrations run (001–010)
+- **Step 2.5 complete:** `getPropositionContext()` added to `db.js`. At run start, backend queries `proposition_context`, groups rows by category, and injects relevant notes into each research agent's prompt as a `## ADMIN CONTEXT NOTES` block. Category → agent mapping is in `run.js` (`CATEGORY_TO_AGENTS`).
+- **`proposition_context` column:** the text content is stored in `content` (not `note`) — confirmed from website source
 - **Pending for V2:** Industry routing, consultant brief, prompt caching, new gov tool scripts, international research pipeline
 
-**Note:** Proposition is currently set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
+**Note:** Proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
 
-### Website — `mckeever-consulting-website` 🔄 In progress
+### Website — `mckeever-consulting-website` ✅ All pages built
 
 - **Stack:** Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui
-- **Deployment:** Vercel — landing page is live
-- **Bootstrapped with:** v0.app (free plan now at limit — not a blocker, development continues directly in codebase)
-- **CLAUDE.md:** Written and in place — contains full schema, pages, brand tokens, intake form question set, tech decisions
-- **Supabase:** NOT yet connected — `.env.local` needs keys, `lib/supabase.ts` not created yet
-- **What's built:** Landing page only
-- **What's not built:** `/intake`, `/admin`, `/admin/propositions`, `/admin/reports`, `/admin/clients`
+- **Deployment:** Vercel — live
+- **Supabase:** Connected. `lib/supabase/client.ts` (browser, anon key) and `lib/supabase/server.ts` (server-side, cookie-based) both in place.
+- **Auth:** Supabase Auth wired up. `app/admin/layout.tsx` redirects to `/login` if no session. Login page at `/login`.
+
+| Page | Status | Notes |
+|---|---|---|
+| `/` | ✅ Live | Landing page |
+| `/intake` | ✅ Built | Branching form — physical branch fully implemented, V3 types stubbed |
+| `/login` | ✅ Built | Supabase `signInWithPassword`, redirects to `/admin` on success |
+| `/admin` | ✅ Built | Dashboard — 4 stat cards (active propositions, runs this week, total clients, pending review) |
+| `/admin/propositions` | ✅ Built | Lists all propositions with status badges |
+| `/admin/propositions/[id]` | ✅ Built | Full detail — proposition params, client info, reports history, Run Now, Context Panel, PDF download |
+| `/admin/reports` | ✅ Built | 100 most recent runs across all propositions, PDF download per row |
+| `/admin/clients` | ✅ Built | Org list with status toggle, plan tier select, nested contacts |
+| `/admin/clients/[id]` | ✅ Built | Org detail page |
+| `/admin/settings` | ✅ Built | Settings page |
+
+**Notable component details:**
+- **RunPanel:** Two-step confirm guard on "Run Again" — first click turns amber ("Confirm run?"), second click fires. Auto-cancels after 4 seconds. All run buttons have `type="button"`.
+- **ContextPanel:** Collapsible category guide (toggled via "Category guide" link in the header). Shows which agents each category routes to, what to use it for, and an example note.
 
 ---
 
-## What Is Next — Ordered Task List
+## What Is Next
 
-Steps 1–2 are complete. Remaining work is in the website project (`mckeever-consulting-website`).
+### Step 8 — V2 End-to-End Test ← only remaining task
 
-### ~~Step 1 — Backend: `reports.yml` proposition_id input~~ ✅ Already done
-`proposition_id` input was already present and correctly wired — targeted run step + scheduled fallback both in place.
+This is the only thing left before the system is fully V2-ready. Run the complete flow:
 
-### ~~Step 2 — Backend: Migration 009 + `intake.js` update~~ ✅ Complete (2026-04-13)
-- `migrations/009_add_industry_category.sql` created and run in Supabase
-- `industry_category TEXT CHECK (...)` column live on `propositions`
-- Camel milk proposition backfilled to `food_beverage`
-- `tools/intake.js` updated: `--industry-category` flag, validation, passes through to `createProposition`
+**Test proposition:** Furniture manufacturing, Minnesota → US (domestic physical product). Scoped to US market only — Europe requires the international research pipeline which is not yet built.
 
-### Step 2.5 — Backend: Inject `proposition_context` into research agent prompts
+**Before running:** Build the three gov tool scripts below that general manufacturing propositions depend on. These are free/no-key APIs and should be in place before the first non-food-beverage run:
+- `tools/fetch_itc_data.py` — ITC trade remedy cases and import injury data (any import/export)
+- `tools/fetch_epa_data.py` — EPA regulatory database and enforcement actions (manufacturing, chemicals)
+- `tools/fetch_bls_data.py` — BLS employment and wage benchmarks (domestic production cost analysis)
 
-The `proposition_context` table is live in Supabase and the admin panel's Context Panel is already writing to it. The backend does not yet read it.
-
-**What needs to happen in `run.js` (or `db.js`):**
-1. At the start of each report run, query `proposition_context` where `proposition_id` matches the current run's proposition
-2. Group the returned rows by `category` (`sourcing`, `market`, `regulatory`, `financial`, `competitor`, `other`)
-3. Inject the relevant notes as additional context into the appropriate research agent's prompt for that category — e.g. rows with `category = 'regulatory'` get appended to the `research_regulatory` agent's prompt, `category = 'market'` to `research_market_overview`, etc.
-
-**Category → agent mapping (suggested):**
-| Category | Agent(s) |
-|---|---|
-| `sourcing` | `research_production`, `research_origin_ops` |
-| `market` | `research_market_overview`, `research_competitors` |
-| `regulatory` | `research_regulatory`, `research_legal` |
-| `financial` | `research_financials` |
-| `competitor` | `research_competitors` |
-| `other` | All agents (inject into each) |
-
-No schema changes needed — table, RLS, and indexes are already in place. Use `SUPABASE_SERVICE_KEY` to query (RLS blocks anon key).
-
-### Step 3 — Website: Connect Supabase
-- `.env.local` ✅ already populated (all keys present including `GITHUB_TOKEN` and `GITHUB_REPO_OWNER`)
-- Remaining: `pnpm add @supabase/supabase-js`, create `lib/supabase.ts` (browser, anon key) and `lib/supabase-server.ts` (server-side only, service key)
-
-### Step 4 — Website: Build `/intake`
-Branching form. V2 physical proposition questions fully implemented. V3 types stubbed as "coming soon".
-
-**Question set (physical branch):**
-| Question | DB field |
-|---|---|
-| Client full name | `clients.name` |
-| Client email | `clients.email` |
-| Company name | `organizations.name` |
-| Product description | `propositions.description` |
-| Industry category | `propositions.industry_category` |
-| Proposition type | `propositions.proposition_type` (import/export or domestic) |
-| Origin country | `propositions.origin_country` (if import/export) |
-| Target market | `propositions.target_country` |
-| Phone number | `clients.phone` | Required |
-| Sourcing notes | `propositions.sourcing_notes` | Optional — supplier/pricing info |
-| Additional info | `propositions.additional_info` | Optional — free-text catch-all |
-| Plan tier | `propositions.plan_tier` (starter $100 / pro $250 / retainer $150/mo) |
-
-**On submit:** write to `clients`, `propositions`, `proposition_recipients` in Supabase. Send notification email to Brendon via the backend's Resend setup (or trigger from the backend — TBD).
-
-### Step 5 — Website: Build `/admin` (auth + dashboard)
-- Set up Supabase Auth — admin routes redirect to `/login` if unauthenticated
-- `/admin` dashboard: active propositions count, recent runs, client count
-
-### Step 6 — Website: Build `/admin/propositions`
-- List all propositions with status
-- **Run Now button** — calls GitHub Actions `workflow_dispatch` API:
-  ```
-  POST https://api.github.com/repos/{GITHUB_REPO_OWNER}/Camel-Milk-Business-Plan/actions/workflows/reports.yml/dispatches
-  Authorization: Bearer {GITHUB_TOKEN}
-  Body: { "ref": "main", "inputs": { "proposition_id": "<uuid>", "force": "true" } }
-  ```
-- **Live run status** — Supabase Realtime subscription on `reports` table, filters by `proposition_id`. Shows `running | complete | failed` in real time.
-
-### Step 7 — Website: Build `/admin/reports` and `/admin/clients`
-- `/admin/reports`: report history per proposition. View/download PDF via signed Supabase Storage URL (`reports` bucket, path `{proposition_id}/{reportId}.pdf`)
-- `/admin/clients`: manage organizations and clients. Activate/deactivate. Edit plan tier.
-
-### Step 8 — V2 End-to-End Test
-1. Open website `/intake` as a "client"
-2. Fill out form with a product idea (e.g. solar panels, China → US)
-3. Check `/admin/propositions` — new submission appears
+**Flow:**
+1. Open `/intake` as a "client" — fill out for furniture manufacturing, Minnesota → US. Use a fresh client/org — this validates the intake form creates new DB records correctly, not just re-running an existing proposition
+2. Check `/admin/propositions` — new submission appears
+3. Navigate to the proposition detail page — add a context note for the run (e.g. a sourcing note about the wood supply chain)
 4. Hit **Run Now** → backend fires via GitHub Actions
-5. Watch status update live via Supabase Realtime
-6. Report generates, PDF delivered, view/download from `/admin/reports`
+5. Watch status update live (polling every 5 seconds)
+6. Report generates, PDF delivered, view/download from the reports table on the detail page or `/admin/reports`
+
+If the intake form submission path hasn't been activated yet (org status still `prospect`), use `tools/activate.js` to flip it to `active` before hitting Run Now.
+
+**Europe market version** of this proposition (Minnesota → US + Europe) is deferred until the international research pipeline is built (UN Comtrade, GDELT, translation tools).
 
 ---
 
-## V2 Backend Work (after website is live and tested)
-
-These are the remaining backend tasks for full V2 capability. Do these after the website E2E test passes.
+## V2 Backend Work (after E2E test passes)
 
 1. **Industry-aware gov data routing** — replace the flat `executeTool` switch with routing based on `industry_category`. Non-applicable tools return a structured "not applicable" so agents don't waste iterations.
-2. **New gov tool scripts** (build as needed per test proposition):
-   - `tools/fetch_doe_data.py` — DOE EIA + NREL (energy/solar)
-   - `tools/fetch_epa_data.py` — EPA regulatory + enforcement (chemicals, manufacturing)
-   - `tools/fetch_fda_device_data.py` — FDA 510(k) clearances + device recalls (medical)
-   - `tools/fetch_itc_data.py` — ITC trade remedy cases (any import)
-   - `tools/fetch_bls_data.py` — BLS employment + wage benchmarks
-   - `tools/fetch_bis_data.py` — BIS export control classifications
+2. **New gov tool scripts** — build before the test proposition that needs them:
+   - `tools/fetch_itc_data.py` — ITC trade remedy cases (any import/export) ← **build before furniture E2E test**
+   - `tools/fetch_epa_data.py` — EPA regulatory + enforcement (manufacturing, chemicals) ← **build before furniture E2E test**
+   - `tools/fetch_bls_data.py` — BLS employment + wage benchmarks (domestic manufacturing) ← **build before furniture E2E test**
+   - `tools/fetch_doe_data.py` — DOE EIA + NREL (energy/solar) ← build before solar test proposition
+   - `tools/fetch_fda_device_data.py` — FDA 510(k) clearances + device recalls (medical) ← build before medical test proposition
+   - `tools/fetch_bis_data.py` — BIS export control classifications ← build before electronics test proposition
 3. **Workflow generalisation** — audit the 10 research workflows, remove food-specific hardcoding. Start with Option A (venture intelligence brief steers tool selection). Move to Option B (per-industry substitution blocks) only if results are poor.
 4. **Consultant Intelligence Brief** — new `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Delivered as a single admin email with both PDFs (client report + consultant brief) attached.
 5. **Prompt caching on the assembler** — add `cache_control: { type: "ephemeral" }` on the system prompt and research context blocks in the assembler's API calls. Saves ~$5/run (~40% total cost reduction).
 6. **International research pipeline** — `tools/translate_text.py`, `tools/detect_language.py`, `tools/normalize_international_data.py`, `tools/fetch_gdelt_news.py`, `tools/fetch_opencorporates.py`, `tools/fetch_un_comtrade.py`. New API keys needed: DeepL, Google Cloud Translation, MyMemory, UN Comtrade, OpenCorporates.
 
 **V2 test propositions:**
-| Proposition | Industry category | Key non-food tools needed |
-|---|---|---|
-| Solar panels, China → US | energy | DOE EIA, EPA, ITC |
-| Apparel / activewear, Bangladesh → US | apparel | CBP, FTC, CPSC |
-| Medical diagnostic device, Germany → US | medical | FDA device, CMS |
-| Consumer electronics, Taiwan → US | electronics | FCC, BIS, ITC |
-| Camel milk powder, Somalia → UAE | food_beverage + Arabic | translate_text, detect_language, GDELT, UAE Ministry sources |
+| Proposition | Industry category | Key tools needed | Notes |
+|---|---|---|---|
+| Furniture manufacturing, Minnesota → US | general_manufacturing | ITC, EPA, BLS | **E2E test proposition** — US market only |
+| Furniture manufacturing, Minnesota → US + Europe | general_manufacturing + international | ITC, EPA, BLS, UN Comtrade, GDELT | Europe version deferred until international pipeline built |
+| Solar panels, China → US | energy | DOE EIA, EPA, ITC | — |
+| Apparel / activewear, Bangladesh → US | apparel | CBP, FTC, CPSC | — |
+| Medical diagnostic device, Germany → US | medical | FDA device, CMS | — |
+| Consumer electronics, Taiwan → US | electronics | FCC, BIS, ITC | — |
+| Camel milk powder, Somalia → UAE | food_beverage + Arabic | translate_text, detect_language, GDELT, UAE Ministry sources | — |
 
 ---
 
 ## Session Log
 
+### Session 24 — Step 2.5 + website audit (2026-04-15)
+- **Step 2.5 complete** — `getPropositionContext(propositionId)` added to `db.js`, exported, imported in `run.js`
+- **Context injection** — `CATEGORY_TO_AGENTS` mapping in `runResearchAgent()` routes notes to the correct agents. `## ADMIN CONTEXT NOTES` block appended to agent `userPrompt` when relevant notes exist. Non-fatal if query fails.
+- **Column name fix** — initial implementation used `note`; actual column in `proposition_context` is `content`. Fixed in `db.js` after reading website source.
+- **ContextPanel category guide** — collapsible section added to `context-panel.tsx`. Shows badge, agent routing, use-case description, and example note for all 6 categories.
+- **RunPanel confirm guard** — "Run Again" now requires two clicks. First click: button turns amber, label changes to "Confirm run?", Cancel link appears. Second click fires. Auto-cancels after 4 seconds if ignored. Prevents accidental re-runs.
+- **`type="button"` fixes** — applied to the guide toggle in ContextPanel and the run button in RunPanel.
+- **Website audit** — confirmed Steps 3–7 are all complete (Supabase connected, auth live, all admin pages built). HANDOFF updated to reflect actual state.
+
 ### Session 23 — Migration 010 run (2026-04-14)
-- **Migration 010** — run against shared Supabase project (`vupnhlpwfqwmrysohhrq`)
-- **`moddatetime` extension** — had to be enabled explicitly via CLI before migration could run (trigger on `proposition_context.updated_at` depends on it)
-- **New columns:** `clients.phone` (VARCHAR 50, NOT NULL default `''`), `propositions.sourcing_notes` (TEXT nullable), `propositions.additional_info` (TEXT nullable)
+- **Migration 010** — run against shared Supabase project
+- **`moddatetime` extension** — had to be enabled explicitly via CLI before migration could run
+- **New columns:** `clients.phone`, `propositions.sourcing_notes`, `propositions.additional_info`
 - **New table:** `proposition_context` — admin enrichment per proposition, RLS enabled (service key only), indexed on `proposition_id`, auto-updating `updated_at`
-- **Migration tooling:** Used `npx supabase link` + `npx supabase db query --linked` — Supabase CLI access token stored as `SUPABASE_LOGIN_TOKEN` in `.env`
-- **Next:** Continue Step 3 — connect Supabase to `mckeever-consulting-website` and build `/intake`
+- **Migration tooling:** `npx supabase link` + `npx supabase db query --linked` — Supabase CLI access token stored as `SUPABASE_LOGIN_TOKEN` in `.env`
 
 ### Session 22 — Backend steps 1 & 2 complete (2026-04-13)
-- **`reports.yml`** — confirmed `proposition_id` input already present and correctly wired (targeted run + scheduled fallback)
-- **Migration 009** — `industry_category` column added to `propositions`, camel milk proposition backfilled to `food_beverage`, run in Supabase SQL Editor
-- **`intake.js`** — `--industry-category` flag added: validation against CHECK constraint values, passed through to `createProposition`
-- **Next:** Switch to `mckeever-consulting-website` — Step 3 (Connect Supabase)
+- **`reports.yml`** — confirmed `proposition_id` input already present and correctly wired
+- **Migration 009** — `industry_category` column added to `propositions`, camel milk proposition backfilled to `food_beverage`
+- **`intake.js`** — `--industry-category` flag added: validation, passed through to `createProposition`
 
 ### Session 21 — Two-project state + V2 sequencing (2026-04-13)
 - **Website project created** — `mckeever-consulting-website` on Vercel, bootstrapped with v0.app
 - **Landing page deployed and live**
-- **CLAUDE.md written** for the website project — full schema, pages, brand tokens, intake form questions, tech decisions already documented there
-- **v0.app free plan at limit** — not a blocker. Development continues directly in the codebase from this point
-- **Full task order mapped** across both projects to reach V2 end-to-end test (see "What Is Next" above)
-- **Confirmed:** Supabase not yet connected to website project. No `/intake` or admin pages built yet.
+- **CLAUDE.md written** for the website project
+- **v0.app free plan at limit** — not a blocker. Development continues directly in the codebase.
+- **Full task order mapped** across both projects to reach V2 E2E test
 
 ### Sessions 18–19 — V1 close + V2 planning (2026-04-10 to 2026-04-11)
-- V1 finalised: Census JSON retry fix, quality review/repair loop (Haiku flags → Sonnet repairs, max 2 cycles), stronger proofread checks, `--hold` flag dropped
-- International research pipeline SOP written (`workflows/international_research.md`) — see `ROADMAP_V2.md` for full detail
+- V1 finalised: Census JSON retry fix, quality review/repair loop, stronger proofread checks, `--hold` flag dropped
+- International research pipeline SOP written (`workflows/international_research.md`)
 - Market positioning locked: the consulting service (consultant brief + meeting) is the product, not the report generator
 
 ---
@@ -214,8 +172,9 @@ node run.js --proposition-id 54f51272-d819-4d82-825a-15603ed48654 --force
 
 **What to watch for:**
 ```
-Venture intelligence brief: X chars, Y citations    ← Perplexity call 1
-Landscape briefing: X chars, Y citations            ← Perplexity call 2
+✓ Admin context notes loaded: N note(s) [sourcing, regulatory, ...]  ← proposition_context rows
+Venture intelligence brief: X chars, Y citations                     ← Perplexity call 1
+Landscape briefing: X chars, Y citations                             ← Perplexity call 2
 Running research agents (sequential)...
   → market_overview ... ✓
   → packaging ... ✓     ← runs Sonnet directly (sonnetOnly)
@@ -226,8 +185,8 @@ Running research agents (sequential)...
 ✓ Data confidence: XX/100  (target: 80+)
 Calling Claude Sonnet for report synthesis...
   [section-by-section: 15 calls, ~20s delay between each]
-  Running quality review (Haiku)...         ← if errors found, Sonnet repairs + re-reviews (max 2 cycles)
-  Running proofread pass (Sonnet)...        ← checks repetition, contradictions, vague financials, weak conclusions
+  Running quality review (Haiku)...
+  Running proofread pass (Sonnet)...
 ✓ PDF generated  ✓ PDF uploaded to Storage  ✓ Report emailed to 2 recipients
 ✓ Admin copy sent  ✓ Run complete
 ```
@@ -240,6 +199,7 @@ Calling Claude Sonnet for report synthesis...
 | Storage upload fails | Confirm `reports` bucket exists and is private in Supabase dashboard |
 | USDA NASS returns no data | Sometimes down — `executeTool` catches and returns `{ error: ... }`, agent handles gracefully |
 | Census returns malformed JSON | Fixed — script retries up to 3 times then emits `{ error: "...", records: [] }`. Agent handles gracefully. |
+| Context notes not injecting | Check `proposition_context` table — column is `content` (not `note`). Confirm rows exist with correct `proposition_id`. |
 
 ---
 
@@ -310,14 +270,31 @@ HANDOFF.md          ← this file
 
 | Call | Purpose |
 |---|---|
-| `runVentureIntelligence()` | Analyses the proposition — venture type, critical success factors, key risks, relevant regulatory bodies. Makes agents skip irrelevant gov tools (e.g. FDA for a solar panel proposition). |
-| `runCurrentLandscapeBriefing()` | Current-events snapshot — regulatory changes (last 12 months), market trends, new competitors, trade/political factors. Perplexity used here specifically for real-time web access. |
+| `runVentureIntelligence()` | Analyses the proposition — venture type, critical success factors, key risks, relevant regulatory bodies. Makes agents skip irrelevant gov tools. |
+| `runCurrentLandscapeBriefing()` | Current-events snapshot — regulatory changes (last 12 months), market trends, new competitors, trade/political factors. |
 
 Both are non-fatal — if Perplexity fails, agents fall back to their generic workflow SOPs.
 
+### Admin context notes injection
+
+After briefings, `getPropositionContext(proposition.id)` queries `proposition_context` and groups rows by `category` into `adminContextNotes`. This is attached to the shared `context` object and passed to every research agent.
+
+Inside `runResearchAgent()`, `CATEGORY_TO_AGENTS` maps each category to the agents that should receive it:
+
+| Category | Injected into |
+|---|---|
+| `sourcing` | `production`, `origin_ops` |
+| `market` | `market_overview`, `competitors` |
+| `regulatory` | `regulatory`, `legal` |
+| `financial` | `financials` |
+| `competitor` | `competitors` |
+| `other` | All 10 agents |
+
+Relevant notes appear in the agent's prompt as a `## ADMIN CONTEXT NOTES` block after the venture/landscape briefings, instructing the agent to treat them as authoritative scope adjustments. Non-fatal — no notes = block is simply omitted.
+
 ### Research agents (10 total, sequential)
 
-Each agent: reads `workflows/research_<name>.md` → injects venture intelligence + landscape briefing → calls **Claude Haiku** in a tool-use loop (max 50 iterations) → JSON output saved to DB.
+Each agent: reads `workflows/research_<name>.md` → injects venture intelligence + landscape briefing + admin context notes → calls **Claude Haiku** in a tool-use loop (max 50 iterations) → JSON output saved to DB.
 
 ### Model escalation (Haiku → Sonnet)
 
@@ -339,8 +316,6 @@ Sonnet retry uses maxIter=20. If Sonnet also fails, agent is marked `failed`. Es
 | `fetch_sec_edgar` | `fetch_sec_edgar.py` | All — public company filings |
 | `search_perplexity` | `search_perplexity.py` | Fallback when Brave is thin |
 
-FDA/USDA are food-biased. For non-food propositions, the venture intelligence brief instructs agents to skip them. V2 adds structural industry routing (see ROADMAP_V2.md).
-
 ### Quality gate
 - Hard fail: any critical agent null (`market_overview`, `regulatory`, `financials`, `origin_ops`)
 - Hard fail: more than 1 agent failed total
@@ -351,8 +326,8 @@ FDA/USDA are food-biased. For non-food propositions, the venture intelligence br
 - 15 individual calls (~2–6k tokens each) instead of one giant call — eliminates JSON parse failures
 - Each call has a 2-cycle repair loop via `callWithRepair()`
 - 20s inter-section delay for TPM rate limit management
-- **Haiku quality review** — compact structural audit (empty blocks, placeholders, missing viability data). Non-fatal.
-- **Sonnet proofread pass** — text-only view of all prose sent to Sonnet; returns patches fixing cross-section repetition and clarity. Applied in-place before PDF build. Non-fatal.
+- **Haiku quality review** — compact structural audit. Non-fatal.
+- **Sonnet proofread pass** — fixes cross-section repetition and clarity. Applied in-place before PDF build. Non-fatal.
 - Content JSON uploaded to Storage **before** PDF build — enables `--regen-pdf` recovery if PDF fails
 
 ### PDF output (`tools/generate_report_pdf.py`)
@@ -392,22 +367,19 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 | `agent_outputs` | Temporary research data — deleted post-run (or at failure) |
 | `report_sources` | Source URLs cited in reports |
 | `api_cache` | Brave Search cache — 7-day TTL |
-| `proposition_context` | Admin-added enrichment per proposition. Categories: `sourcing`, `market`, `regulatory`, `financial`, `competitor`, `other`. RLS enabled — service key only. **Backend does not yet read this table** — see pending task in "What Is Next". |
+| `proposition_context` | Admin-added enrichment per proposition. Column: `content` (TEXT). Categories: `sourcing`, `market`, `regulatory`, `financial`, `competitor`, `other`. RLS enabled — service key only. Backend reads this at run start and injects into agent prompts. |
 
 **New fields added in migration 010:**
-- `clients.phone` — VARCHAR(50), NOT NULL default `''`. Required on intake form.
-- `propositions.sourcing_notes` — TEXT, nullable. Supplier/pricing info from intake form.
-- `propositions.additional_info` — TEXT, nullable. Free-text catch-all from intake form.
+- `clients.phone` — VARCHAR(50), NOT NULL default `''`
+- `propositions.sourcing_notes` — TEXT, nullable
+- `propositions.additional_info` — TEXT, nullable
 
-**Extensions enabled:** `moddatetime` — required for the `proposition_context.updated_at` trigger. Had to be activated explicitly despite being available in Supabase by default.
+**Extensions enabled:** `moddatetime` — required for the `proposition_context.updated_at` trigger.
 
 **Organization status values:** `prospect | pending | active | cancelled | inactive`
 - `getDuePropositions()` only returns propositions from `active` orgs
-- Flip to `inactive` or `cancelled` to immediately stop a client's automated reports
 
 **Plan tier values:** `starter | pro | retainer`
-- Stored on both `organizations` (billing view) and `propositions` (run logic)
-- Set together at activation via `tools/activate.js`
 
 **proposition_type values:** `physical_import_export | physical_domestic | saas_software | service_business | digital_product`
 
@@ -415,10 +387,10 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 
 **industry_category values:** `food_beverage | energy_clean_tech | medical_devices | chemicals_materials | electronics | apparel_textiles | cosmetics | general_manufacturing`
 
-**Data retention:** See `tools/cleanup.js`. Rules:
+**Data retention:** See `tools/cleanup.js`.
 - Completed reports: 6-month window (always keeps most recent per proposition)
 - Failed reports: 7-day TTL
-- `agent_outputs`: deleted immediately on run completion or failure; cleanup sweeps any stragglers
+- `agent_outputs`: deleted immediately on run completion or failure
 - `api_cache`: 7-day TTL
 
 ---
@@ -431,6 +403,7 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 |---|---|
 | Anthropic | `ANTHROPIC_API_KEY` |
 | Supabase | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` |
+| Supabase CLI | `SUPABASE_LOGIN_TOKEN` |
 | Brave Search | `BRAVE_SEARCH_KEY` |
 | Perplexity | `PERPLEXITY_API_KEY` |
 | openFDA | `OPEN_FDA_API_KEY` |
@@ -441,19 +414,19 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 | Resend | `RESEND_API_KEY` |
 | YouTube | `YOUTUBE_API_KEY` |
 
-USASpending.gov and SEC EDGAR require no key. All keys are also stored as GitHub repo secrets for GitHub Actions.
+USASpending.gov and SEC EDGAR require no key.
 
 **To add for V2 — international research pipeline:**
 
 | Key | Variable | Notes |
 |---|---|---|
-| DeepL | `DEEPL_API_KEY` | 500k chars/month free. Best for European languages. Sign up: deepl.com/pro-api |
-| Google Cloud Translation | `GOOGLE_TRANSLATE_API_KEY` | 500k chars/month free. Best for Arabic, CJK, broad coverage. Enable in Google Cloud Console. |
-| MyMemory | `MYMEMORY_API_KEY` | 10k chars/day free. Fallback if both primaries are exhausted. Register: mymemory.translated.net |
-| UN Comtrade | `UN_COMTRADE_API_KEY` | Free, 500 req/hour. Bilateral trade flows between any two countries. Register: comtradeplus.un.org |
-| OpenCorporates | `OPENCORPORATES_API_KEY` | Free, rate-limited. 160M+ company records, 140+ jurisdictions. Register: opencorporates.com/api_accounts |
+| DeepL | `DEEPL_API_KEY` | 500k chars/month free |
+| Google Cloud Translation | `GOOGLE_TRANSLATE_API_KEY` | 500k chars/month free. Best for Arabic, CJK |
+| MyMemory | `MYMEMORY_API_KEY` | 10k chars/day free. Fallback |
+| UN Comtrade | `UN_COMTRADE_API_KEY` | Free, 500 req/hour. Bilateral trade flows |
+| OpenCorporates | `OPENCORPORATES_API_KEY` | Free, rate-limited. 160M+ company records |
 
-GDELT, World Bank, IMF, and Eurostat require no key — fully open APIs.
+GDELT, World Bank, IMF, and Eurostat require no key.
 
 **Website project `.env.local` (separate file in `mckeever-consulting-website`):**
 
@@ -461,7 +434,7 @@ GDELT, World Bank, IMF, and Eurostat require no key — fully open APIs.
 |---|---|---|
 | Supabase URL | `NEXT_PUBLIC_SUPABASE_URL` | Same project as backend |
 | Supabase anon key | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Safe to expose to browser |
-| Supabase service key | `SUPABASE_SERVICE_KEY` | Server-side only — never expose to browser |
+| Supabase service key | `SUPABASE_SERVICE_KEY` | Server-side only |
 | GitHub token | `GITHUB_TOKEN` | Fine-grained PAT — Actions read/write on `Camel-Milk-Business-Plan` repo |
 | GitHub repo owner | `GITHUB_REPO_OWNER` | Your GitHub username |
 
@@ -484,20 +457,22 @@ GDELT, World Bank, IMF, and Eurostat require no key — fully open APIs.
 | 11 | Failure alerting | Email to Brendon only. Client never notified. Error logged to DB. agent_outputs deleted immediately on failure. |
 | 12 | Brand | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat. |
 | 13 | Pricing | Starter $100 (1 run) / Pro $250 (2 runs) / Retainer $150/month (unlimited) |
-| 14 | Model escalation | Haiku → Sonnet on iteration exhaustion or JSON parse failure. Ceiling = Sonnet (not Opus). `financials`, `packaging`, `marketing` skip Haiku entirely (`sonnetOnly: true`) — they reliably exceed Haiku's 200k token limit. |
-| 15 | Perplexity roles | (1) Fallback when Brave thin, (2) Venture intelligence brief, (3) Landscape briefing. Real-time web access is the reason. |
+| 14 | Model escalation | Haiku → Sonnet on iteration exhaustion or JSON parse failure. Ceiling = Sonnet. `financials`, `packaging`, `marketing` skip Haiku entirely (`sonnetOnly: true`). |
+| 15 | Perplexity roles | (1) Fallback when Brave thin, (2) Venture intelligence brief, (3) Landscape briefing. |
 | 16 | Industry adaptability | Venture intelligence brief steers agents away from irrelevant gov tools. Structural routing deferred to V2. |
 | 17 | Client model | Organizations own propositions. Contacts (clients) belong to orgs. Per-proposition recipient lists via `proposition_recipients`. |
 | 18 | Org status gating | Only `active` orgs run reports. Flip to `inactive`/`cancelled` to pause without deleting data. |
 | 19 | Plan tier gating | Starter/Pro retire to `on_demand` after their run limit. Retainer advances indefinitely. |
 | 20 | Scheduling | GitHub Actions — cleanup weekly (Sunday 2 AM UTC), reports monthly (1st, 6 AM UTC). |
-| 21 | Admin independence | Brendon is admin of McKeever Consulting via `organization_admins` table — independent of his client record. Multiple admins supported. |
-| 22 | Assembler architecture | Section-by-section (15 Sonnet calls, 2-cycle repair each) + Haiku structural review + Sonnet proofread pass. Eliminates JSON parse failures. Content JSON uploaded before PDF build. |
+| 21 | Admin independence | Brendon is admin of McKeever Consulting via `organization_admins` table — independent of his client record. |
+| 22 | Assembler architecture | Section-by-section (15 Sonnet calls, 2-cycle repair each) + Haiku structural review + Sonnet proofread pass. Content JSON uploaded before PDF build. |
 | 23 | MCP | Ruled out (2026-04-13). Declining adoption, more problems than it solves. Tool layer stays as Python subprocesses. |
-| 24 | Website run trigger | GitHub Actions `workflow_dispatch` — no new servers needed. Admin panel calls GitHub API with `proposition_id` input. Website polls `reports` table via Supabase Realtime for live status. |
+| 24 | Website run trigger | GitHub Actions `workflow_dispatch` — no new servers needed. Admin panel calls GitHub API with `proposition_id` input. |
 | 25 | Website tech stack | Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui + Supabase JS client. Deployed on Vercel. |
 | 26 | Website auth | Supabase Auth for admin panel. Intake form is public. |
 | 27 | Website/backend separation | Separate repos. Shared Supabase project. No API layer between them — website reads/writes DB directly. |
+| 28 | Admin context notes | `proposition_context` table. Column: `content`. Injected into agent prompts by category at run start. Non-fatal if empty. |
+| 29 | Run Again guard | Two-step confirm on "Run Again" button (4s timeout, amber state). Prevents accidental re-runs. |
 
 ---
 
@@ -508,6 +483,6 @@ See `ROADMAP_V2.md` for full detail.
 | Phase | Status | Key work |
 |---|---|---|
 | V1 | ✅ Complete | Physical import/export pipeline. E2E tested. |
-| Website | 🔄 In progress | Landing page live. Intake form + admin panel not yet built. See task list above. |
+| Website | ✅ Complete | All pages built and live. One E2E test remaining. |
 | V2 | Planned | Industry-aware routing · new gov tool scripts · workflow generalisation · consultant brief · prompt caching · international research pipeline |
 | V3 | Future | SaaS, services, digital, franchise — new workflow sets, dynamic agent selection, social media research layer |

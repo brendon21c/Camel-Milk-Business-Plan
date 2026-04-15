@@ -74,12 +74,12 @@ Implementation: add an `industry_category` field to propositions. The `executeTo
 
 | Tool | Source | Priority |
 |---|---|---|
-| `fetch_doe_data.py` | DOE EIA energy statistics, NREL clean energy data | High (energy/solar) |
-| `fetch_epa_data.py` | EPA regulatory database, enforcement actions | High (chemicals, manufacturing) |
-| `fetch_fda_device_data.py` | FDA 510(k) clearances, device recalls | High (medical) |
-| `fetch_itc_data.py` | ITC trade remedy cases, import injury reports | Medium (any import) |
-| `fetch_bls_data.py` | BLS industry employment, wage benchmarks | Medium (labour cost research) |
-| `fetch_bis_data.py` | BIS export control classifications (ECCN) | Medium (tech/defence-adjacent) |
+| `fetch_itc_data.py` | ITC trade remedy cases, import injury reports | **High — build before furniture E2E test** (any import/export) |
+| `fetch_epa_data.py` | EPA regulatory database, enforcement actions | **High — build before furniture E2E test** (manufacturing, chemicals) |
+| `fetch_bls_data.py` | BLS industry employment, wage benchmarks | **High — build before furniture E2E test** (domestic manufacturing cost analysis) |
+| `fetch_doe_data.py` | DOE EIA energy statistics, NREL clean energy data | Medium — build before solar test proposition |
+| `fetch_fda_device_data.py` | FDA 510(k) clearances, device recalls | Medium — build before medical test proposition |
+| `fetch_bis_data.py` | BIS export control classifications (ECCN) | Medium — build before electronics test proposition |
 
 #### 3. Proposition intake enrichment
 
@@ -228,12 +228,15 @@ This is a natural V2 test since the current camel milk proposition targets the U
 
 #### 7. Test propositions to validate V2
 
-| Proposition | Industry category | Key non-food tools needed |
-|---|---|---|
-| Solar panels, China → US | energy | DOE EIA, EPA, ITC |
-| Apparel / activewear, Bangladesh → US | apparel | CBP, FTC, CPSC |
-| Medical diagnostic device, Germany → US | medical | FDA device, CMS |
-| Consumer electronics, Taiwan → US | electronics | FCC, BIS, ITC |
+| Proposition | Industry category | Key tools needed | Notes |
+|---|---|---|---|
+| Furniture manufacturing, Minnesota → US | general_manufacturing | ITC, EPA, BLS | **First V2 test — E2E test proposition.** US market only. |
+| Furniture manufacturing, Minnesota → US + Europe | general_manufacturing + international | ITC, EPA, BLS, UN Comtrade, GDELT | Europe version — deferred until international pipeline built |
+| Solar panels, China → US | energy | DOE EIA, EPA, ITC | — |
+| Apparel / activewear, Bangladesh → US | apparel | CBP, FTC, CPSC | — |
+| Medical diagnostic device, Germany → US | medical | FDA device, CMS | — |
+| Consumer electronics, Taiwan → US | electronics | FCC, BIS, ITC | — |
+| Camel milk powder, Somalia → UAE | food_beverage + Arabic | translate_text, detect_language, GDELT, UAE sources | Arabic market — deferred until international pipeline built |
 
 ---
 
