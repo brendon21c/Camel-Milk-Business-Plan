@@ -73,6 +73,27 @@ Steps 1–2 are complete. Remaining work is in the website project (`mckeever-co
 - Camel milk proposition backfilled to `food_beverage`
 - `tools/intake.js` updated: `--industry-category` flag, validation, passes through to `createProposition`
 
+### Step 2.5 — Backend: Inject `proposition_context` into research agent prompts
+
+The `proposition_context` table is live in Supabase and the admin panel's Context Panel is already writing to it. The backend does not yet read it.
+
+**What needs to happen in `run.js` (or `db.js`):**
+1. At the start of each report run, query `proposition_context` where `proposition_id` matches the current run's proposition
+2. Group the returned rows by `category` (`sourcing`, `market`, `regulatory`, `financial`, `competitor`, `other`)
+3. Inject the relevant notes as additional context into the appropriate research agent's prompt for that category — e.g. rows with `category = 'regulatory'` get appended to the `research_regulatory` agent's prompt, `category = 'market'` to `research_market_overview`, etc.
+
+**Category → agent mapping (suggested):**
+| Category | Agent(s) |
+|---|---|
+| `sourcing` | `research_production`, `research_origin_ops` |
+| `market` | `research_market_overview`, `research_competitors` |
+| `regulatory` | `research_regulatory`, `research_legal` |
+| `financial` | `research_financials` |
+| `competitor` | `research_competitors` |
+| `other` | All agents (inject into each) |
+
+No schema changes needed — table, RLS, and indexes are already in place. Use `SUPABASE_SERVICE_KEY` to query (RLS blocks anon key).
+
 ### Step 3 — Website: Connect Supabase
 - `.env.local` ✅ already populated (all keys present including `GITHUB_TOKEN` and `GITHUB_REPO_OWNER`)
 - Remaining: `pnpm add @supabase/supabase-js`, create `lib/supabase.ts` (browser, anon key) and `lib/supabase-server.ts` (server-side only, service key)
@@ -371,7 +392,7 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 | `agent_outputs` | Temporary research data — deleted post-run (or at failure) |
 | `report_sources` | Source URLs cited in reports |
 | `api_cache` | Brave Search cache — 7-day TTL |
-| `proposition_context` | Admin-added enrichment per proposition — read by research engine when building prompts. Categories: `sourcing`, `market`, `regulatory`, `financial`, `competitor`, `other`. RLS enabled — service key only. |
+| `proposition_context` | Admin-added enrichment per proposition. Categories: `sourcing`, `market`, `regulatory`, `financial`, `competitor`, `other`. RLS enabled — service key only. **Backend does not yet read this table** — see pending task in "What Is Next". |
 
 **New fields added in migration 010:**
 - `clients.phone` — VARCHAR(50), NOT NULL default `''`. Required on intake form.
