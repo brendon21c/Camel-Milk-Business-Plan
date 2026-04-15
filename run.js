@@ -46,6 +46,7 @@ const {
   advancePropositionSchedule,
   deleteAgentOutputsByReportId,
   getPropositionRecipients,
+  getPropositionContext,
 } = require('./db');
 
 // ---------------------------------------------------------------------------
@@ -675,6 +676,45 @@ CRITICAL RULES:
       `time-sensitive (rule changes, new competitors, trade shifts) in your output.\n`
     : '';
 
+  // Build admin context notes block — injected only when notes exist that apply
+  // to this agent's categories. The mapping reflects which research dimensions
+  // each category of note is relevant to:
+  //   sourcing    → production, origin_ops (supply chain + logistics)
+  //   market      → market_overview, competitors (sizing + competitive landscape)
+  //   regulatory  → regulatory, legal (compliance + legal risk)
+  //   financial   → financials (unit economics, cost structure)
+  //   competitor  → competitors (competitive analysis)
+  //   other       → all agents (general scope adjustments)
+  const CATEGORY_TO_AGENTS = {
+    sourcing:   ['production', 'origin_ops'],
+    market:     ['market_overview', 'competitors'],
+    regulatory: ['regulatory', 'legal'],
+    financial:  ['financials'],
+    competitor: ['competitors'],
+    other:      null, // null = inject into every agent
+  };
+
+  const relevantNotes = [];
+  if (context.adminContextNotes && Object.keys(context.adminContextNotes).length > 0) {
+    for (const [category, agentList] of Object.entries(CATEGORY_TO_AGENTS)) {
+      const notes = context.adminContextNotes[category];
+      if (!notes || notes.length === 0) continue;
+      // Include if this category applies to all agents (other) or to this specific agent
+      if (agentList === null || agentList.includes(agentName)) {
+        for (const note of notes) {
+          relevantNotes.push(`[${category}] ${note}`);
+        }
+      }
+    }
+  }
+
+  const contextNotesBlock = relevantNotes.length > 0
+    ? `\n## ADMIN CONTEXT NOTES\nThe following scope adjustments have been provided for this ` +
+      `proposition. Treat these as authoritative — they describe how this business will actually ` +
+      `operate and must be factored directly into your research and analysis:\n` +
+      relevantNotes.map(n => `- ${n}`).join('\n') + '\n'
+    : '';
+
   const userPrompt = `Execute this research workflow and produce the JSON output.
 
 ## WORKFLOW INSTRUCTIONS
@@ -684,7 +724,7 @@ ${workflow}
 \`\`\`json
 ${JSON.stringify(propositionContext, null, 2)}
 \`\`\`
-${ventureBlock}${landscapeBlock}
+${ventureBlock}${landscapeBlock}${contextNotesBlock}
 Follow all steps in the workflow. Use the tools to run the required searches and data pulls.
 Synthesize the results and respond with ONLY the JSON object from the Output Format section.`;
 
@@ -2208,6 +2248,22 @@ async function runProposition(proposition, force) {
     const ventureIntelligence   = runVentureIntelligence(proposition);
     const landscapeBriefing     = runCurrentLandscapeBriefing(proposition);
 
+    // 4b. Fetch admin context notes from proposition_context table.
+    // These are scope adjustments entered via the admin panel's Context Panel —
+    // e.g. "Camels milked in Somalia but milk processed in Kenya/UAE before US export".
+    // Non-fatal: if the query fails, agents proceed without enrichment.
+    let adminContextNotes = {};
+    try {
+      adminContextNotes = await getPropositionContext(proposition.id);
+      const totalNotes = Object.values(adminContextNotes).reduce((sum, arr) => sum + arr.length, 0);
+      if (totalNotes > 0) {
+        const categories = Object.keys(adminContextNotes).join(', ');
+        console.log(`✓ Admin context notes loaded: ${totalNotes} note(s) [${categories}]`);
+      }
+    } catch (err) {
+      console.warn(`  ⚠ Could not load admin context notes (non-fatal): ${err.message.slice(0, 120)}`);
+    }
+
     // 5. Build the shared run context (briefings passed to every research agent)
     const context = {
       reportId:           report.id,
@@ -2218,6 +2274,7 @@ async function runProposition(proposition, force) {
       previousReportId:   report.previous_report_id,
       ventureIntelligence,   // Perplexity: venture type, critical factors, relevant agencies
       landscapeBriefing,     // Perplexity: current market events, regulatory changes, news
+      adminContextNotes,     // Admin panel: scope adjustments grouped by category
     };
 
     // 6. Run all 10 research sub-agents

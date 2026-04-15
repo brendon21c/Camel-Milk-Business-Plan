@@ -583,6 +583,43 @@ async function saveReportSource(data) {
 }
 
 // ---------------------------------------------------------------------------
+// Proposition Context
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns all admin-entered context notes for a proposition, grouped by category.
+ * These are enrichment entries added via the admin panel's Context Panel —
+ * they represent scope adjustments, sourcing details, or additional context
+ * that the next research run should factor in.
+ *
+ * Example: { sourcing: ["Milk processed in Kenya before export to US"], regulatory: [...] }
+ *
+ * Empty categories are omitted. Returns an empty object if no notes exist.
+ * Uses the service key — this table has RLS enabled (anon key is blocked).
+ *
+ * @param {string} propositionId - Primary key of the proposition.
+ * @returns {Object} Map of category → array of note strings.
+ */
+async function getPropositionContext(propositionId) {
+  const { data: rows, error } = await supabase
+    .from('proposition_context')
+    .select('category, content')
+    .eq('proposition_id', propositionId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(`getPropositionContext failed for proposition ${propositionId}: ${error.message}`);
+  if (!rows || rows.length === 0) return {};
+
+  // Group content strings by their category key
+  const grouped = {};
+  for (const row of rows) {
+    if (!grouped[row.category]) grouped[row.category] = [];
+    grouped[row.category].push(row.content);
+  }
+  return grouped;
+}
+
+// ---------------------------------------------------------------------------
 // Cleanup helpers
 // ---------------------------------------------------------------------------
 
@@ -690,6 +727,9 @@ module.exports = {
   // Cache
   getCachedApiResponse,
   setCachedApiResponse,
+
+  // Proposition context
+  getPropositionContext,
 
   // Cleanup
   deleteAgentOutputsByReportId,
