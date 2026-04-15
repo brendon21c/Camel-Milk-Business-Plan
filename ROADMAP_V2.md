@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-11 (international & multilingual research pipeline added to V2)
+**Last updated:** 2026-04-15 (gov tool scripts built; website complete; V2 E2E test is next)
 
 ---
 
@@ -9,14 +9,12 @@
 
 | Phase | Scope | Status |
 |---|---|---|
-| V1 | Physical import/export — any product, food-biased gov data | Complete |
-| Website | Main page, intake form, basic admin panel | Next — before V2 |
-| V2 | Any physical product, any industry — adaptive research | Planned |
+| V1 | Physical import/export — any product, food-biased gov data | ✅ Complete |
+| Website | Main page, intake form, admin panel | ✅ Complete |
+| V2 | Any physical product, any industry — adaptive research | In progress — E2E test next |
 | V3 | General business ventures — SaaS, services, digital, franchise | Future |
 
 The foundation (WAT architecture, agent pipeline, PDF delivery) carries through all phases unchanged. Each phase adds capability on top without rebuilding from scratch.
-
-**Sequencing rationale:** The website intake form drives the DB schema. Building the form before V2 migrations locks in the right data model from the start — preventing schema patches and field backfills later. The admin panel also needs to be tested against the current (simpler) pipeline before V2 adds more complexity. Website first is the lower-rework path.
 
 ---
 
@@ -38,10 +36,7 @@ The foundation (WAT architecture, agent pipeline, PDF delivery) carries through 
 
 **Current workaround:** The venture intelligence brief tells agents which agencies are relevant. A solar-panel proposition gets DOE/EPA framing from the brief; agents naturally skip FDA/USDA calls. This works but is not structurally enforced.
 
-**Remaining task:** End-to-end test.
-```
-node run.js --proposition-id 54f51272-d819-4d82-825a-15603ed48654 --force
-```
+**Remaining task:** V2 end-to-end test — furniture manufacturing, Minnesota → US (see HANDOFF.md Step 8).
 
 ---
 
@@ -72,14 +67,14 @@ Implementation: add an `industry_category` field to propositions. The `executeTo
 
 #### 2. New government data tools (build as needed per industry)
 
-| Tool | Source | Priority |
+| Tool | Source | Status |
 |---|---|---|
-| `fetch_itc_data.py` | ITC trade remedy cases, import injury reports | **High — build before furniture E2E test** (any import/export) |
-| `fetch_epa_data.py` | EPA regulatory database, enforcement actions | **High — build before furniture E2E test** (manufacturing, chemicals) |
-| `fetch_bls_data.py` | BLS industry employment, wage benchmarks | **High — build before furniture E2E test** (domestic manufacturing cost analysis) |
-| `fetch_doe_data.py` | DOE EIA energy statistics, NREL clean energy data | Medium — build before solar test proposition |
-| `fetch_fda_device_data.py` | FDA 510(k) clearances, device recalls | Medium — build before medical test proposition |
-| `fetch_bis_data.py` | BIS export control classifications (ECCN) | Medium — build before electronics test proposition |
+| `fetch_itc_data.py` | Federal Register trade remedy cases + Census annual import stats by NAICS | ✅ Built |
+| `fetch_epa_data.py` | EPA ECHO facility compliance search + Toxic Release Inventory | ✅ Built |
+| `fetch_bls_data.py` | BLS manufacturing wage benchmarks + employment trends (v2 API) | ✅ Built |
+| `fetch_doe_data.py` | DOE EIA energy statistics, NREL clean energy data | Build before solar test proposition |
+| `fetch_fda_device_data.py` | FDA 510(k) clearances, device recalls | Build before medical test proposition |
+| `fetch_bis_data.py` | BIS export control classifications (ECCN) | Build before electronics test proposition |
 
 #### 3. Proposition intake enrichment
 
@@ -336,62 +331,33 @@ Add a dedicated social media intelligence layer to the marketing agent — movin
 
 ---
 
-## Website — Next Phase (Before V2)
+## Website — Complete ✅
 
-**Timing:** Before V2. The intake form question set drives the DB schema — migrations must be written to match the form, not retrofitted after the fact.
+**Repo:** `mckeever-consulting-website` (sibling repo, deployed on Vercel)  
+**Stack:** Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui + Supabase JS + Supabase Auth
 
-### Project structure
+**How it connects to this backend:**
+- Shared Supabase project — website writes intake data, backend reads it
+- GitHub Actions `workflow_dispatch` — admin panel "Run Now" calls GitHub API → fires `reports.yml` with `proposition_id` input
+- Supabase Storage — PDFs uploaded by backend, retrieved via signed URL by the web app
 
-> **The website is a separate project that connects to this one — not built into this repo.**
-
-This pipeline is a backend report engine: it runs on a schedule or on-demand, calls APIs, and delivers PDFs. The website is a different concern — client intake, admin dashboard, status tracking, report viewing. Keeping them separate means both are easier to maintain and deploy independently.
-
-**How they connect:**
-- **Supabase** as the shared data layer — propositions, reports, clients, organizations all live there. The website reads and writes the same DB directly.
-- **GitHub Actions `workflow_dispatch`** as the run trigger — the admin panel's "Run Now" button calls the GitHub API to fire `reports.yml` with a `proposition_id` input. The engine runs, writes status to the `reports` table, and the web app polls or subscribes via Supabase Realtime for live updates.
-- **Supabase Storage** for report viewing — PDFs are already uploaded there. The web app requests a signed URL and renders them in-browser.
-
-**One change needed in this project before the website can trigger runs:**
-Add a `proposition_id` input to `.github/workflows/reports.yml` so the admin panel can target a specific proposition. Two-line change — do this before starting the website build.
-
-**Authentication model:** Supabase Auth for the admin panel. Simple, already integrated with the data layer.
-
-### Intake form design
-
-The intake form is the most critical part of the website build. Its questions must be designed before V2 migrations are written — the form drives the schema, not the other way around.
-
-The form needs to be **branching** — questions change based on proposition type:
-
-```
-What type of venture is this?
-  → Physical product (import/export or domestic)
-      Industry category? (food, energy, medical, apparel, electronics...)
-      Origin country? Target market?
-      Product description?
-  → SaaS / Software          [V3]
-  → Service business         [V3]
-  → Digital product          [V3]
-  → Franchise / Marketplace  [V3]
-```
-
-**For the website build:** Design V2 physical proposition questions fully. Stub out V3 types as "coming soon" — don't build them yet, but make the form component branching-aware from day one so V3 is an extension, not a rewrite.
-
-### Website scope (initial build)
-
-| Page / Feature | Notes |
+| Page | Status |
 |---|---|
-| Main / landing page | McKeever Consulting brand, service overview, CTA to intake form |
-| Intake form | Branching form for physical propositions (V2 question set). Writes directly to Supabase. |
-| Admin panel — dashboard | Overview of active propositions, recent report runs, client list |
-| Admin panel — run reports | Trigger a run for any proposition via GitHub Actions dispatch. Live status via Supabase Realtime. |
-| Admin panel — view reports | Browse report history per proposition. Download or view PDFs from Supabase Storage. |
-| Admin panel — manage clients | View/edit organizations, clients, propositions. Activate/deactivate. |
+| `/` | ✅ Landing page |
+| `/intake` | ✅ Branching form — physical branch fully implemented, V3 types stubbed |
+| `/login` | ✅ Supabase `signInWithPassword` |
+| `/admin` | ✅ Dashboard — 4 stat cards |
+| `/admin/propositions` | ✅ List with status badges |
+| `/admin/propositions/[id]` | ✅ Full detail — params, client info, reports, RunPanel, ContextPanel, PDF download |
+| `/admin/reports` | ✅ 100 most recent runs, PDF download per row |
+| `/admin/clients` | ✅ Org list with status toggle, plan tier select, nested contacts |
+| `/admin/clients/[id]` | ✅ Org detail |
+| `/admin/settings` | ✅ Settings page |
 
-### MCP — ruled out (decided 2026-04-13)
-
-**Decision: Do not use MCP.** Research as of April 2026 shows MCP is seeing declining adoption — it hasn't delivered on its early promise and is causing more integration problems than it solves. Not worth the rewrite risk.
-
-**What this means for the web app:** The tool layer stays as-is (Python subprocess calls via `executeTool`). The web app connects to the engine via Supabase as the shared data layer, with a trigger mechanism (DB row insert the engine polls, or a lightweight API endpoint) to kick off report runs. No MCP refactor needed at any phase.
+**Decisions locked:**
+- MCP ruled out (2026-04-13) — declining adoption. Tool layer stays as Python subprocesses.
+- Run trigger via GitHub Actions `workflow_dispatch` — no new servers needed.
+- Separate repos, shared Supabase — backend and website deploy and scale independently.
 
 ---
 
@@ -415,10 +381,11 @@ What type of venture is this?
 
 | Decision | Outcome | Rationale |
 |---|---|---|
-| Website before V2 | Build website first | Intake form questions must drive the DB schema — writing V2 migrations before the form exists causes rework. Admin panel also easier to build and test against the simpler V1 pipeline. |
+| Website before V2 | ✅ Done | Intake form questions drive the DB schema — building the form first locked in the right data model before V2 migrations. |
 | MCP | Ruled out (2026-04-13) | Declining adoption, more problems than it solves. Tool layer stays as Python subprocesses. |
-| Run trigger | GitHub Actions workflow_dispatch | No new servers or infrastructure. Web app calls GitHub API → Actions fires run.js. Web app polls Supabase reports table for status. |
-| V2 before V3 | Physical products first | Shared research spine (supply chain, regulatory, manufacturing) makes generalisation lower risk |
-| Venture intelligence as bridge | Implement now, rely on it for V2 | Perplexity brief already makes agents adapt to industry — reduces workflow rewrite scope |
-| Option A workflow generalisation | Start with brief-driven adaptation | Less work, test it before committing to per-industry workflow blocks |
-| Industry category field | Add in migration 009 (not 006 — that number is taken) | Clean DB signal for gov tool routing — better than inferring from product description |
+| Run trigger | GitHub Actions workflow_dispatch | No new servers. Web app calls GitHub API → Actions fires run.js. Web app polls Supabase reports table for status. |
+| V2 before V3 | Physical products first | Shared research spine (supply chain, regulatory, manufacturing) makes generalisation lower risk. |
+| Venture intelligence as bridge | Relying on brief for V2 | Perplexity brief already makes agents adapt to industry — reduces workflow rewrite scope. Test before committing to per-industry workflow blocks. |
+| Option A workflow generalisation | Start with brief-driven adaptation | Less work. Test first, move to per-industry substitution blocks (Option B) only if results are poor. |
+| Industry category field | Migration 009 | Clean DB signal for gov tool routing — better than inferring from product description. |
+| Gov tool scripts (ITC/EPA/BLS) | ✅ Built before E2E test (2026-04-15) | Free/no-key APIs. Built and tested before the furniture manufacturing test proposition to ensure routing works from day one. |

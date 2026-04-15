@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-15 (Session 24 — Step 2.5 complete. Website Steps 3–7 complete. V2 E2E test is the only remaining pre-V2 task.)
+**Last updated:** 2026-04-15 (Session 25 — Three new gov tool scripts built and tested. BLS upgraded to v2. Ready for furniture E2E test.)
 
 ---
 
@@ -80,10 +80,10 @@ This is the only thing left before the system is fully V2-ready. Run the complet
 
 **Test proposition:** Furniture manufacturing, Minnesota → US (domestic physical product). Scoped to US market only — Europe requires the international research pipeline which is not yet built.
 
-**Before running:** Build the three gov tool scripts below that general manufacturing propositions depend on. These are free/no-key APIs and should be in place before the first non-food-beverage run:
-- `tools/fetch_itc_data.py` — ITC trade remedy cases and import injury data (any import/export)
-- `tools/fetch_epa_data.py` — EPA regulatory database and enforcement actions (manufacturing, chemicals)
-- `tools/fetch_bls_data.py` — BLS employment and wage benchmarks (domestic production cost analysis)
+**Gov tool scripts are built and tested** (Session 25):
+- `tools/fetch_itc_data.py` ✅ — Federal Register trade remedy cases + Census annual import stats by NAICS
+- `tools/fetch_epa_data.py` ✅ — EPA ECHO facility compliance search + Toxic Release Inventory
+- `tools/fetch_bls_data.py` ✅ — BLS manufacturing wage benchmarks + employment trends (v2 API with key)
 
 **Flow:**
 1. Open `/intake` as a "client" — fill out for furniture manufacturing, Minnesota → US. Use a fresh client/org — this validates the intake form creates new DB records correctly, not just re-running an existing proposition
@@ -102,10 +102,7 @@ If the intake form submission path hasn't been activated yet (org status still `
 ## V2 Backend Work (after E2E test passes)
 
 1. **Industry-aware gov data routing** — replace the flat `executeTool` switch with routing based on `industry_category`. Non-applicable tools return a structured "not applicable" so agents don't waste iterations.
-2. **New gov tool scripts** — build before the test proposition that needs them:
-   - `tools/fetch_itc_data.py` — ITC trade remedy cases (any import/export) ← **build before furniture E2E test**
-   - `tools/fetch_epa_data.py` — EPA regulatory + enforcement (manufacturing, chemicals) ← **build before furniture E2E test**
-   - `tools/fetch_bls_data.py` — BLS employment + wage benchmarks (domestic manufacturing) ← **build before furniture E2E test**
+2. **Remaining gov tool scripts** — ITC/EPA/BLS are done. Still to build when needed:
    - `tools/fetch_doe_data.py` — DOE EIA + NREL (energy/solar) ← build before solar test proposition
    - `tools/fetch_fda_device_data.py` — FDA 510(k) clearances + device recalls (medical) ← build before medical test proposition
    - `tools/fetch_bis_data.py` — BIS export control classifications ← build before electronics test proposition
@@ -128,6 +125,13 @@ If the intake form submission path hasn't been activated yet (org status still `
 ---
 
 ## Session Log
+
+### Session 25 — Gov tool scripts + BLS v2 (2026-04-15)
+- **`tools/fetch_bls_data.py`** — BLS Public Data API. Three commands: `wages` (manufacturing earnings benchmarks), `employment` (employment level trends by sector), `series` (arbitrary series IDs). Registered in `RESEARCH_TOOLS` and `executeTool`.
+- **`tools/fetch_epa_data.py`** — EPA ECHO + TRI Envirofacts. Two commands: `facilities` (ECHO compliance search by NAICS/state), `tri` (Toxic Release Inventory by NAICS/state/chemical). Correct ECHO endpoint is `echo_rest_services.get_facility_info` (not `eco_search`).
+- **`tools/fetch_itc_data.py`** — Federal Register + Census Trade. Two commands: `cases` (USITC/Commerce trade remedy notices), `imports` (Census `/intltrade/imports/naics` — aggregates 12 monthly snapshots into annual totals by country). Census trade API does NOT accept the standard `CENSUS_API_KEY` — pass no key or it returns "Invalid Key".
+- **BLS v2 upgrade** — script detects `BLS_V2_API_Key` in `.env` and switches to the v2 endpoint (`registrationkey` in POST body). Falls back to v1 if key is absent.
+- All three scripts smoke-tested against live APIs. All three pass valid JSON on error so `execPython` never crashes the run.
 
 ### Session 24 — Step 2.5 + website audit (2026-04-15)
 - **Step 2.5 complete** — `getPropositionContext(propositionId)` added to `db.js`, exported, imported in `run.js`
@@ -314,6 +318,9 @@ Sonnet retry uses maxIter=20. If Sonnet also fails, agent is marked `failed`. Es
 | `fetch_census_data` | `fetch_census_data.py` | All — demographics + industry sizing |
 | `fetch_usaspending_data` | `fetch_usaspending_data.py` | All — federal contracts/grants |
 | `fetch_sec_edgar` | `fetch_sec_edgar.py` | All — public company filings |
+| `fetch_bls_data` | `fetch_bls_data.py` | Manufacturing — wage benchmarks + employment trends (BLS v2) |
+| `fetch_epa_data` | `fetch_epa_data.py` | Manufacturing/chemicals — ECHO compliance + TRI toxic releases |
+| `fetch_itc_data` | `fetch_itc_data.py` | Import/export — trade remedy cases + Census annual import stats |
 | `search_perplexity` | `search_perplexity.py` | Fallback when Brave is thin |
 
 ### Quality gate
@@ -413,8 +420,9 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 | Exchange Rate | `EXCHANGE_RATE_API_KEY` |
 | Resend | `RESEND_API_KEY` |
 | YouTube | `YOUTUBE_API_KEY` |
+| BLS (v2) | `BLS_V2_API_Key` |
 
-USASpending.gov and SEC EDGAR require no key.
+USASpending.gov, SEC EDGAR, EPA ECHO, Federal Register, and the Census international trade API require no key.
 
 **To add for V2 — international research pipeline:**
 

@@ -210,6 +210,61 @@ const RESEARCH_TOOLS = [
       required: ['query'],
     },
   },
+  {
+    name:        'fetch_bls_data',
+    description: 'Fetch employment and wage benchmarks from the Bureau of Labor Statistics (BLS). Use for production labor cost modeling, workforce availability analysis, and comparing wage assumptions against industry norms. No API key required.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:  { type: 'string', enum: ['wages', 'employment', 'series'],
+                    description: 'wages = avg hourly/weekly earnings benchmarks; employment = employment level trends; series = fetch specific BLS series by ID' },
+        sector:   { type: 'string', enum: ['all', 'durable', 'nondurable'], default: 'all',
+                    description: 'Manufacturing sector (employment command only). Durable includes furniture (NAICS 337) and wood products (NAICS 321).' },
+        ids:      { type: 'string',
+                    description: 'Comma-separated BLS series IDs (series command only — e.g. "CES3000000008,CES3200000001")' },
+        start:    { type: 'integer', description: 'Start year (default: 2021)', default: 2021 },
+        end:      { type: 'integer', description: 'End year (default: 2024)', default: 2024 },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name:        'fetch_epa_data',
+    description: 'Fetch EPA regulatory and enforcement data. ECHO facility search shows compliance burden by NAICS/state. TRI shows toxic chemical releases by industry. Use for regulatory risk assessment in manufacturing propositions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:  { type: 'string', enum: ['facilities', 'tri'],
+                    description: 'facilities = ECHO compliance search by NAICS and state; tri = Toxic Release Inventory data' },
+        naics:    { type: 'string', description: 'NAICS code prefix (e.g. "337" for furniture, "321" for wood products)' },
+        state:    { type: 'string', description: '2-letter US state abbreviation (optional — omit for national)' },
+        chemical: { type: 'string', description: 'Chemical name to filter TRI results (tri command only — e.g. "formaldehyde")' },
+        year:     { type: 'integer', description: 'TRI reporting year (tri command only, default: 2022)', default: 2022 },
+        limit:    { type: 'integer', description: 'Max results (default 20)', default: 20 },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name:        'fetch_itc_data',
+    description: 'Fetch ITC trade remedy case notices and US import statistics. Use to identify anti-dumping/CVD actions affecting an industry, assess tariff risk, and size import competition by country of origin.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:      { type: 'string', enum: ['cases', 'imports'],
+                        description: 'cases = Federal Register trade remedy case search (AD/CVD/safeguards); imports = Census Bureau annual import statistics by NAICS' },
+        term:         { type: 'string',
+                        description: 'Search term for trade remedy cases (cases command — e.g. "furniture anti-dumping", "wood products 301")' },
+        naics:        { type: 'string',
+                        description: 'NAICS code for import statistics (imports command — e.g. "337" for furniture)' },
+        year:         { type: 'integer', description: 'Data year for import stats (imports command, default: 2022)', default: 2022 },
+        country_code: { type: 'string',
+                        description: 'Census country code filter for imports (optional — e.g. "5700" = China, "5030" = Canada)' },
+        limit:        { type: 'integer', description: 'Max results for cases command (default 15)', default: 15 },
+      },
+      required: ['command'],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -350,6 +405,63 @@ function executeTool(toolName, input) {
         '--query', input.query,
         '--model', input.model || 'sonar',
       ]);
+
+    case 'fetch_bls_data': {
+      if (input.command === 'wages') {
+        const blsArgs = ['wages'];
+        if (input.start) blsArgs.push('--start', String(input.start));
+        if (input.end)   blsArgs.push('--end',   String(input.end));
+        return execPython('tools/fetch_bls_data.py', blsArgs);
+      } else if (input.command === 'employment') {
+        const empArgs = ['employment', '--sector', input.sector || 'all'];
+        if (input.start) empArgs.push('--start', String(input.start));
+        if (input.end)   empArgs.push('--end',   String(input.end));
+        return execPython('tools/fetch_bls_data.py', empArgs);
+      } else {
+        // series subcommand — requires explicit series IDs from the agent
+        if (!input.ids) return { error: 'ids is required for the series command (comma-separated BLS series IDs)' };
+        const serArgs = ['series', '--ids', input.ids];
+        if (input.start) serArgs.push('--start', String(input.start));
+        if (input.end)   serArgs.push('--end',   String(input.end));
+        return execPython('tools/fetch_bls_data.py', serArgs);
+      }
+    }
+
+    case 'fetch_epa_data': {
+      if (input.command === 'facilities') {
+        if (!input.naics) return { error: 'naics is required for the facilities command' };
+        const facArgs = ['facilities', '--naics', input.naics,
+                         '--limit', String(input.limit || 20)];
+        if (input.state) facArgs.push('--state', input.state);
+        return execPython('tools/fetch_epa_data.py', facArgs);
+      } else {
+        // tri subcommand
+        const triArgs = ['tri', '--limit', String(input.limit || 20)];
+        if (input.naics)    triArgs.push('--naics',    input.naics);
+        if (input.state)    triArgs.push('--state',    input.state);
+        if (input.chemical) triArgs.push('--chemical', input.chemical);
+        if (input.year)     triArgs.push('--year',     String(input.year));
+        return execPython('tools/fetch_epa_data.py', triArgs);
+      }
+    }
+
+    case 'fetch_itc_data': {
+      if (input.command === 'cases') {
+        if (!input.term) return { error: 'term is required for the cases command' };
+        return execPython('tools/fetch_itc_data.py', [
+          'cases',
+          '--term',  input.term,
+          '--limit', String(input.limit || 15),
+        ]);
+      } else {
+        // imports subcommand
+        if (!input.naics) return { error: 'naics is required for the imports command' };
+        const impArgs = ['imports', '--naics', input.naics,
+                         '--year', String(input.year || 2022)];
+        if (input.country_code) impArgs.push('--country', input.country_code);
+        return execPython('tools/fetch_itc_data.py', impArgs);
+      }
+    }
 
     default:
       throw new Error(`Unknown tool: ${toolName}`);
