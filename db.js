@@ -232,7 +232,8 @@ async function advancePropositionSchedule(propositionId, scheduleType, scheduleD
   }
 
   // Determine run limit for this plan tier (test propositions bypass this entirely)
-  const RUN_LIMITS = { starter: 1, pro: 2, retainer: Infinity };
+  // quarterly = 4 runs (one per quarter over a 1-year commitment)
+  const RUN_LIMITS = { starter: 1, pro: 2, quarterly: 4, retainer: Infinity };
   const limit = isTest ? Infinity : (RUN_LIMITS[planTier] ?? Infinity);
 
   const now = new Date();
