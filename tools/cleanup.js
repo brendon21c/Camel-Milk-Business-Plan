@@ -404,6 +404,155 @@ async function purgeTestData(dryRun) {
 }
 
 // ---------------------------------------------------------------------------
+// Org purge — delete a specific org and all its data by name
+// ---------------------------------------------------------------------------
+
+/**
+ * Deletes a single organization and all records that belong to it,
+ * in FK-safe order. Use this to remove real (non-test) orgs created
+ * during manual testing or intake form experiments.
+ *
+ * Deletion order mirrors --purge-test:
+ *   1. proposition_context  (FK → propositions)
+ *   2. proposition_recipients (FK → propositions + clients)
+ *   3. report_sources       (FK → reports)
+ *   4. agent_outputs        (FK → reports)
+ *   5. Storage files        (keyed by proposition_id + report_id)
+ *   6. reports              (FK → propositions)
+ *   7. propositions         (FK → organizations)
+ *   8. clients              (FK → organizations)
+ *   9. organizations
+ *
+ * @param {string}  orgName - Exact name of the organization to delete.
+ * @param {boolean} dryRun  - If true, log what would be deleted without deleting.
+ */
+async function purgeOrg(orgName, dryRun) {
+  console.log(`\nOrg purge — looking for organization: "${orgName}"`);
+
+  // Find the org by name
+  const { data: org, error: orgFetchErr } = await supabase
+    .from('organizations')
+    .select('id, name, status')
+    .eq('name', orgName)
+    .maybeSingle();
+
+  if (orgFetchErr) throw new Error(`Could not look up org: ${orgFetchErr.message}`);
+  if (!org) {
+    console.log(`  No organization found with name "${orgName}". Nothing to delete.`);
+    return;
+  }
+
+  console.log(`  Found org: ${org.id} (status: ${org.status})`);
+
+  // Fetch all propositions for this org
+  const { data: props, error: propFetchErr } = await supabase
+    .from('propositions')
+    .select('id')
+    .eq('organization_id', org.id);
+
+  if (propFetchErr) throw new Error(`Could not fetch propositions: ${propFetchErr.message}`);
+  const propIds = (props || []).map(r => r.id);
+  console.log(`  Propositions: ${propIds.length}`);
+
+  // Fetch all reports for those propositions
+  let reportRows = [];
+  if (propIds.length > 0) {
+    const { data: reports, error: reportFetchErr } = await supabase
+      .from('reports')
+      .select('id, proposition_id')
+      .in('proposition_id', propIds);
+
+    if (reportFetchErr) throw new Error(`Could not fetch reports: ${reportFetchErr.message}`);
+    reportRows = reports || [];
+    console.log(`  Reports: ${reportRows.length}`);
+  }
+
+  // Fetch all clients for this org
+  const { data: clients, error: clientFetchErr } = await supabase
+    .from('clients')
+    .select('id')
+    .eq('organization_id', org.id);
+
+  if (clientFetchErr) throw new Error(`Could not fetch clients: ${clientFetchErr.message}`);
+  console.log(`  Clients/contacts: ${(clients || []).length}`);
+
+  if (dryRun) {
+    console.log('\n  [dry-run] Would delete:');
+    console.log(`    - proposition_context rows for ${propIds.length} proposition(s)`);
+    console.log(`    - proposition_recipients rows for ${propIds.length} proposition(s)`);
+    console.log(`    - report_sources + agent_outputs for ${reportRows.length} report(s)`);
+    console.log(`    - Storage files for ${reportRows.length} report(s)`);
+    console.log(`    - ${reportRows.length} report row(s)`);
+    console.log(`    - ${propIds.length} proposition row(s)`);
+    console.log(`    - ${(clients || []).length} client row(s)`);
+    console.log(`    - 1 organization row ("${org.name}")`);
+    console.log('\n  Pass --confirm to apply.');
+    return;
+  }
+
+  // ── 1. proposition_context ────────────────────────────────────────────────
+  if (propIds.length > 0) {
+    const { error } = await supabase.from('proposition_context').delete().in('proposition_id', propIds);
+    if (error) console.warn(`  ⚠ proposition_context: ${error.message}`);
+    else console.log(`  ✓ proposition_context deleted`);
+  }
+
+  // ── 2. proposition_recipients ─────────────────────────────────────────────
+  if (propIds.length > 0) {
+    const { error } = await supabase.from('proposition_recipients').delete().in('proposition_id', propIds);
+    if (error) console.warn(`  ⚠ proposition_recipients: ${error.message}`);
+    else console.log(`  ✓ proposition_recipients deleted`);
+  }
+
+  // ── 3 & 4. report_sources + agent_outputs ────────────────────────────────
+  for (const report of reportRows) {
+    const { error: srcErr } = await supabase.from('report_sources').delete().eq('report_id', report.id);
+    if (srcErr) console.warn(`  ⚠ report_sources for ${report.id}: ${srcErr.message}`);
+
+    const { error: aoErr } = await supabase.from('agent_outputs').delete().eq('report_id', report.id);
+    if (aoErr) console.warn(`  ⚠ agent_outputs for ${report.id}: ${aoErr.message}`);
+  }
+  if (reportRows.length > 0) console.log(`  ✓ report_sources + agent_outputs deleted`);
+
+  // ── 5. Storage files ──────────────────────────────────────────────────────
+  const storagePaths = reportRows.flatMap(r => [
+    `${r.proposition_id}/${r.id}.pdf`,
+    `${r.proposition_id}/${r.id}_content.json`,
+  ]);
+  if (storagePaths.length > 0) {
+    const { error: storageErr } = await supabase.storage.from('reports').remove(storagePaths);
+    if (storageErr) console.warn(`  ⚠ Storage delete (files may already be gone): ${storageErr.message}`);
+    else console.log(`  ✓ Storage files deleted`);
+  }
+
+  // ── 6. reports ────────────────────────────────────────────────────────────
+  if (propIds.length > 0) {
+    const { error } = await supabase.from('reports').delete().in('proposition_id', propIds);
+    if (error) console.warn(`  ⚠ reports: ${error.message}`);
+    else console.log(`  ✓ reports deleted`);
+  }
+
+  // ── 7. propositions ───────────────────────────────────────────────────────
+  if (propIds.length > 0) {
+    const { error } = await supabase.from('propositions').delete().eq('organization_id', org.id);
+    if (error) console.warn(`  ⚠ propositions: ${error.message}`);
+    else console.log(`  ✓ propositions deleted`);
+  }
+
+  // ── 8. clients ────────────────────────────────────────────────────────────
+  const { error: clientDelErr } = await supabase.from('clients').delete().eq('organization_id', org.id);
+  if (clientDelErr) console.warn(`  ⚠ clients: ${clientDelErr.message}`);
+  else console.log(`  ✓ clients deleted`);
+
+  // ── 9. organization ───────────────────────────────────────────────────────
+  const { error: orgDelErr } = await supabase.from('organizations').delete().eq('id', org.id);
+  if (orgDelErr) console.warn(`  ⚠ organization: ${orgDelErr.message}`);
+  else console.log(`  ✓ Organization "${org.name}" deleted`);
+
+  console.log('\n  ✓ Org purge complete.');
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -413,12 +562,18 @@ async function main() {
   const purgeTest  = args.includes('--purge-test');
   const confirm    = args.includes('--confirm');
 
-  if (!prune && !purgeTest) {
+  // --purge-org "Org Name" — delete a specific org by exact name
+  const purgeOrgIdx = args.indexOf('--purge-org');
+  const purgeOrgName = purgeOrgIdx !== -1 ? args[purgeOrgIdx + 1] : null;
+
+  if (!prune && !purgeTest && !purgeOrgName) {
     console.log('Usage:');
-    console.log('  node tools/cleanup.js --prune                       # dry-run: shows what would be deleted (6-month retention)');
-    console.log('  node tools/cleanup.js --prune --confirm             # actually delete old reports');
-    console.log('  node tools/cleanup.js --purge-test                  # dry-run: shows all is_test=true records');
-    console.log('  node tools/cleanup.js --purge-test --confirm        # delete ALL test data permanently');
+    console.log('  node tools/cleanup.js --prune                           # dry-run: shows what would be deleted (6-month retention)');
+    console.log('  node tools/cleanup.js --prune --confirm                 # actually delete old reports');
+    console.log('  node tools/cleanup.js --purge-test                      # dry-run: shows all is_test=true records');
+    console.log('  node tools/cleanup.js --purge-test --confirm            # delete ALL test data permanently');
+    console.log('  node tools/cleanup.js --purge-org "Org Name"            # dry-run: shows what would be deleted for that org');
+    console.log('  node tools/cleanup.js --purge-org "Org Name" --confirm  # delete that org and all its data permanently');
     process.exit(0);
   }
 
@@ -427,6 +582,10 @@ async function main() {
   console.log('McKeever Consulting — Data Cleanup');
   console.log(`Mode: ${dryRun ? 'DRY RUN (pass --confirm to apply changes)' : 'LIVE — changes will be made'}`);
   console.log(`Started: ${new Date().toISOString()}`);
+
+  if (purgeOrgName) {
+    await purgeOrg(purgeOrgName, dryRun);
+  }
 
   if (purgeTest) {
     await purgeTestData(dryRun);
