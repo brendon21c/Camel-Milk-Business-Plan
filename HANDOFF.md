@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-15 (Session 25 — Three new gov tool scripts built and tested. BLS upgraded to v2. Ready for furniture E2E test.)
+**Last updated:** 2026-04-16 (Session 26 — Expanded intake form (5 steps), client_context JSONB, test client mode, cleanup purge-test command.)
 
 ---
 
@@ -125,6 +125,16 @@ If the intake form submission path hasn't been activated yet (org status still `
 ---
 
 ## Session Log
+
+### Session 26 — Expanded intake form + client_context + test client mode (2026-04-16)
+- **Migration 011** — `is_test BOOLEAN DEFAULT false` added to `organizations`, `clients`, `propositions`. Partial indexes on each. Purge support in cleanup.js.
+- **Migration 012** — `client_context JSONB DEFAULT NULL` added to `propositions`. GIN index for fast queries. Stores: `product_scope`, `development_stage`, `price_point`, `revenue_model` (array), `customer_type`, `ideal_customer`, `sales_channel`, `comparable_brands`, `key_differentiator`.
+- **Test client mode** — intake form at `/intake?test=true` shows amber TEST MODE banner. All created records tagged `is_test=true`. Plan tier forced to `retainer` so run limits never exhaust. `advancePropositionSchedule()` in `db.js` skips plan gating for `is_test=true` propositions.
+- **`--purge-test`** — new command in `tools/cleanup.js`. Deletes all `is_test=true` records in FK-safe order (proposition_context → proposition_recipients → report_sources → agent_outputs → Storage → reports → propositions → clients → organizations). Dry-run by default; pass `--confirm` to apply.
+- **5-step intake form** — new steps: "Your Product" (product scope, dev stage, price point, revenue model) and "Your Customer" (customer type, ideal customer, sales channel, comparable brands, key differentiator). Old Step 2 (Market) renamed "Operations". Step labels now: About You → Your Product → Your Customer → Operations → Your Plan.
+- **`client_context` injection in `run.js`** — `propositionContext` now includes `client_context` when present. Injected as `## CLIENT CONTEXT` block in every agent's `userPrompt`, between the landscape briefing and admin context notes blocks.
+- **Website CLAUDE.md** — intake form section fully rewritten to reflect 5-step structure and `client_context` schema. DB schema table updated.
+- **Migrations to run:** 011 then 012 (in order) before deploying either project.
 
 ### Session 25 — Gov tool scripts + BLS v2 (2026-04-15)
 - **`tools/fetch_bls_data.py`** — BLS Public Data API. Three commands: `wages` (manufacturing earnings benchmarks), `employment` (employment level trends by sector), `series` (arbitrary series IDs). Registered in `RESEARCH_TOOLS` and `executeTool`.
@@ -361,7 +371,7 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 
 ## DB Schema
 
-**10 migrations run (001–010).**
+**12 migrations run (001–012) — run 011 then 012 before deploying.**
 
 | Table | Purpose |
 |---|---|
@@ -380,6 +390,14 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 - `clients.phone` — VARCHAR(50), NOT NULL default `''`
 - `propositions.sourcing_notes` — TEXT, nullable
 - `propositions.additional_info` — TEXT, nullable
+
+**New fields added in migration 011:**
+- `organizations.is_test` — BOOLEAN NOT NULL DEFAULT false
+- `clients.is_test` — BOOLEAN NOT NULL DEFAULT false
+- `propositions.is_test` — BOOLEAN NOT NULL DEFAULT false
+
+**New fields added in migration 012:**
+- `propositions.client_context` — JSONB DEFAULT NULL. Keys: `product_scope`, `development_stage`, `price_point`, `revenue_model` (array), `customer_type`, `ideal_customer`, `sales_channel`, `comparable_brands`, `key_differentiator`. Injected into all research agent prompts as `## CLIENT CONTEXT` block.
 
 **Extensions enabled:** `moddatetime` — required for the `proposition_context.updated_at` trigger.
 

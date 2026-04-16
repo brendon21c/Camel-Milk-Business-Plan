@@ -735,7 +735,11 @@ async function runResearchAgent(agentName, context, { sonnetOnly = false } = {})
   // Load the SOP for this agent
   const workflow = loadWorkflow(workflowFile);
 
-  // Build the proposition context object the workflow expects
+  // Build the proposition context object the workflow expects.
+  // client_context is a JSONB blob from the expanded intake form (migration 012) —
+  // it holds product scope, development stage, price point, revenue model,
+  // customer type, ideal customer description, sales channel, comparable brands,
+  // and key differentiator. Omit it if null so agents don't see an empty field.
   const propositionContext = {
     report_id:          context.reportId,
     proposition_id:     context.proposition.id,
@@ -746,6 +750,9 @@ async function runResearchAgent(agentName, context, { sonnetOnly = false } = {})
     target_demographic: context.proposition.target_demographic || null,
     estimated_budget:   context.proposition.estimated_budget || null,
     current_year:       new Date().getFullYear().toString(),
+    ...(context.proposition.client_context
+      ? { client_context: context.proposition.client_context }
+      : {}),
   };
 
   const systemPrompt = `You are a research agent for McKeever Consulting's Business Viability Intelligence System.
@@ -827,6 +834,27 @@ CRITICAL RULES:
       relevantNotes.map(n => `- ${n}`).join('\n') + '\n'
     : '';
 
+  // Build the client context block — injected when the intake form captured enrichment
+  // data (product scope, development stage, price point, revenue model, customer type,
+  // ideal customer, sales channel, comparable brands, key differentiator).
+  // These are direct signals from the client about how they see their business.
+  // Agents should use them to sharpen focus: right price tier for TAM sizing,
+  // right sales channel for distribution research, right competitors for benchmarking.
+  const cc = context.proposition.client_context;
+  const clientContextBlock = cc && Object.keys(cc).length > 0
+    ? `\n## CLIENT CONTEXT\nThe following enrichment data was provided by the client during intake. ` +
+      `Use it to sharpen your research — target the right price tier, sales channel, ` +
+      `customer segment, and competitive set:\n` +
+      Object.entries(cc)
+        .filter(([, v]) => v !== null && v !== undefined && v !== '')
+        .map(([k, v]) => {
+          const label = k.replace(/_/g, ' ');
+          const val   = Array.isArray(v) ? v.join(', ') : String(v);
+          return `- ${label}: ${val}`;
+        })
+        .join('\n') + '\n'
+    : '';
+
   const userPrompt = `Execute this research workflow and produce the JSON output.
 
 ## WORKFLOW INSTRUCTIONS
@@ -836,7 +864,7 @@ ${workflow}
 \`\`\`json
 ${JSON.stringify(propositionContext, null, 2)}
 \`\`\`
-${ventureBlock}${landscapeBlock}${contextNotesBlock}
+${ventureBlock}${landscapeBlock}${clientContextBlock}${contextNotesBlock}
 Follow all steps in the workflow. Use the tools to run the required searches and data pulls.
 Synthesize the results and respond with ONLY the JSON object from the Output Format section.`;
 
