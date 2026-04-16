@@ -204,12 +204,12 @@ async function getDuePropositions() {
  * @returns {Object} The updated proposition row.
  */
 async function advancePropositionSchedule(propositionId, scheduleType, scheduleDay) {
-  // Fetch plan_tier and count of completed reports for this proposition.
-  // We need both to decide whether to advance or retire the schedule.
+  // Fetch plan_tier, is_test, and count of completed reports for this proposition.
+  // We need all three to decide whether to advance or retire the schedule.
   const [propResult, countResult] = await Promise.all([
     supabase
       .from('propositions')
-      .select('plan_tier')
+      .select('plan_tier, is_test')
       .eq('id', propositionId)
       .single(),
     supabase
@@ -223,11 +223,17 @@ async function advancePropositionSchedule(propositionId, scheduleType, scheduleD
   if (countResult.error) throw new Error(`advancePropositionSchedule: could not count reports: ${countResult.error.message}`);
 
   const planTier   = propResult.data.plan_tier;
+  const isTest     = propResult.data.is_test ?? false;
   const runCount   = countResult.count ?? 0;
 
-  // Determine run limit for this plan tier
+  // Test propositions never retire — always advance so Brendon can re-run freely
+  if (isTest) {
+    console.log(`  Test proposition — skipping plan limit check, advancing schedule`);
+  }
+
+  // Determine run limit for this plan tier (test propositions bypass this entirely)
   const RUN_LIMITS = { starter: 1, pro: 2, retainer: Infinity };
-  const limit = RUN_LIMITS[planTier] ?? Infinity;
+  const limit = isTest ? Infinity : (RUN_LIMITS[planTier] ?? Infinity);
 
   const now = new Date();
 
