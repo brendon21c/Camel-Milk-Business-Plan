@@ -1355,15 +1355,20 @@ const ASSEMBLER_SECTION_INSTRUCTIONS = {
  * @param {Array}  messages      - Conversation history array for the API call.
  * @param {number} maxTokens     - Output token ceiling for this call.
  */
-async function streamSonnetCall(systemPrompt, messages, maxTokens) {
+async function streamSonnetCall(systemPrompt, messages, maxTokens, useCache = false) {
   let attempts = 0;
+  // Cache the system prompt when enabled — saves the repeated fixed context across all 15 assembler calls
+  const systemBlock = useCache
+    ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
+    : systemPrompt;
+
   while (true) {
     attempts++;
     try {
       return await anthropic.messages.stream({
         model:      'claude-sonnet-4-6',
         max_tokens: maxTokens,
-        system:     systemPrompt,
+        system:     systemBlock,
         messages,
       }).finalText();
     } catch (err) {
@@ -1396,13 +1401,27 @@ async function streamSonnetCall(systemPrompt, messages, maxTokens) {
  * @param {number}  maxRepairs  - How many repair cycles to attempt (default 2).
  * @param {boolean} hardFail    - If true, throw on total failure instead of returning null.
  */
-async function callWithRepair(systemPrompt, userPrompt, maxTokens, maxRepairs = 2, hardFail = false) {
-  const messages = [{ role: 'user', content: userPrompt }];
+async function callWithRepair(systemPrompt, userPrompt, maxTokens, maxRepairs = 2, hardFail = false, cacheablePrefix = null) {
+  // When cacheablePrefix is provided (the shared research context), split the first user message
+  // into two content blocks: a cacheable prefix and the section-specific task.
+  // This lets Anthropic cache the ~150k-token research context across all 15 assembler calls.
+  const useCache = !!cacheablePrefix;
+  const firstMessage = cacheablePrefix
+    ? {
+        role: 'user',
+        content: [
+          { type: 'text', text: cacheablePrefix, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: userPrompt },
+        ],
+      }
+    : { role: 'user', content: userPrompt };
+
+  const messages = [firstMessage];
   let rawContent;
 
   // Initial generation attempt
   try {
-    rawContent = await streamSonnetCall(systemPrompt, messages, maxTokens);
+    rawContent = await streamSonnetCall(systemPrompt, messages, maxTokens, useCache);
   } catch (err) {
     const msg = `Initial generation failed: ${err.message}`;
     if (hardFail) throw new Error(msg);
@@ -1435,7 +1454,7 @@ async function callWithRepair(systemPrompt, userPrompt, maxTokens, maxRepairs = 
       });
 
       try {
-        rawContent = await streamSonnetCall(systemPrompt, messages, maxTokens);
+        rawContent = await streamSonnetCall(systemPrompt, messages, maxTokens, useCache);
       } catch (repairErr) {
         const msg = `Repair attempt ${repair + 1} stream failed: ${repairErr.message}`;
         if (hardFail) throw new Error(msg);
@@ -1629,16 +1648,16 @@ ${previousOutputs
 { "type": "key_figures", "items": [{"label": "...", "value": "..."}] }`;
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  // 20s between section calls — each call sends ~20k input tokens; 20s keeps us
-  // safely within the 50k TPM rate limit window shared with research agents.
-  const INTER_SECTION_DELAY_MS = 20_000;
+  // 17s between section calls — balances two constraints:
+  //   1. TPM rate limit: keeps us within the 50k TPM window
+  //   2. Prompt cache TTL: 15 sections × 17s = 255s, safely under the 300s (5-min) cache TTL.
+  //      At 20s, a single repair cycle or rate-limit backoff could push a section past TTL.
+  const INTER_SECTION_DELAY_MS = 17_000;
 
   // ── Call 1: Meta + Viability Score ────────────────────────────────────────
   // Hard fail — viability verdict is the core deliverable. No placeholder possible.
   console.log('    [1/15] Computing viability score...');
-  const metaViabilityPrompt = `${researchContext}
-
-## YOUR TASK
+  const metaViabilityTask = `## YOUR TASK
 Compute the viability score from the research data. Apply the factor weights from the proposition.
 Score each factor 1–5 using the scoring guide in the workflow above. Calculate the weighted overall score.
 
@@ -1666,7 +1685,7 @@ Return ONLY this JSON object (no markdown fences, no other text):
   }
 }`;
 
-  const metaViability = await callWithRepair(systemPrompt, metaViabilityPrompt, 3000, 2, true);
+  const metaViability = await callWithRepair(systemPrompt, metaViabilityTask, 3000, 2, true, researchContext);
   const meta           = metaViability.meta;
   const viabilityScore = metaViability.viability_score;
   console.log(`    ✓ Viability: ${viabilityScore.overall} — ${viabilityScore.verdict}`);
@@ -1699,9 +1718,7 @@ ${JSON.stringify(viabilityScore, null, 2)}
   for (const spec of SECTION_SPECS) {
     console.log(`    [${spec.callNum}/15] Section ${spec.num}: ${spec.title}...`);
 
-    const sectionPrompt = `${researchContext}
-
-${viabilityContext}
+    const sectionTask = `${viabilityContext}
 
 ## YOUR TASK
 Write section ${spec.num}: ${spec.title}
@@ -1719,7 +1736,7 @@ Return ONLY this JSON object:
 
 ${blockSchema}`;
 
-    const result = await callWithRepair(systemPrompt, sectionPrompt, spec.maxTokens, 2, false);
+    const result = await callWithRepair(systemPrompt, sectionTask, spec.maxTokens, 2, false, researchContext);
 
     if (result) {
       sections.push(result);
@@ -1746,9 +1763,7 @@ ${blockSchema}`;
   let whatChanged = null;
   if (runNumber > 1 && previousOutputs) {
     console.log('    [14/15] What Changed...');
-    const whatChangedPrompt = `${researchContext}
-
-${viabilityContext}
+    const whatChangedTask = `${viabilityContext}
 
 ## YOUR TASK
 Compare the previous report outputs with the current report outputs and produce a list of
@@ -1761,7 +1776,7 @@ Ignore minor wording differences — only include substantive changes.
 Return ONLY a JSON array of strings (not an object):
 ["<change bullet 1>", "<change bullet 2>", ...]`;
 
-    whatChanged = await callWithRepair(systemPrompt, whatChangedPrompt, 3000, 2, false);
+    whatChanged = await callWithRepair(systemPrompt, whatChangedTask, 3000, 2, false, researchContext);
     if (whatChanged) {
       console.log('    ✓ What Changed complete');
     } else {
@@ -1773,9 +1788,7 @@ Return ONLY a JSON array of strings (not an object):
 
   // ── Call 15: Sources ──────────────────────────────────────────────────────
   console.log('    [15/15] Sources...');
-  const sourcesPrompt = `${researchContext}
-
-## YOUR TASK
+  const sourcesTask = `## YOUR TASK
 Compile the complete list of sources cited across all research agent outputs.
 Extract all URLs from the "sources" arrays within each agent output.
 Include every unique source — do not deduplicate unless the exact same URL appears twice.
@@ -1786,7 +1799,7 @@ Return ONLY a JSON array (not an object):
   { "url": "...", "title": "...", "agent_name": "research_<name>", "retrieved_at": "<ISO timestamp or null>" }
 ]`;
 
-  const sources = await callWithRepair(systemPrompt, sourcesPrompt, 4000, 2, false) || [];
+  const sources = await callWithRepair(systemPrompt, sourcesTask, 4000, 2, false, researchContext) || [];
   console.log(`    ✓ Sources compiled (${sources.length} entries)`);
 
   // ── Assemble final content JSON ───────────────────────────────────────────
@@ -1861,9 +1874,7 @@ ${JSON.stringify(auditView, null, 2)}`;
 
         console.log(`      → Repairing '${spec.title}': ${issue.issue}`);
 
-        const repairPrompt = `${researchContext}
-
-${viabilityContext}
+        const repairTask = `${viabilityContext}
 
 ## REPAIR CONTEXT
 This section was flagged by the quality reviewer with the following issue:
@@ -1888,7 +1899,7 @@ Return ONLY this JSON object:
 
 ${blockSchema}`;
 
-        const repaired = await callWithRepair(systemPrompt, repairPrompt, spec.maxTokens, 2, false);
+        const repaired = await callWithRepair(systemPrompt, repairTask, spec.maxTokens, 2, false, researchContext);
 
         if (repaired) {
           // Swap the repaired section into contentJson in-place
@@ -2376,14 +2387,31 @@ async function runProposition(proposition, force) {
     const client = recipients[0];
     console.log(`Recipients:  ${recipients.map(r => `${r.name} <${r.email}>`).join(', ')}`);
 
-    // 2. Create the report record
+    // 2. Check for a prior failed run with content already in Storage — if found,
+    //    skip all research agents and go straight to PDF + email. This recovers
+    //    from post-assembly failures (PDF crash, upload error) without re-spending
+    //    ~$8 in API costs and 40 minutes of research agent time.
+    const resumeContext = { recipients, proposition, client };
+    const resumeResult = await tryResumeFromContent(proposition, resumeContext);
+    if (resumeResult) {
+      // Advance the schedule so this proposition isn't picked up again immediately
+      if (proposition.schedule_type && proposition.schedule_type !== 'on_demand') {
+        await advancePropositionSchedule(proposition.id, proposition.schedule_type, proposition.schedule_day);
+        console.log('✓ Proposition schedule advanced');
+      }
+      const elapsedMin = ((Date.now() - propStart) / 60_000).toFixed(1);
+      console.log(`\n✓ Resumed from saved content — Report delivered | Elapsed: ${elapsedMin} min`);
+      return { status: 'complete', title: proposition.title, reportId: resumeResult.reportId, elapsedMin };
+    }
+
+    // 3. No resumable content — create a fresh report record and run the full pipeline
     report = await createReportRecord(proposition);
 
-    // 3. Mark as running
+    // 4. Mark as running
     await updateReportStatus(report.id, 'running');
     console.log('✓ Report status → running');
 
-    // 4. Run Perplexity pre-briefings — both are non-fatal; null means agents
+    // 5. Run Perplexity pre-briefings — both are non-fatal; null means agents
     //    fall back to their generic workflow SOPs. Run sequentially (single API).
     const ventureIntelligence   = runVentureIntelligence(proposition);
     const landscapeBriefing     = runCurrentLandscapeBriefing(proposition);
@@ -2515,6 +2543,131 @@ async function runProposition(proposition, force) {
     await sendFailureAlert(proposition, report, err);
     return { status: 'failed', title: proposition.title, reportId: report?.id, elapsedMin, error: err.message };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Resume from failed run
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks if this proposition has a prior failed run with content JSON already
+ * saved to Storage. If so, downloads the content and skips straight to PDF
+ * generation + email — no research agents are re-run.
+ *
+ * This handles the case where the run failed AFTER the assembler uploaded the
+ * content JSON (e.g. PDF generation crash, storage upload error, email failure).
+ * Research agents are expensive (~$8 in API spend + 40 minutes) — never re-run
+ * them when the content already exists.
+ *
+ * @param {Object} proposition - Proposition row from DB.
+ * @param {Object} context     - Run context (client, recipients, etc.).
+ * @returns {Promise<boolean>} true if resume succeeded, false if nothing to resume.
+ */
+async function tryResumeFromContent(proposition, context) {
+  const history = await getReportsByPropositionId(proposition.id);
+  const failedReports = history.filter(r => r.status === 'failed');
+
+  for (const failedReport of failedReports) {
+    const contentPath = `${proposition.id}/${failedReport.id}_content.json`;
+
+    // Try to download the content JSON — if it doesn't exist this will error
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from('reports')
+      .download(contentPath);
+
+    if (downloadError || !fileData) continue; // no content saved for this failed run — try next
+
+    // Parse content JSON — if corrupted, skip this report and try the next one
+    let contentText, contentJson;
+    try {
+      contentText = await fileData.text();
+      contentJson = JSON.parse(contentText);
+    } catch (parseErr) {
+      console.warn(`  ⚠ Resume: content JSON for report ${failedReport.id} is malformed — skipping (${parseErr.message})`);
+      continue;
+    }
+
+    console.log(`\n  ↩ Resuming from failed run ${failedReport.id} — content JSON found in Storage`);
+    console.log('    Skipping research agents. Proceeding directly to PDF generation.');
+
+    // Mark the failed report as running again — we're reusing its record
+    await updateReportStatus(failedReport.id, 'running');
+
+    // Derive delivery metadata from the failed report record
+    const slug         = proposition.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+    const reportDate   = new Date(failedReport.created_at);
+    const reportYYYYMM = reportDate.toISOString().slice(0, 7);
+    const reportMonth  = reportDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const confidence   = contentJson?.meta?.data_confidence || null;
+
+    // Wrap all delivery steps so we can mark the report failed if anything goes wrong
+    let contentFile, pdfPath;
+    try {
+      // Write content JSON to .tmp/ for the PDF script
+      const tmpDir  = path.join(__dirname, '.tmp');
+      fs.mkdirSync(tmpDir, { recursive: true });
+      contentFile   = path.join(tmpDir, `${failedReport.id}_content.json`);
+      fs.writeFileSync(contentFile, contentText);
+
+      // Re-upload content JSON to Storage (upsert — idempotent)
+      await supabase.storage.from('reports').upload(contentPath, contentText, {
+        contentType: 'application/json',
+        upsert:      true,
+      });
+
+      // Build PDF
+      const outputsDir = path.join(__dirname, 'outputs');
+      fs.mkdirSync(outputsDir, { recursive: true });
+      const pdfFilename = `${slug}_${reportYYYYMM}.pdf`;
+      pdfPath           = path.join(outputsDir, pdfFilename);
+      const pdfScript   = path.join(__dirname, 'tools', 'generate_report_pdf.py');
+
+      console.log('    Building PDF...');
+      execSync(
+        `${PYTHON} "${pdfScript}" --report-id "${failedReport.id}" --content "${contentFile}" --output "${pdfPath}"`,
+        { stdio: 'inherit', cwd: __dirname, timeout: 120_000 }
+      );
+      console.log(`    ✓ PDF generated: ${pdfFilename}`);
+
+      // Upload PDF to Storage
+      const storagePath = `${proposition.id}/${failedReport.id}.pdf`;
+      const pdfBuffer   = fs.readFileSync(pdfPath);
+      const { error: uploadError } = await supabase.storage
+        .from('reports')
+        .upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
+      if (uploadError) throw new Error(`PDF Storage upload failed: ${uploadError.message}`);
+      await updateReportPdfUrl(failedReport.id, storagePath);
+      console.log('    ✓ PDF uploaded to Storage');
+
+      // Email recipients
+      const viabilityScoreObj = contentJson.viability_score || {};
+      for (const recipient of context.recipients) {
+        await sendReportEmail(recipient, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence);
+        console.log(`    ✓ Report emailed to ${recipient.email}`);
+      }
+      await sendAdminReportCopy(context.recipients, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence);
+      console.log(`    ✓ Admin copy sent`);
+
+    } catch (deliveryErr) {
+      // Delivery failed — record the error and re-throw so runProposition handles alerting
+      await updateReportError(failedReport.id, deliveryErr.message).catch(() => {});
+      throw deliveryErr;
+    } finally {
+      // Clean up local files regardless of success or failure
+      try { if (contentFile) fs.unlinkSync(contentFile); } catch (_) { /* non-fatal */ }
+      try { if (pdfPath)     fs.unlinkSync(pdfPath);     } catch (_) { /* non-fatal */ }
+    }
+
+    // Mark complete + cleanup
+    await updateReportStatus(failedReport.id, 'complete');
+    console.log('  ✓ Report status → complete');
+
+    try { await deleteAgentOutputsByReportId(failedReport.id); } catch (_) { /* non-fatal */ }
+
+    return { resumed: true, reportId: failedReport.id };
+  }
+
+  return null; // no resumable content found — run full pipeline
 }
 
 // ---------------------------------------------------------------------------
