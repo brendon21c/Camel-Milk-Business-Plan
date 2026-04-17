@@ -242,7 +242,7 @@ Calling Claude Sonnet for report synthesis...
 | USDA NASS returns no data | Sometimes down — `executeTool` catches and returns `{ error: ... }`, agent handles gracefully |
 | Census returns malformed JSON | Fixed — script retries up to 3 times then emits `{ error: "...", records: [] }`. Agent handles gracefully. |
 | Context notes not injecting | Check `proposition_context` table — column is `content` (not `note`). Confirm rows exist with correct `proposition_id`. |
-| PDF fails, re-run redoes all research | Fixed — `tryResumeFromContent()` checks for a prior failed run's content JSON in Storage before creating a new report record. If found, skips all research agents and goes straight to PDF + email. |
+| PDF fails, re-run redoes all research | Fixed — `tryResumeFromContent()` finds a prior failed run's content JSON in Storage and jumps straight to PDF + email. Creates a fresh report record (not reusing the old one) so the admin panel's `createdAt`-based polling correctly detects completion. Old failed record stays as historical artifact. |
 | Re-run finds no resumable content | Content JSON is only uploaded AFTER the assembler completes. If the run failed during research agents or the quality gate, there's nothing to resume — the full pipeline must re-run. |
 
 ---
@@ -415,7 +415,7 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 | `reports` | One row per run — `status`, `run_number`, `previous_report_id` |
 | `agent_outputs` | Temporary research data — deleted post-run (or at failure) |
 | `report_sources` | Source URLs cited in reports |
-| `api_cache` | Brave Search cache — 7-day TTL |
+| `api_cache` | ⚠️ **Unused scaffolding — review and repurpose.** `getCachedApiResponse` / `setCachedApiResponse` are defined and exported in `db.js` but never called. Brave Search uses a separate `search_cache` table. Anthropic prompt caching is handled server-side by Anthropic (no DB needed). Potential use: cache Perplexity briefings between runs on the same proposition so repeated runs don't re-spend those credits. |
 | `proposition_context` | Admin-added enrichment per proposition. Column: `content` (TEXT). Categories: `sourcing`, `market`, `regulatory`, `financial`, `competitor`, `other`. RLS enabled — service key only. Backend reads this at run start and injects into agent prompts. |
 
 **New fields added in migration 010:**

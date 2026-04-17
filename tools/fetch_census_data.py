@@ -211,43 +211,64 @@ def fetch_cbp_industry(naics: str, geography: str = "us:1", year: int = 2021) ->
         f"&for={geography}"
         f"&NAICS2017={naics}"
     )
+    # Build candidate URLs: first try with key (higher rate limit), then without.
+    # Census returns an HTML "Invalid Key" page (status 200) if the key is wrong,
+    # so we detect that and fall back to keyless access rather than hard-failing.
+    candidate_urls = []
     if CENSUS_API_KEY:
-        raw_url += f"&key={CENSUS_API_KEY}"
+        candidate_urls.append(raw_url + f"&key={CENSUS_API_KEY}")
+    candidate_urls.append(raw_url)  # keyless fallback (500 req/day limit)
 
-    # Direct HTTP call (CBP uses NAICS as a filter param, not a GET variable)
-    for attempt in range(1, MAX_RETRIES + 1):
-        time.sleep(FIXED_DELAY_SEC)
-        try:
-            # follow_redirects=True required — Census API redirects some endpoints
-            # (e.g. CBP 2021) to updated URLs; httpx defaults to no redirect following
-            resp = httpx.get(raw_url, timeout=30, follow_redirects=True)
-        except httpx.RequestError as exc:
-            if attempt == MAX_RETRIES:
-                raise RuntimeError(f"[census CBP] Network error: {exc}") from exc
-            time.sleep(2 ** attempt)
-            continue
+    raw = None
+    last_error = None
 
-        if resp.status_code == 200:
+    for url_attempt in candidate_urls:
+        # Direct HTTP call (CBP uses NAICS as a filter param, not a GET variable)
+        for attempt in range(1, MAX_RETRIES + 1):
+            time.sleep(FIXED_DELAY_SEC)
             try:
-                raw = resp.json()
-                break
-            except json.JSONDecodeError:
-                # Same occasional malformed-body issue as ACS5 — retry before giving up.
+                # follow_redirects=True required — Census API redirects some endpoints
+                # (e.g. CBP 2021) to updated URLs; httpx defaults to no redirect following
+                resp = httpx.get(url_attempt, timeout=30, follow_redirects=True)
+            except httpx.RequestError as exc:
                 if attempt == MAX_RETRIES:
-                    raise RuntimeError(
-                        f"[census CBP] Malformed JSON after {MAX_RETRIES} attempts "
-                        f"(status 200). Body preview: {resp.text[:200]}"
-                    )
-                wait = 2 ** attempt
-                print(f"[census CBP] Malformed JSON attempt {attempt}, retrying in {wait}s...", file=sys.stderr)
-                time.sleep(wait)
+                    last_error = f"[census CBP] Network error: {exc}"
+                    break
+                time.sleep(2 ** attempt)
                 continue
-        if resp.status_code == 429:
-            time.sleep(2 ** attempt)
-            continue
-        raise RuntimeError(f"[census CBP] HTTP {resp.status_code}: {resp.text[:500]}")
-    else:
-        raise RuntimeError("[census CBP] Still rate-limited after retries")
+
+            if resp.status_code == 200:
+                try:
+                    raw = resp.json()
+                    break
+                except json.JSONDecodeError:
+                    # "Invalid Key" comes back as HTML with status 200 — detect it
+                    if "Invalid Key" in resp.text or "<html" in resp.text[:100]:
+                        print("[census CBP] API key invalid — retrying without key", file=sys.stderr)
+                        last_error = "[census CBP] API key rejected"
+                        break  # try next candidate URL
+                    if attempt == MAX_RETRIES:
+                        last_error = (
+                            f"[census CBP] Malformed JSON after {MAX_RETRIES} attempts "
+                            f"(status 200). Body preview: {resp.text[:200]}"
+                        )
+                        break
+                    wait = 2 ** attempt
+                    print(f"[census CBP] Malformed JSON attempt {attempt}, retrying in {wait}s...", file=sys.stderr)
+                    time.sleep(wait)
+                    continue
+            elif resp.status_code == 429:
+                time.sleep(2 ** attempt)
+                continue
+            else:
+                last_error = f"[census CBP] HTTP {resp.status_code}: {resp.text[:500]}"
+                break
+
+        if raw is not None:
+            break  # got a valid response — no need to try fallback URL
+
+    if raw is None:
+        raise RuntimeError(last_error or "[census CBP] All attempts failed")
 
     records = table_to_records(raw)
 

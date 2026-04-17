@@ -1789,19 +1789,28 @@ Return ONLY a JSON array of strings (not an object):
   }
 
   // ── Call 15: Sources ──────────────────────────────────────────────────────
-  console.log('    [15/15] Sources...');
-  const sourcesTask = `## YOUR TASK
-Compile the complete list of sources cited across all research agent outputs.
-Extract all URLs from the "sources" arrays within each agent output.
-Include every unique source — do not deduplicate unless the exact same URL appears twice.
+  // Extract sources deterministically from agentOutputs — no LLM needed.
+  // Relying on an LLM to copy URLs from a large JSON blob is unreliable and
+  // expensive. Each agent already structures its sources array consistently.
+  console.log('    [15/15] Compiling sources...');
+  const now15         = new Date().toISOString();
+  const seenUrls      = new Set();
+  const sources       = [];
 
-## OUTPUT SCHEMA
-Return ONLY a JSON array (not an object):
-[
-  { "url": "...", "title": "...", "agent_name": "research_<name>", "retrieved_at": "<ISO timestamp or null>" }
-]`;
+  for (const [agentName, output] of Object.entries(agentOutputs)) {
+    if (!output || !Array.isArray(output.sources)) continue;
+    for (const src of output.sources) {
+      if (!src?.url || seenUrls.has(src.url)) continue;
+      seenUrls.add(src.url);
+      sources.push({
+        url:          src.url,
+        title:        src.title        || null,
+        agent_name:   `research_${agentName}`,
+        retrieved_at: src.retrieved_at || now15,
+      });
+    }
+  }
 
-  const sources = await callWithRepair(systemPrompt, sourcesTask, 4000, 2, false, researchContext) || [];
   console.log(`    ✓ Sources compiled (${sources.length} entries)`);
 
   // ── Assemble final content JSON ───────────────────────────────────────────
@@ -2531,15 +2540,10 @@ async function runProposition(proposition, force) {
         console.error(`  Warning: could not mark report as failed in DB: ${dbErr.message}`);
       }
 
-      // Clean up agent_outputs immediately — they are mid-run scratch data and have
-      // no value after a failure. The error is already captured in error_message and
-      // emailed via the failure alert below.
-      try {
-        await deleteAgentOutputsByReportId(report.id);
-        console.error(`  Agent outputs for report ${report.id} deleted.`);
-      } catch (cleanErr) {
-        console.error(`  Warning: could not delete agent outputs: ${cleanErr.message}`);
-      }
+      // Intentionally NOT deleting agent_outputs on failure.
+      // If this run later becomes resumable (content JSON was saved before the failure),
+      // tryResumeFromContent needs these rows to re-compute the data confidence score.
+      // They will be deleted by tryResumeFromContent after confidence is re-computed.
     }
 
     await sendFailureAlert(proposition, report, err);
@@ -2577,7 +2581,11 @@ async function tryResumeFromContent(proposition, context) {
       .from('reports')
       .download(contentPath);
 
-    if (downloadError || !fileData) continue; // no content saved for this failed run — try next
+    if (downloadError || !fileData) {
+      // No content JSON — run failed before assembly. Clean up any orphaned agent_outputs.
+      try { await deleteAgentOutputsByReportId(failedReport.id); } catch (_) { /* non-fatal */ }
+      continue;
+    }
 
     // Parse content JSON — if corrupted, skip this report and try the next one
     let contentText, contentJson;
@@ -2592,15 +2600,29 @@ async function tryResumeFromContent(proposition, context) {
     console.log(`\n  ↩ Resuming from failed run ${failedReport.id} — content JSON found in Storage`);
     console.log('    Skipping research agents. Proceeding directly to PDF generation.');
 
-    // Mark the failed report as running again — we're reusing its record
-    await updateReportStatus(failedReport.id, 'running');
+    // Create a fresh report record so the admin panel's createdAt-based polling can detect
+    // this run completing. Reusing the old failedReport record would keep its original
+    // createdAt, causing the RunPanel to filter it out as "predates this trigger."
+    const report = await createReportRecord(proposition);
+    await updateReportStatus(report.id, 'running');
 
-    // Derive delivery metadata from the failed report record
     const slug         = proposition.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-    const reportDate   = new Date(failedReport.created_at);
+    const reportDate   = new Date(report.created_at);
     const reportYYYYMM = reportDate.toISOString().slice(0, 7);
     const reportMonth  = reportDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    const confidence   = contentJson?.meta?.data_confidence || null;
+
+    // Re-compute confidence using the original failed report's agent_outputs (still in DB
+    // under failedReport.id). This recovers a valid score even if the original run's
+    // confidence tool failed, since agent_outputs persist across runs.
+    const recomputedConf = computeDataConfidence(failedReport.id);
+    const confidence     = recomputedConf || contentJson?.meta?.data_confidence || null;
+
+    // If we got a fresh score, patch the content JSON so the PDF reflects it rather
+    // than the stale/null value that was embedded when the original run failed.
+    if (recomputedConf && contentJson?.meta) {
+      contentJson.meta.data_confidence = recomputedConf;
+      contentText = JSON.stringify(contentJson);
+    }
 
     // Wrap all delivery steps so we can mark the report failed if anything goes wrong
     let contentFile, pdfPath;
@@ -2608,15 +2630,16 @@ async function tryResumeFromContent(proposition, context) {
       // Write content JSON to .tmp/ for the PDF script
       const tmpDir  = path.join(__dirname, '.tmp');
       fs.mkdirSync(tmpDir, { recursive: true });
-      contentFile   = path.join(tmpDir, `${failedReport.id}_content.json`);
+      contentFile   = path.join(tmpDir, `${report.id}_content.json`);
       fs.writeFileSync(contentFile, contentText);
 
-      // Re-upload content JSON to Storage (upsert — idempotent; already there but ensures consistency)
-      const { error: reuploadError } = await supabase.storage.from('reports').upload(contentPath, contentText, {
+      // Upload content JSON under the new report ID for Storage consistency
+      const newContentPath = `${proposition.id}/${report.id}_content.json`;
+      const { error: reuploadError } = await supabase.storage.from('reports').upload(newContentPath, contentText, {
         contentType: 'application/json',
         upsert:      true,
       });
-      if (reuploadError) console.warn(`    ⚠ Content JSON re-upload failed (non-fatal): ${reuploadError.message}`);
+      if (reuploadError) console.warn(`    ⚠ Content JSON upload failed (non-fatal): ${reuploadError.message}`);
 
       // Build PDF
       const outputsDir = path.join(__dirname, 'outputs');
@@ -2627,19 +2650,19 @@ async function tryResumeFromContent(proposition, context) {
 
       console.log('    Building PDF...');
       execSync(
-        `${PYTHON} "${pdfScript}" --report-id "${failedReport.id}" --content "${contentFile}" --output "${pdfPath}"`,
+        `${PYTHON} "${pdfScript}" --report-id "${report.id}" --content "${contentFile}" --output "${pdfPath}"`,
         { stdio: 'inherit', cwd: __dirname, timeout: 120_000 }
       );
       console.log(`    ✓ PDF generated: ${pdfFilename}`);
 
-      // Upload PDF to Storage
-      const storagePath = `${proposition.id}/${failedReport.id}.pdf`;
+      // Upload PDF to Storage under the new report ID
+      const storagePath = `${proposition.id}/${report.id}.pdf`;
       const pdfBuffer   = fs.readFileSync(pdfPath);
       const { error: uploadError } = await supabase.storage
         .from('reports')
         .upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
       if (uploadError) throw new Error(`PDF Storage upload failed: ${uploadError.message}`);
-      await updateReportPdfUrl(failedReport.id, storagePath);
+      await updateReportPdfUrl(report.id, storagePath);
       console.log('    ✓ PDF uploaded to Storage');
 
       // Email recipients
@@ -2653,7 +2676,7 @@ async function tryResumeFromContent(proposition, context) {
 
     } catch (deliveryErr) {
       // Delivery failed — record the error and re-throw so runProposition handles alerting
-      await updateReportError(failedReport.id, deliveryErr.message).catch(() => {});
+      await updateReportError(report.id, deliveryErr.message).catch(() => {});
       throw deliveryErr;
     } finally {
       // Clean up local files regardless of success or failure
@@ -2661,13 +2684,27 @@ async function tryResumeFromContent(proposition, context) {
       try { if (pdfPath)     fs.unlinkSync(pdfPath);     } catch (_) { /* non-fatal */ }
     }
 
-    // Mark complete + cleanup
-    await updateReportStatus(failedReport.id, 'complete');
+    // Mark complete — old failedReport stays as 'failed' (historical record, untouched)
+    await updateReportStatus(report.id, 'complete');
     console.log('  ✓ Report status → complete');
 
+    // Clean up new report's agent_outputs (none were created, but defensive)
+    try { await deleteAgentOutputsByReportId(report.id); } catch (_) { /* non-fatal */ }
+
+    // Clean up the original failed report's agent_outputs now that confidence has been
+    // re-computed and the resume is complete. These were preserved from the failure handler
+    // specifically for this re-computation step.
     try { await deleteAgentOutputsByReportId(failedReport.id); } catch (_) { /* non-fatal */ }
 
-    return { resumed: true, reportId: failedReport.id };
+    // Delete the old failed report's content JSON from Storage so the next trigger
+    // doesn't resume from stale data and runs the full pipeline fresh instead.
+    const oldContentPath = `${proposition.id}/${failedReport.id}_content.json`;
+    try {
+      await supabase.storage.from('reports').remove([oldContentPath]);
+      console.log('  ✓ Old content JSON removed from Storage');
+    } catch (_) { /* non-fatal — worst case the next run resumes again */ }
+
+    return { resumed: true, reportId: report.id };
   }
 
   return null; // no resumable content found — run full pipeline
