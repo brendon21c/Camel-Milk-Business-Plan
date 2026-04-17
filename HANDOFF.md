@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-17 (Session 28 — Resume path fixes, data confidence re-computation, sources extraction, Census API key fallback.)
+**Last updated:** 2026-04-17 (Session 29 — International API planning, translation pipeline starting, comprehensive API master list added.)
 
 ---
 
@@ -77,7 +77,23 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
-### Immediate — Kitchen Tools test run ← next up
+### Immediate — International pipeline build ← in progress
+
+**Decision (Session 29):** We are close to the end of V2. Adding the international research pipeline now — translation APIs, language detection, and international data tools — before the final V2 E2E test. This unlocks multi-market propositions and non-English source research.
+
+**Build order:**
+1. Sign up for DeepL API free tier, Google Cloud Translation free tier, MyMemory — add keys to `.env`
+2. Build `tools/translate_text.py` — routes to DeepL (European) or Google Cloud (Arabic/CJK/other) based on detected language
+3. Build `tools/detect_language.py` — `lingua-py` offline, returns ISO code + confidence
+4. Build `tools/fetch_un_comtrade.py` — bilateral trade flows, free with registration
+5. Build `tools/fetch_world_bank.py` — economic indicators, fully free, no key
+6. Build `tools/fetch_gdelt_news.py` — global news, free, no key
+7. Build `tools/normalize_international_data.py` — dates, currency, number format normalization
+8. Wire translation layer into `run.js` — called by research agents when `target_country` or `origin_country` is non-English
+
+See the comprehensive API master list below for all APIs planned across V2 and V3.
+
+### Kitchen Tools test run ← next after pipeline tools are built
 
 **Proposition:** Mark Jones — "High end modular kitchen tools for home cooks." Physical domestic, Food & Beverage, Retainer. Two context notes already added:
 - `financial` → "The client would like updated information, they can secure a 150,000 USD business loan"
@@ -126,7 +142,7 @@ If the intake form submission path hasn't been activated yet (org status still `
    - `tools/fetch_bis_data.py` — BIS export control classifications ← build before electronics test proposition
 3. **Workflow generalisation** — audit the 10 research workflows, remove food-specific hardcoding. Start with Option A (venture intelligence brief steers tool selection). Move to Option B (per-industry substitution blocks) only if results are poor.
 4. **Consultant Intelligence Brief** — new `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Delivered as a single admin email with both PDFs (client report + consultant brief) attached.
-5. **International research pipeline** — `tools/translate_text.py`, `tools/detect_language.py`, `tools/normalize_international_data.py`, `tools/fetch_gdelt_news.py`, `tools/fetch_opencorporates.py`, `tools/fetch_un_comtrade.py`. New API keys needed: DeepL, Google Cloud Translation, MyMemory, UN Comtrade, OpenCorporates.
+5. **International research pipeline** ← **starting now** — see comprehensive API master list section below for full details and signup actions. Build order: translate_text → detect_language → fetch_un_comtrade → fetch_world_bank → fetch_gdelt_news → normalize_international_data.
 
 **V2 test propositions:**
 | Proposition | Industry category | Key tools needed | Notes |
@@ -142,6 +158,15 @@ If the intake form submission path hasn't been activated yet (org status still `
 ---
 
 ## Session Log
+
+### Session 29 — International API planning, V2 end-game (2026-04-17)
+
+- **Where we are in V2:** All core pipeline work is complete. Prompt caching live, failed-run resume live, admin review gate live, formatting notes panel built (migration 013 pending). Next up is the international research pipeline — identified as the last major V2 feature before final E2E test.
+- **Caching verification pending:** The April 17 run used pre-caching code (committed after the run triggered). Next run will show `💾 Cache: write=X read=Y` lines in the assembler phase. Cache logging confirmed present in current `run.js` (lines ~1378–1387). If `read > 0` on sections 2–15, caching is working.
+- **Migration 013 still pending:** Run `ALTER TABLE reports ADD COLUMN IF NOT EXISTS formatting_notes TEXT;` in Supabase before formatting notes UI will save correctly.
+- **International pipeline decision:** Building translation layer + key international data tools now, before V2 E2E test. Starting with: DeepL, Google Cloud Translation, MyMemory (sign up), then building `translate_text.py`, `detect_language.py`, `fetch_un_comtrade.py`, `fetch_world_bank.py`, `fetch_gdelt_news.py`.
+- **Comprehensive API master list added** to HANDOFF — covers translation, international trade/economic data, global news, US gov tools by industry status, non-physical product intelligence (V3: Crunchbase, SimilarWeb, G2, Reddit, etc.), social media platforms, and global IP/product data. All organized by V2 vs V3 and build-when-needed.
+- **V2 end-game view:** After international pipeline tools are built, the remaining V2 items are: consultant brief, industry-aware gov tool routing, and the final furniture manufacturing E2E test. Then V2 is done.
 
 ### Session 28 — Resume path hardening, sources fix, Census fallback (2026-04-17)
 
@@ -487,18 +512,6 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 
 USASpending.gov, SEC EDGAR, EPA ECHO, Federal Register, and the Census international trade API require no key.
 
-**To add for V2 — international research pipeline:**
-
-| Key | Variable | Notes |
-|---|---|---|
-| DeepL | `DEEPL_API_KEY` | 500k chars/month free |
-| Google Cloud Translation | `GOOGLE_TRANSLATE_API_KEY` | 500k chars/month free. Best for Arabic, CJK |
-| MyMemory | `MYMEMORY_API_KEY` | 10k chars/day free. Fallback |
-| UN Comtrade | `UN_COMTRADE_API_KEY` | Free, 500 req/hour. Bilateral trade flows |
-| OpenCorporates | `OPENCORPORATES_API_KEY` | Free, rate-limited. 160M+ company records |
-
-GDELT, World Bank, IMF, and Eurostat require no key.
-
 **Website project `.env.local` (separate file in `mckeever-consulting-website`):**
 
 | Key | Variable | Notes |
@@ -508,6 +521,128 @@ GDELT, World Bank, IMF, and Eurostat require no key.
 | Supabase service key | `SUPABASE_SERVICE_KEY` | Server-side only |
 | GitHub token | `GITHUB_TOKEN` | Fine-grained PAT — Actions read/write on `Camel-Milk-Business-Plan` repo |
 | GitHub repo owner | `GITHUB_REPO_OWNER` | Your GitHub username |
+
+---
+
+## Comprehensive API Master List
+
+Everything we plan to integrate across V2 and V3, organized by category. Includes signup actions where registration is needed.
+
+---
+
+### Translation & Language (V2 — starting now)
+
+| API | Variable | Free Tier | Paid Rate | Best For | Action |
+|---|---|---|---|---|---|
+| **DeepL API** | `DEEPL_API_KEY` | 500k chars/month | $25/1M chars | European languages (DE, FR, ES, IT, PL, NL, PT, etc.) | Sign up at deepl.com/pro-api |
+| **Google Cloud Translation** | `GOOGLE_TRANSLATE_API_KEY` | 500k chars/month | $20/1M chars | Arabic, CJK, 100+ languages, RTL | Enable in Google Cloud Console |
+| **MyMemory API** | `MYMEMORY_API_KEY` | 10k chars/day | Contact for paid | Low-volume fallback / overflow | Register at mymemory.translated.net |
+
+**Language detection (no API cost):** `pip install lingua-language-detector` — 75 languages, offline, better than `langdetect` on short text. No key needed.
+
+Combined DeepL + Google free tier = 1M chars/month. Typical international run (~10 sources × 2k chars) = 20k chars. You'd need 50 international runs/month before paying anything.
+
+---
+
+### International Trade & Economic Data (V2 — free, no cost)
+
+These all require no payment. Register where noted.
+
+| API | Variable | Notes | Action |
+|---|---|---|---|
+| **UN Comtrade** | `UN_COMTRADE_API_KEY` | Bilateral trade flows, all countries, HS code level. 500 req/hour free. Essential for any import/export proposition targeting a non-US market. | Register at comtradeplus.un.org |
+| **World Bank Open Data** | *(no key)* | GDP, income, population, inflation, ease-of-doing-business, all countries. Fully open. | No action needed |
+| **IMF Data API** | *(no key)* | Macroeconomic + financial indicators, all countries. Fully open. | No action needed |
+| **OECD API** | *(no key)* | OECD member country stats — labour, trade, taxes, business. Often available in French/German. | No action needed |
+| **Eurostat API** | *(no key)* | EU statistical data — industry production, import/export, population, in all EU languages. | No action needed |
+| **FAO STAT API** | *(no key)* | Global food and agriculture data. Critical for food/beverage propositions in non-US markets. | No action needed |
+| **WTO Tariff API** | *(no key)* | Bound and applied tariff rates, all WTO member countries. Useful for import/export cost modeling. | No action needed — docs at wto.org/english/res_e/statis_e |
+| **OpenCorporates API** | `OPENCORPORATES_API_KEY` | 160M+ company records, 140+ jurisdictions, local-language. Best for competitor research in non-English markets. Free rate-limited tier. | Register at opencorporates.com/api_accounts |
+
+---
+
+### Global News & Media Intelligence (V2)
+
+| API | Variable | Free Tier | Notes | Action |
+|---|---|---|---|---|
+| **GDELT Project** | *(no key)* | Fully free | Global news events, 170 countries, 65 languages, updated every 15 min. No key, no rate limit. Best free international news source. | No action needed — base URL: `api.gdeltproject.org` |
+| **MediaStack** | `MEDIASTACK_API_KEY` | 500 req/month | 7,500+ sources, 50+ countries, multilingual. Paid tier from $9.99/month. | Register at mediastack.com |
+| **NewsAPI** | `NEWS_API_KEY` | 100 req/day (dev) | ~80,000 sources, international. Dev plan sufficient for testing. Paid from $449/month for production. | Register at newsapi.org |
+
+GDELT covers most international news needs for free. Add MediaStack only if GDELT event data proves insufficient for a specific market.
+
+---
+
+### US Government Data (V2 — already built or planned by industry)
+
+| Tool | Variable | Status | Industry |
+|---|---|---|---|
+| FDA openFDA | `OPEN_FDA_API_KEY` | ✅ Built | Food/drug |
+| USDA FoodData Central + NASS | `USDA_FDC_API_KEY`, `USDA_NASS_API_KEY` | ✅ Built | Food/agriculture |
+| Census ACS + CBP | `CENSUS_API_KEY` | ✅ Built | All industries |
+| BLS wages + employment | `BLS_V2_API_Key` | ✅ Built | Manufacturing |
+| EPA ECHO + TRI | *(no key)* | ✅ Built | Manufacturing/chemicals |
+| ITC trade remedy + Census trade | *(no key)* | ✅ Built | Import/export |
+| SEC EDGAR | *(no key)* | ✅ Built | All — public company research |
+| USASpending.gov | *(no key)* | ✅ Built | All — federal contracts/grants |
+| DOE EIA + NREL | *(no key)* | Build before solar proposition | Energy/clean tech |
+| FDA device 510(k) | *(no key)* | Build before medical proposition | Medical devices |
+| BIS export controls (ECCN) | *(no key)* | Build before electronics proposition | Electronics |
+| CBP import rules | *(no key)* | Build before apparel proposition | Apparel/textiles |
+| FTC labelling rules | *(no key)* | Build before apparel proposition | Apparel/textiles |
+| CPSC product safety | *(no key)* | Build before apparel/consumer proposition | Apparel/consumer products |
+
+---
+
+### Non-Physical Product Intelligence (V3 — SaaS / Digital / Services)
+
+These are needed when proposition type is `saas_software`, `digital_product`, or `service_business`.
+
+| API | Variable | Free Tier | Notes | Action |
+|---|---|---|---|---|
+| **Crunchbase API** | `CRUNCHBASE_API_KEY` | None — $29/month minimum | Startup funding, valuations, investor data, competitive landscape. Best source for venture-stage competitive research. | Sign up at data.crunchbase.com/docs |
+| **SimilarWeb API** | `SIMILARWEB_API_KEY` | Limited free | Website traffic, engagement, digital market share. Essential for digital product competitive analysis. Paid tiers start ~$125/month. | Register at similarweb.com/corp/developer |
+| **G2 API** | `G2_API_KEY` | Free with app registration | Software reviews, competitive positioning, satisfaction scores. Best for SaaS competitive research. | Register at g2.com/api |
+| **App Store Connect** | *(OAuth per client)* | Free for owned accounts | Client's own iOS app metrics — downloads, ratings, revenue. No third-party competitor data available via API. | Apple developer account required |
+| **Google Play Developer API** | *(OAuth per client)* | Free for owned accounts | Client's own Android app stats. | Google Play developer account required |
+| **SBA Small Business Data** | *(no key)* | Fully free | Small business benchmarks, loan data, industry failure rates. Useful for services propositions. | No action needed — api.sba.gov |
+| **GitHub API** | `GITHUB_API_TOKEN` | 5k req/hour free | Repository activity, developer adoption, open-source ecosystem mapping. Useful for developer-tool SaaS. | github.com/settings/tokens |
+| **Reddit API (PRAW)** | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Free, 60 req/min | Community sentiment, micro-influencer discovery, niche trend signals. Health/food niches are highly active. | Register app at reddit.com/prefs/apps |
+| **Product Hunt API** | `PRODUCT_HUNT_API_KEY` | Free | Launch tracking, upvote velocity, product discovery trends. Useful for digital product competitive research. | Register at api.producthunt.com/v2/oauth/token |
+
+---
+
+### Social Media Intelligence (V3 — Marketing Agent)
+
+Already documented in ROADMAP_V2.md. Build order: YouTube → Reddit → Instagram → TikTok → Pinterest → X.
+
+| Platform | Variable | Status |
+|---|---|---|
+| YouTube Data API v3 | `YOUTUBE_API_KEY` | ✅ Key already active |
+| Reddit (PRAW) | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Build with V3 |
+| Instagram (Meta Graph) | *(OAuth per client)* | Build with V3 |
+| TikTok Research API | `TIKTOK_API_KEY` | Apply early — approval takes time |
+| Pinterest API v5 | `PINTEREST_API_KEY` | Build with V3 |
+| X (Twitter) API v2 | `X_API_KEY` | Low priority — $100/month basic tier |
+
+---
+
+### Global Product & IP Data (V2/V3 — build when needed)
+
+| API | Variable | Notes | Action |
+|---|---|---|---|
+| **WIPO PATENTSCOPE** | *(no key)* | Global patent search, all countries. Useful for medical device and electronics propositions. | No action needed — patentscope.wipo.int/search/en/search.jsf |
+| **WIPO Global Brand Database** | *(no key)* | International trademark search. Useful for any proposition with brand/naming risks in international markets. | No action needed |
+| **EU RAPEX API** | *(no key)* | EU product safety alerts and recalls. Useful for consumer goods propositions targeting EU market. | No action needed — ec.europa.eu/consumers/consumers_safety/safety_products/rapex |
+| **GS1 Registry** | *(no key)* | Global product identification (barcodes, GTINs). Useful for physical goods entering retail channels. | No action needed — gs1.org/services/verified-by-gs1 |
+
+---
+
+### Exchange Rate & Currency (Already Active)
+
+| API | Variable | Notes |
+|---|---|---|
+| Exchange Rate API | `EXCHANGE_RATE_API_KEY` | Active. Used by `normalize_international_data.py` for local currency → USD conversion. |
 
 ---
 

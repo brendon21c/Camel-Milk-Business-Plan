@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-15 (gov tool scripts built; website complete; V2 E2E test is next)
+**Last updated:** 2026-04-17 (international pipeline starting; comprehensive API master list added to HANDOFF.md; V2 end-game in sight)
 
 ---
 
@@ -11,7 +11,7 @@
 |---|---|---|
 | V1 | Physical import/export — any product, food-biased gov data | ✅ Complete |
 | Website | Main page, intake form, admin panel | ✅ Complete |
-| V2 | Any physical product, any industry — adaptive research | In progress — E2E test next |
+| V2 | Any physical product, any industry — adaptive research | In progress — international pipeline building now |
 | V3 | General business ventures — SaaS, services, digital, franchise | Future |
 
 The foundation (WAT architecture, agent pipeline, PDF delivery) carries through all phases unchanged. Each phase adds capability on top without rebuilding from scratch.
@@ -179,7 +179,7 @@ Recommendation: Start with Option A (already partially working via venture intel
 | `tools/fetch_opencorporates.py` | Look up company records by jurisdiction via OpenCorporates API. Returns local-language company data for 140+ countries. Free tier, rate-limited. | Medium — useful for competitor research in non-English markets |
 | `tools/fetch_un_comtrade.py` | Query UN Comtrade API for bilateral trade flows between any two countries at HS code level. Free with registration. Critical for import/export propositions researching non-US markets. | Medium — replaces Census tool when target market is not the US |
 
-**Translation APIs — recommended stack:**
+**Translation APIs — recommended stack (starting now):**
 
 | Service | Free Tier | Paid Rate | Best For | Action |
 |---|---|---|---|---|
@@ -189,22 +189,27 @@ Recommendation: Start with Option A (already partially working via venture intel
 
 Combined free tier: 1M chars/month. A typical research run translating 10 sources averages ~20,000 chars. You'd need 50 international runs/month before incurring any translation cost.
 
-**Language detection library (no API cost):**
+**Language detection (no API cost):** `pip install lingua-language-detector` — 75 languages, offline, better than `langdetect` on short text. No key needed.
 
-Install once: `pip install lingua-language-detector`
+**International trade & economic data APIs (all free):**
 
-`lingua-py` runs offline, supports 75 languages, and performs significantly better than `langdetect` on short text excerpts (partial page scrapes, captions, headers). No API key, no usage cost.
+| API | Variable | What it provides | Action |
+|---|---|---|---|
+| **UN Comtrade** | `UN_COMTRADE_API_KEY` | Bilateral trade flows, all countries, HS code level. 500 req/hour free. Replaces Census tool when target market is non-US. | Register at comtradeplus.un.org |
+| **World Bank Open Data** | *(no key)* | GDP, income, population, inflation, ease-of-doing-business. Fully open. | No action needed |
+| **IMF Data API** | *(no key)* | Macroeconomic + financial indicators, all countries. Fully open. | No action needed |
+| **OECD API** | *(no key)* | OECD member country stats — labour, trade, taxes, business. | No action needed |
+| **Eurostat API** | *(no key)* | EU statistical data — industry production, import/export, population. | No action needed |
+| **FAO STAT API** | *(no key)* | Global food and agriculture data — critical for food/beverage in non-US markets. | No action needed |
+| **WTO Tariff API** | *(no key)* | Bound and applied tariff rates, all WTO members. Import cost modeling. | No action needed |
+| **OpenCorporates API** | `OPENCORPORATES_API_KEY` | 160M+ company records, 140+ jurisdictions, local-language. Competitor research in non-English markets. | Register at opencorporates.com/api_accounts |
 
-**Free international data APIs to register for:**
+**Global news (free, no key):**
 
-| API | What it provides | Action |
-|---|---|---|
-| **GDELT Project** | Global news events, 170 countries, 65 languages, every 15 min. Fully free, no key. | No signup needed. Document base URL in `.env` comments. |
-| **UN Comtrade** | Bilateral trade flows, all countries, HS code level. | Register at comtradeplus.un.org. Free tier: 500 req/hour. Add `UN_COMTRADE_API_KEY` to `.env`. |
-| **OpenCorporates API** | 160M+ company records, 140+ jurisdictions, local-language. | Register at opencorporates.com/api_accounts. Free rate-limited tier. Add `OPENCORPORATES_API_KEY` to `.env`. |
-| **World Bank API** | Economic indicators, all countries. | No key needed. Fully open. |
-| **IMF Data API** | Macroeconomic/financial indicators, all countries. | No key needed. Fully open. |
-| **Eurostat API** | EU statistical data in all EU languages. | No key needed. Fully open. |
+| API | What it provides |
+|---|---|
+| **GDELT Project** | Global news events, 170 countries, 65 languages, updated every 15 min. No key, no rate limit. |
+| **MediaStack** (optional) | 7,500+ sources, multilingual, 500 free req/month. Add only if GDELT insufficient for a specific market. |
 
 **How this fits in the pipeline:**
 
@@ -290,14 +295,19 @@ const AGENT_MANIFEST = {
 
 #### 3. New data sources for non-physical ventures
 
-| Source | Venture types | Notes |
-|---|---|---|
-| Crunchbase (paid) | SaaS, marketplace | Funding data, competitive landscape |
-| G2 / Capterra | SaaS | User reviews, competitive positioning |
-| SBA loan data | All SMB | Small business benchmarks |
-| BLS Occupational Employment | Services | Labour cost benchmarks |
-| App store analytics | Digital product | Download/revenue estimates |
-| FTC franchise data | Franchise | FDD filings, enforcement history |
+| API | Variable | Venture Types | Notes | Action |
+|---|---|---|---|---|
+| **Crunchbase API** | `CRUNCHBASE_API_KEY` | SaaS, marketplace, digital | Startup funding, valuations, VC activity, competitive landscape. Best competitive intelligence source for venture-stage businesses. $29/month minimum. | data.crunchbase.com/docs |
+| **SimilarWeb API** | `SIMILARWEB_API_KEY` | SaaS, digital, services | Website traffic, engagement, digital market share. Essential for digital product competitive analysis. ~$125/month. | similarweb.com/corp/developer |
+| **G2 API** | `G2_API_KEY` | SaaS | Software reviews, competitive positioning, satisfaction scores. Free with app registration. | g2.com/api |
+| **Reddit API (PRAW)** | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | All — especially SaaS, services, digital | Community sentiment, micro-influencer discovery, niche trend signals. Free, 60 req/min. | reddit.com/prefs/apps |
+| **SBA Small Business Data** | *(no key)* | Services, franchise | Small business benchmarks, loan approvals, industry failure rates. | api.sba.gov |
+| **BLS Occupational Employment** | *(uses existing `BLS_V2_API_Key`)* | Services | Wage benchmarks by occupation — labour cost modeling for services propositions. | Already active |
+| **GitHub API** | `GITHUB_API_TOKEN` | SaaS (developer tools) | Repository activity, developer adoption, open-source ecosystem mapping. 5k req/hour free. | github.com/settings/tokens |
+| **Product Hunt API** | `PRODUCT_HUNT_API_KEY` | SaaS, digital | Launch tracking, upvote velocity, product discovery trends. Free. | api.producthunt.com |
+| **App Store (Apple)** | *(OAuth per client)* | Digital product | Client's own iOS app metrics. No competitor data available without special access. | Apple developer account |
+| **Google Play Developer API** | *(OAuth per client)* | Digital product | Client's own Android app stats. | Google Play developer account |
+| **FTC Franchise Data** | *(no key)* | Franchise | FDD filings, enforcement history. | FTC.gov franchise rule database |
 
 #### 4. Proposition intake for V3
 
