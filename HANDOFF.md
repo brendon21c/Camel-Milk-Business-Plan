@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-16 (Session 27 — Prompt caching, failed-run resume, PDF fix, financials token fix, proposition auto-activate on sign, code review + bug fixes.)
+**Last updated:** 2026-04-17 (Session 28 — Resume path fixes, data confidence re-computation, sources extraction, Census API key fallback.)
 
 ---
 
@@ -33,7 +33,7 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ---
 
-## Current State (as of 2026-04-16)
+## Current State (as of 2026-04-17)
 
 ### Backend — `Camel-Milk-Business-Plan` ✅ V1 + Step 2.5 + caching + resume complete
 
@@ -41,17 +41,13 @@ They share the same Supabase project. The website writes intake data; the backen
 - E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever
 - 12 migrations run (001–012)
 - **Step 2.5 complete:** `getPropositionContext()` added to `db.js`. At run start, backend queries `proposition_context`, groups rows by category, and injects relevant notes into each research agent's prompt as a `## ADMIN CONTEXT NOTES` block. Category → agent mapping is in `run.js` (`CATEGORY_TO_AGENTS`).
-- **`proposition_context` column:** the text content is stored in `content` (not `note`) — confirmed from website source
-- **Prompt caching live:** `streamSonnetCall` and `callWithRepair` accept `useCache`/`cacheablePrefix` params. All 15+ assembler section calls pass the shared `researchContext` as the cached prefix. Saves ~$5/run (~40% cost reduction) via Anthropic's 5-minute ephemeral cache TTL. Inter-section delay is 17s (15 × 17 = 255s, safely under 300s TTL).
-- **Failed-run resume live:** `tryResumeFromContent()` runs before creating a new report record. If a prior failed run has a content JSON in Supabase Storage, skips all research agents and jumps straight to PDF + email. Handles post-assembly failures (PDF crash, upload error, email failure) without re-spending ~$8 in API costs.
-- **Financials token fix:** Sonnet escalation `maxTokens` raised from 16000 → 32000. Prevents JSON truncation on large financial outputs.
-- **GitHub Actions Python fix:** `reports.yml` now includes `actions/setup-python@v5` and `pip install -r requirements.txt`. Fixes `ModuleNotFoundError` for `httpx`/`dotenv` that caused PDF generation failures.
-- **Assembler instructions genericised:** Removed hardcoded "Somalia-specific" and "FDA guidelines" language from section templates. Now works correctly for any proposition type.
+- **Prompt caching live:** All 15+ assembler section calls pass the shared `researchContext` as a cached prefix. Saves ~$5/run (~40% cost reduction). Inter-section delay 17s (15 × 17 = 255s, safely under the 300s TTL).
+- **Failed-run resume live:** `tryResumeFromContent()` runs before creating a new report record. Creates a fresh report record (new `created_at`) so the admin panel's polling detects it. Re-computes data confidence from the original failed run's `agent_outputs` (now preserved on failure). Patches the content JSON with the fresh score. Deletes the old content JSON from Storage after success so the next trigger runs fresh. Agent_outputs are cleaned up after the resume completes.
+- **Sources extraction fixed:** Replaced LLM-based sources compilation (call 15/15) with deterministic JS that iterates `agentOutputs` directly. No API cost, no missed URLs, no hallucinated sources.
+- **Census API key fallback:** `fetch_census_data.py` detects the "Invalid Key" HTML response (status 200) and retries without the key. Keyless access gives 500 req/day — enough for one report run. Census key updated to `b15633b8...` (pending activation; fallback covers in the meantime).
 - **Pending for V2:** Industry routing, consultant brief, new gov tool scripts, international research pipeline
 
-**Note:** Proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
-
-**Plate to Plate proposition:** Contract was signed before auto-activate fix was deployed — flip `propositions.status = 'active'` manually in Supabase. Then trigger a run from the admin panel. The resume logic should detect saved content from the last failed run (run #8) and skip research agents.
+**Note:** Camel Milk proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
 
 ### Website — `mckeever-consulting-website` ✅ All pages built
 
@@ -81,13 +77,22 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
-### Immediate — Before next run
+### Immediate — Kitchen Tools test run ← next up
 
-1. **Manually activate "Plate to Plate" proposition** — flip `propositions.status = 'active'` in Supabase (the auto-activate fix was deployed after the contract was already signed).
-2. **Trigger a run** from the admin panel. Resume logic should detect the saved content JSON from run #8 and skip research agents, going straight to PDF. Verify the report is delivered.
-3. **Verify prompt caching** — after the run, check the Anthropic usage dashboard for `cache_read_input_tokens`. Should see a large number of cached tokens across the 15 assembler calls.
+**Proposition:** Mark Jones — "High end modular kitchen tools for home cooks." Physical domestic, Food & Beverage, Retainer. Two context notes already added:
+- `financial` → "The client would like updated information, they can secure a 150,000 USD business loan"
+- `sourcing` → "The client would like comparison data for manufacturing in the United States, China and Bangladesh"
 
-### Step 8 — V2 End-to-End Test ← next milestone
+**Purpose of this run:**
+1. Verify context notes inject into the correct agents (`financials` gets the financial note; `production` + `origin_ops` get the sourcing note) and shape the research output
+2. Confirm a clean fresh research run executes end-to-end (no resume path — no prior failed content JSON for this proposition)
+3. Verify sources section is populated (deterministic JS extraction fix)
+4. Verify data confidence score appears (not null)
+5. **Check prompt caching savings** — after the run, open the Anthropic usage dashboard and look for `cache_read_input_tokens`. Should see a large number across the 15 assembler section calls. Compare total input tokens vs. cache reads to confirm the ~40% cost reduction.
+
+**To trigger:** Go to the admin panel, navigate to the Mark Jones proposition, hit **Run Now**.
+
+### Step 8 — V2 End-to-End Test ← next milestone after Kitchen Tools
 
 This is the only thing left before the system is fully V2-ready. Run the complete flow:
 
@@ -121,8 +126,7 @@ If the intake form submission path hasn't been activated yet (org status still `
    - `tools/fetch_bis_data.py` — BIS export control classifications ← build before electronics test proposition
 3. **Workflow generalisation** — audit the 10 research workflows, remove food-specific hardcoding. Start with Option A (venture intelligence brief steers tool selection). Move to Option B (per-industry substitution blocks) only if results are poor.
 4. **Consultant Intelligence Brief** — new `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Delivered as a single admin email with both PDFs (client report + consultant brief) attached.
-5. **Prompt caching on the assembler** — add `cache_control: { type: "ephemeral" }` on the system prompt and research context blocks in the assembler's API calls. Saves ~$5/run (~40% total cost reduction).
-6. **International research pipeline** — `tools/translate_text.py`, `tools/detect_language.py`, `tools/normalize_international_data.py`, `tools/fetch_gdelt_news.py`, `tools/fetch_opencorporates.py`, `tools/fetch_un_comtrade.py`. New API keys needed: DeepL, Google Cloud Translation, MyMemory, UN Comtrade, OpenCorporates.
+5. **International research pipeline** — `tools/translate_text.py`, `tools/detect_language.py`, `tools/normalize_international_data.py`, `tools/fetch_gdelt_news.py`, `tools/fetch_opencorporates.py`, `tools/fetch_un_comtrade.py`. New API keys needed: DeepL, Google Cloud Translation, MyMemory, UN Comtrade, OpenCorporates.
 
 **V2 test propositions:**
 | Proposition | Industry category | Key tools needed | Notes |
@@ -138,6 +142,15 @@ If the intake form submission path hasn't been activated yet (org status still `
 ---
 
 ## Session Log
+
+### Session 28 — Resume path hardening, sources fix, Census fallback (2026-04-17)
+
+- **Resume creates fresh report record** — `tryResumeFromContent()` now calls `createReportRecord()` instead of reusing the old `failedReport.id`. This gives the new run a fresh `created_at` so the admin panel's `RunPanel` polling (which filters by `createdAt >= triggeredAt`) correctly detects completion. The old failed record stays as a historical artifact.
+- **Data confidence re-computation on resume** — root cause identified: the first test run had a bug in `compute_data_confidence.py` (selecting column `output` instead of `output_data`), resulting in null confidence baked into the saved content JSON. On resume, the null propagated. Fix: `tryResumeFromContent()` now calls `computeDataConfidence(failedReport.id)` to re-compute from the original run's `agent_outputs`, then patches the content JSON with the fresh score before PDF generation.
+- **`agent_outputs` preserved on failure** — removed `deleteAgentOutputsByReportId()` from the failure handler. Agent_outputs are now kept until the resume runs and uses them for confidence re-computation. Cleanup happens in `tryResumeFromContent()` after the resume completes (both the new report's rows and the old failed report's rows). Pre-assembly failures (no content JSON) are cleaned up immediately when the resume check skips that failed report.
+- **Old content JSON deleted after resume** — `tryResumeFromContent()` deletes the old failed report's content JSON from Storage after a successful resume. This breaks the stale-data cycle: the next trigger runs the full fresh pipeline instead of resuming from old content with null confidence.
+- **Sources section fixed** — replaced LLM-based sources compilation (call 15/15 in assembler) with deterministic JS extraction. Iterates `agentOutputs` directly, deduplicates by URL, preserves `agent_name` and `retrieved_at`. No API cost, no missed URLs, no risk of hallucinated sources.
+- **Census API key fallback** — `fetch_census_data.py` now detects the "Invalid Key" HTML response (Census returns status 200 with HTML when the key is wrong) and retries the request without a key. Keyless access provides 500 req/day — sufficient for one report run. Census key updated (`b15633b8...`) and activated.
 
 ### Session 27 — Prompt caching + failed-run resume + bug fixes (2026-04-16)
 - **Proposition auto-activate on sign** — `submitSignatureAction` in `app/sign/[token]/actions.ts` now flips `propositions.status = 'active'` after contract is signed. Non-fatal (logs error but doesn't block signature). Fixes "Plate to Plate" staying as `prospect` after signing.
@@ -447,7 +460,7 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 **Data retention:** See `tools/cleanup.js`.
 - Completed reports: 6-month window (always keeps most recent per proposition)
 - Failed reports: 7-day TTL
-- `agent_outputs`: deleted immediately on run completion or failure
+- `agent_outputs`: deleted immediately on successful run completion. On failure, **preserved** so the resume path can re-compute the data confidence score. Cleaned up by `tryResumeFromContent()` after a successful resume, or when the next run finds a failed report with no content JSON.
 - `api_cache`: 7-day TTL
 
 ---
@@ -512,7 +525,7 @@ GDELT, World Bank, IMF, and Eurostat require no key.
 | 8 | Data confidence | 0–100 score (field confidence 45%, completion 25%, sources 20%, gaps 10%) |
 | 9 | Quality gate | Hard fail: critical agent null or >1 agent failed. Soft fail: 1 non-critical null (retries once). |
 | 10 | Brave throttling | 500ms delay + exponential backoff, max 3 retries |
-| 11 | Failure alerting | Email to Brendon only. Client never notified. Error logged to DB. agent_outputs deleted immediately on failure. |
+| 11 | Failure alerting | Email to Brendon only. Client never notified. Error logged to DB. `agent_outputs` preserved on failure (needed by resume for confidence re-computation); deleted after resume completes. |
 | 12 | Brand | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat. |
 | 13 | Pricing | Starter $100 (1 run) / Pro $250 (2 runs) / Retainer $150/month (unlimited) |
 | 14 | Model escalation | Haiku → Sonnet on iteration exhaustion or JSON parse failure. Ceiling = Sonnet. `financials`, `packaging`, `marketing` skip Haiku entirely (`sonnetOnly: true`). |
