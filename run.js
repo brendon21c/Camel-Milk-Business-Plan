@@ -925,7 +925,7 @@ Synthesize the results and respond with ONLY the JSON object from the Output For
         system:     systemPrompt,
         userPrompt,
         tools:      RESEARCH_TOOLS,
-        maxTokens:  16000, // Raised from 8096 — sonnetOnly agents (marketing, financials, packaging) can produce large JSON outputs
+        maxTokens:  32000, // Raised from 16000 — financials JSON can be large on complex propositions
         maxIter:    20, // Sonnet converges faster — lower ceiling to control cost
       });
     } catch (sonnetErr) {

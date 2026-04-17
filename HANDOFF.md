@@ -214,6 +214,7 @@ Calling Claude Sonnet for report synthesis...
 | USDA NASS returns no data | Sometimes down — `executeTool` catches and returns `{ error: ... }`, agent handles gracefully |
 | Census returns malformed JSON | Fixed — script retries up to 3 times then emits `{ error: "...", records: [] }`. Agent handles gracefully. |
 | Context notes not injecting | Check `proposition_context` table — column is `content` (not `note`). Confirm rows exist with correct `proposition_id`. |
+| PDF fails, re-run redoes all research | Known issue — `run.js` creates a fresh report record every time with no logic to detect a prior failed run's saved content. Fix: before spawning research agents, check if a `failed` report exists for this proposition with `content_storage_path` set — if so, download and jump straight to PDF. **Fix alongside prompt caching work.** |
 
 ---
 

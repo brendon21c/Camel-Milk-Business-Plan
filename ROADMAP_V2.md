@@ -137,7 +137,15 @@ Recommendation: Start with Option A (already partially working via venture intel
 
 **Note:** This feature doesn't depend on industry routing and could technically be backported to V1. Scoped to V2 because V1's priority is proving the core pipeline works first.
 
-#### 6. Prompt caching on the assembler
+#### 6. Failed-run resume from saved content
+
+**Problem:** If a run fails at the PDF step (or any post-research step), re-triggering starts completely from scratch — redoing all research agents even though the content JSON was already generated and uploaded to Supabase Storage. A 40-minute run costs full API spend again just to rebuild the PDF.
+
+**Fix:** At the start of `run.js`, before spawning research agents, check if a `failed` report already exists for this proposition with `content_storage_path` set. If found, download that content JSON and jump straight to the PDF step — skipping all research.
+
+**Implement alongside prompt caching** — both touch the same section of `run.js`.
+
+#### 7. Prompt caching on the assembler
 
 **Why:** The assembler sends the full research context (~150k tokens) to Sonnet once per section — 15 calls per run. Without caching, this costs ~$7.65 in input tokens alone, roughly 65% of total run cost. With prompt caching, subsequent calls pay the cached rate ($0.30/MTok vs $3.00/MTok), dropping assembler cost to ~$2. Saving of ~$5 per run.
 
