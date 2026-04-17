@@ -26,6 +26,16 @@ on:
         required: false
         default: ''
         type: string
+      regen_pdf:
+        description: 'Regenerate PDF only — rebuilds PDF from saved content JSON and uploads to Supabase (no agents, no client email)'
+        required: false
+        default: false
+        type: boolean
+      report_id:
+        description: 'Report ID to regenerate PDF for (required when regen_pdf is true)'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   run-reports:
@@ -77,6 +87,13 @@ jobs:
       # ── Active propositions ───────────────────────────────────────────────
       # Add one step per proposition. Copy this block and update the ID.
       # The step name shows up in the GitHub Actions log and failure emails.
+
+      # ── PDF regeneration (admin panel Regen PDF button) ──────────────────────
+      # Rebuilds the PDF from the saved content JSON and uploads it back to Supabase.
+      # Report stays pending_review — no agents run, no client email sent.
+      - name: Regen PDF — targeted report
+        if: github.event.inputs.regen_pdf == 'true' && github.event.inputs.report_id != ''
+        run: node run.js --regen-pdf --report-id ${{ github.event.inputs.report_id }} --upload
 
       # If a specific proposition_id was passed (e.g. from the admin panel Run Now button),
       # run only that proposition. Otherwise fall through to the scheduled per-proposition steps below.

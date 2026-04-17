@@ -624,7 +624,7 @@ function loadWorkflow(filename) {
  */
 function parseArgs() {
   const args   = process.argv.slice(2);
-  const result = { propositionId: undefined, force: false, regenPdf: false, reportId: undefined };
+  const result = { propositionId: undefined, force: false, regenPdf: false, reportId: undefined, upload: false };
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--proposition-id' && args[i + 1]) {
@@ -635,6 +635,8 @@ function parseArgs() {
       result.regenPdf = true;
     } else if (args[i] === '--report-id' && args[i + 1]) {
       result.reportId = args[++i];
+    } else if (args[i] === '--upload') {
+      result.upload = true;
     }
   }
 
@@ -2727,15 +2729,18 @@ async function tryResumeFromContent(proposition, context) {
 // ---------------------------------------------------------------------------
 
 /**
- * Rebuilds the PDF for an existing completed report without re-running any agents.
+ * Rebuilds the PDF for an existing report without re-running any agents.
  * Downloads the content JSON from Supabase Storage, runs generate_report_pdf.py,
- * and saves the result to outputs/ for local review.
- * Does NOT re-email — call is for formatting review / formatting fixes only.
+ * and either saves locally (default) or uploads back to Supabase (--upload).
  *
- * @param {string} reportId - UUID of the completed report to regenerate.
+ * --upload mode: overwrites the PDF in Storage, report stays pending_review
+ * so the admin can review the new version and then click Send to Client.
+ *
+ * @param {string}  reportId - UUID of the report to regenerate.
+ * @param {boolean} upload   - If true, overwrite PDF in Supabase Storage and update report.
  */
-async function regenPdfFromStorage(reportId) {
-  console.log(`\nRegenerating PDF for report: ${reportId}`);
+async function regenPdfFromStorage(reportId, upload = false) {
+  console.log(`\nRegenerating PDF for report: ${reportId}${upload ? ' (will upload to Supabase)' : ''}`);
 
   // 1. Fetch the report row to get proposition_id and the slug/date for the filename
   const report = await getReportById(reportId);
@@ -2765,14 +2770,12 @@ async function regenPdfFromStorage(reportId) {
   fs.writeFileSync(contentFile, contentText);
   console.log(`  ✓ Content JSON downloaded`);
 
-  // 4. Determine output filename — mirror the normal naming convention
-  const slug         = proposition.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const reportMonth  = new Date(report.created_at).toISOString().slice(0, 7); // YYYY-MM
-  const outputsDir   = path.join(__dirname, 'outputs');
-  fs.mkdirSync(outputsDir, { recursive: true });
-  const pdfFilename  = `${slug}_${reportMonth}_regen.pdf`;
-  const pdfPath      = path.join(outputsDir, pdfFilename);
-  const pdfScript    = path.join(__dirname, 'tools', 'generate_report_pdf.py');
+  // 4. Determine output path
+  const slug        = proposition.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const reportMonth = new Date(report.created_at).toISOString().slice(0, 7); // YYYY-MM
+  const tmpPdfName  = `${reportId}_regen.pdf`;
+  const pdfPath     = path.join(tmpDir, tmpPdfName);
+  const pdfScript   = path.join(__dirname, 'tools', 'generate_report_pdf.py');
 
   // 5. Run the PDF builder against the downloaded content JSON
   console.log('  Building PDF...');
@@ -2784,13 +2787,42 @@ async function regenPdfFromStorage(reportId) {
   } catch (err) {
     throw new Error(`PDF generation failed: ${err.message}`);
   }
-  console.log(`  ✓ PDF saved → ${pdfPath}`);
+  console.log(`  ✓ PDF built`);
 
   // 6. Clean up the local content JSON (already stored in Supabase)
   try { fs.unlinkSync(contentFile); } catch (_) { /* Non-fatal */ }
 
-  console.log('\nReview the PDF at the path above.');
-  console.log('To re-upload and re-email, run the full pipeline with --force.');
+  if (upload) {
+    // 7a. Overwrite the existing PDF in Supabase Storage
+    const pdfBuffer      = fs.readFileSync(pdfPath);
+    const storagePath    = `${proposition.id}/${reportId}.pdf`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('reports')
+      .update(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: true });
+
+    if (uploadError) throw new Error(`PDF upload failed: ${uploadError.message}`);
+    console.log(`  ✓ PDF uploaded → Storage: ${storagePath}`);
+
+    // 8. Update the PDF URL in the DB and ensure status stays pending_review
+    await updateReportPdfUrl(reportId, storagePath);
+    await updateReportStatus(reportId, 'pending_review');
+    console.log(`  ✓ Report updated — status: pending_review (ready for admin review)`);
+
+    // 9. Clean up local PDF (it's now in Supabase)
+    try { fs.unlinkSync(pdfPath); } catch (_) { /* Non-fatal */ }
+
+    console.log('\n✓ PDF regenerated and uploaded. Review it on the admin panel, then click Send to Client when ready.');
+  } else {
+    // 7b. Save locally for review only
+    const outputsDir  = path.join(__dirname, 'outputs');
+    fs.mkdirSync(outputsDir, { recursive: true });
+    const localPath   = path.join(outputsDir, `${slug}_${reportMonth}_regen.pdf`);
+    fs.renameSync(pdfPath, localPath);
+    console.log(`  ✓ PDF saved → ${localPath}`);
+    console.log('\nReview the PDF at the path above.');
+    console.log('To upload and update Supabase, re-run with --upload.');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2808,8 +2840,9 @@ async function main() {
   const args = parseArgs();
 
   // --regen-pdf: rebuild a PDF from stored content JSON, skip all agents and email
+  // --upload flag: overwrite PDF in Supabase Storage and keep report as pending_review
   if (args.regenPdf) {
-    await regenPdfFromStorage(args.reportId);
+    await regenPdfFromStorage(args.reportId, args.upload);
     return;
   }
 
