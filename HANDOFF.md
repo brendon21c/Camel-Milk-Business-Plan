@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-16 (Session 26 — Expanded intake form (5 steps), client_context JSONB, test client mode, cleanup purge-test command.)
+**Last updated:** 2026-04-16 (Session 27 — Prompt caching, failed-run resume, PDF fix, financials token fix, proposition auto-activate on sign, code review + bug fixes.)
 
 ---
 
@@ -33,18 +33,25 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ---
 
-## Current State (as of 2026-04-15)
+## Current State (as of 2026-04-16)
 
-### Backend — `Camel-Milk-Business-Plan` ✅ V1 + Step 2.5 complete
+### Backend — `Camel-Milk-Business-Plan` ✅ V1 + Step 2.5 + caching + resume complete
 
 - V1 pipeline fully working and tested
 - E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever
-- 10 migrations run (001–010)
+- 12 migrations run (001–012)
 - **Step 2.5 complete:** `getPropositionContext()` added to `db.js`. At run start, backend queries `proposition_context`, groups rows by category, and injects relevant notes into each research agent's prompt as a `## ADMIN CONTEXT NOTES` block. Category → agent mapping is in `run.js` (`CATEGORY_TO_AGENTS`).
 - **`proposition_context` column:** the text content is stored in `content` (not `note`) — confirmed from website source
-- **Pending for V2:** Industry routing, consultant brief, prompt caching, new gov tool scripts, international research pipeline
+- **Prompt caching live:** `streamSonnetCall` and `callWithRepair` accept `useCache`/`cacheablePrefix` params. All 15+ assembler section calls pass the shared `researchContext` as the cached prefix. Saves ~$5/run (~40% cost reduction) via Anthropic's 5-minute ephemeral cache TTL. Inter-section delay is 17s (15 × 17 = 255s, safely under 300s TTL).
+- **Failed-run resume live:** `tryResumeFromContent()` runs before creating a new report record. If a prior failed run has a content JSON in Supabase Storage, skips all research agents and jumps straight to PDF + email. Handles post-assembly failures (PDF crash, upload error, email failure) without re-spending ~$8 in API costs.
+- **Financials token fix:** Sonnet escalation `maxTokens` raised from 16000 → 32000. Prevents JSON truncation on large financial outputs.
+- **GitHub Actions Python fix:** `reports.yml` now includes `actions/setup-python@v5` and `pip install -r requirements.txt`. Fixes `ModuleNotFoundError` for `httpx`/`dotenv` that caused PDF generation failures.
+- **Assembler instructions genericised:** Removed hardcoded "Somalia-specific" and "FDA guidelines" language from section templates. Now works correctly for any proposition type.
+- **Pending for V2:** Industry routing, consultant brief, new gov tool scripts, international research pipeline
 
 **Note:** Proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
+
+**Plate to Plate proposition:** Contract was signed before auto-activate fix was deployed — flip `propositions.status = 'active'` manually in Supabase. Then trigger a run from the admin panel. The resume logic should detect saved content from the last failed run (run #8) and skip research agents.
 
 ### Website — `mckeever-consulting-website` ✅ All pages built
 
@@ -74,7 +81,13 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
-### Step 8 — V2 End-to-End Test ← only remaining task
+### Immediate — Before next run
+
+1. **Manually activate "Plate to Plate" proposition** — flip `propositions.status = 'active'` in Supabase (the auto-activate fix was deployed after the contract was already signed).
+2. **Trigger a run** from the admin panel. Resume logic should detect the saved content JSON from run #8 and skip research agents, going straight to PDF. Verify the report is delivered.
+3. **Verify prompt caching** — after the run, check the Anthropic usage dashboard for `cache_read_input_tokens`. Should see a large number of cached tokens across the 15 assembler calls.
+
+### Step 8 — V2 End-to-End Test ← next milestone
 
 This is the only thing left before the system is fully V2-ready. Run the complete flow:
 
@@ -125,6 +138,21 @@ If the intake form submission path hasn't been activated yet (org status still `
 ---
 
 ## Session Log
+
+### Session 27 — Prompt caching + failed-run resume + bug fixes (2026-04-16)
+- **Proposition auto-activate on sign** — `submitSignatureAction` in `app/sign/[token]/actions.ts` now flips `propositions.status = 'active'` after contract is signed. Non-fatal (logs error but doesn't block signature). Fixes "Plate to Plate" staying as `prospect` after signing.
+- **Python deps in GitHub Actions** — `reports.yml` now includes `actions/setup-python@v5` + `pip install -r requirements.txt`. Fixed `ModuleNotFoundError: No module named 'httpx'` / `dotenv` that killed PDF generation.
+- **Financials token ceiling** — Sonnet escalation `maxTokens` raised from 16000 → 32000. Fixed JSON truncation in the financials agent when output was large.
+- **Prompt caching** — `streamSonnetCall` accepts `useCache` param (wraps system prompt in `cache_control`). `callWithRepair` accepts `cacheablePrefix` param (splits first user message into cached prefix + task). All 15+ assembler section calls pass `researchContext` as the cached prefix. Expected savings ~$5/run (~40%). Inter-section delay 17s (15 × 17 = 255s, safely under 300s TTL).
+- **Failed-run resume** — `tryResumeFromContent(proposition, context)` added. Called in `runProposition` before creating a new report record. Checks prior failed runs for content JSON in Storage. If found: marks report as running, writes tmp file, re-runs PDF + upload + email, marks complete, purges agent outputs. Returns `{ resumed: true, reportId }` so caller can advance schedule.
+- **Code review fixes** (5 bugs caught before production):
+  - `JSON.parse` in resume wrapped in try/catch with `continue` on malformed content
+  - PDF/email delivery steps in resume wrapped in try/catch + finally for cleanup
+  - `advancePropositionSchedule` added to resume success path in `runProposition`
+  - Return value changed to `{ resumed: true, reportId }` (was `false`)
+  - Inter-section delay 17s (was 20s — 15 × 20 = 300s = TTL with zero buffer)
+- **Assembler instructions genericised** — removed hardcoded "Somalia-specific trade restrictions" from regulatory section and "FDA guidelines" from marketing section. Both now use proposition-type-agnostic language.
+- **HANDOFF + ROADMAP_V2 updated** — scheduling table corrected (daily not monthly), troubleshooting updated, current state updated.
 
 ### Session 26 — Expanded intake form + client_context + test client mode (2026-04-16)
 - **Migration 011** — `is_test BOOLEAN DEFAULT false` added to `organizations`, `clients`, `propositions`. Partial indexes on each. Purge support in cleanup.js.
@@ -214,7 +242,8 @@ Calling Claude Sonnet for report synthesis...
 | USDA NASS returns no data | Sometimes down — `executeTool` catches and returns `{ error: ... }`, agent handles gracefully |
 | Census returns malformed JSON | Fixed — script retries up to 3 times then emits `{ error: "...", records: [] }`. Agent handles gracefully. |
 | Context notes not injecting | Check `proposition_context` table — column is `content` (not `note`). Confirm rows exist with correct `proposition_id`. |
-| PDF fails, re-run redoes all research | Known issue — `run.js` creates a fresh report record every time with no logic to detect a prior failed run's saved content. Fix: before spawning research agents, check if a `failed` report exists for this proposition with `content_storage_path` set — if so, download and jump straight to PDF. **Fix alongside prompt caching work.** |
+| PDF fails, re-run redoes all research | Fixed — `tryResumeFromContent()` checks for a prior failed run's content JSON in Storage before creating a new report record. If found, skips all research agents and goes straight to PDF + email. |
+| Re-run finds no resumable content | Content JSON is only uploaded AFTER the assembler completes. If the run failed during research agents or the quality gate, there's nothing to resume — the full pipeline must re-run. |
 
 ---
 
@@ -246,7 +275,7 @@ Two workflows in `.github/workflows/`:
 
 | Workflow | File | Schedule | What it does |
 |---|---|---|---|
-| Monthly Report Run | `reports.yml` | 1st of each month, 6 AM UTC | Runs all due propositions |
+| Report Run | `reports.yml` | Daily 13:00 UTC (07:00 CST) — `getDuePropositions()` decides what actually runs | Runs all propositions whose `next_run_at` is due |
 | Weekly Cleanup | `cleanup.yml` | Every Sunday, 2 AM UTC | Prunes old reports, failed reports, expired cache |
 
 Both have a manual "Run workflow" button in the GitHub Actions UI.
@@ -343,10 +372,12 @@ Sonnet retry uses maxIter=20. If Sonnet also fails, agent is marked `failed`. Es
 - **Claude Sonnet** (`claude-sonnet-4-6`), no tools
 - 15 individual calls (~2–6k tokens each) instead of one giant call — eliminates JSON parse failures
 - Each call has a 2-cycle repair loop via `callWithRepair()`
-- 20s inter-section delay for TPM rate limit management
+- **Prompt caching** — shared `researchContext` (~150k tokens) is passed as a cacheable prefix on all 15 calls. Saves ~$5/run via Anthropic's 5-min ephemeral TTL.
+- 17s inter-section delay — balances TPM rate limit + cache TTL (15 × 17 = 255s < 300s TTL)
 - **Haiku quality review** — compact structural audit. Non-fatal.
 - **Sonnet proofread pass** — fixes cross-section repetition and clarity. Applied in-place before PDF build. Non-fatal.
 - Content JSON uploaded to Storage **before** PDF build — enables `--regen-pdf` recovery if PDF fails
+- **Failed-run resume** — if prior failed run has content JSON in Storage, `tryResumeFromContent()` skips all research agents and goes straight to PDF + email
 
 ### PDF output (`tools/generate_report_pdf.py`)
 - ReportLab Platypus — block-based layout
@@ -490,7 +521,7 @@ GDELT, World Bank, IMF, and Eurostat require no key.
 | 17 | Client model | Organizations own propositions. Contacts (clients) belong to orgs. Per-proposition recipient lists via `proposition_recipients`. |
 | 18 | Org status gating | Only `active` orgs run reports. Flip to `inactive`/`cancelled` to pause without deleting data. |
 | 19 | Plan tier gating | Starter/Pro retire to `on_demand` after their run limit. Retainer advances indefinitely. |
-| 20 | Scheduling | GitHub Actions — cleanup weekly (Sunday 2 AM UTC), reports monthly (1st, 6 AM UTC). |
+| 20 | Scheduling | GitHub Actions — cleanup weekly (Sunday 2 AM UTC), reports daily (13:00 UTC) with `getDuePropositions()` gating actual runs. |
 | 21 | Admin independence | Brendon is admin of McKeever Consulting via `organization_admins` table — independent of his client record. |
 | 22 | Assembler architecture | Section-by-section (15 Sonnet calls, 2-cycle repair each) + Haiku structural review + Sonnet proofread pass. Content JSON uploaded before PDF build. |
 | 23 | MCP | Ruled out (2026-04-13). Declining adoption, more problems than it solves. Tool layer stays as Python subprocesses. |

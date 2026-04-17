@@ -1299,8 +1299,9 @@ const ASSEMBLER_SECTION_INSTRUCTIONS = {
 
   regulatory_landscape:
     `Synthesise the regulatory agent output. Flag any hard blockers prominently using callout blocks
-     with label "Regulatory Blocker". Cover FDA import requirements, labeling rules, and any
-     Somalia-specific trade restrictions or sanctions flags.`,
+     with label "Regulatory Blocker". Cover all applicable import requirements, labeling rules,
+     country-of-origin restrictions, and any trade sanctions or embargo flags relevant to the
+     proposition's origin and target countries.`,
 
   production_equipment:
     `Synthesise the production agent output. Cover the production process and key technical requirements.
@@ -1317,7 +1318,8 @@ const ASSEMBLER_SECTION_INSTRUCTIONS = {
   marketing_influencers:
     `Synthesise the marketing agent output. Cover key marketing channels and target audience segments.
      If influencer data is available, include a table with columns: Platform | Audience | Opportunity.
-     Cover compliant health claim language — what can and cannot be said under FDA guidelines.`,
+     Cover any claim or advertising compliance requirements relevant to this product category
+     (e.g. health claims for food/supplements, safety claims for regulated products).`,
 
   financial_projections:
     `Synthesise the financials agent output. Include a unit economics table with columns:
@@ -2503,7 +2505,7 @@ async function runProposition(proposition, force) {
     // NOTE: updateReportStatus('complete') is called inside runAssemblerAgent()
     // after successful email delivery. Do not duplicate it here.
 
-    // 8. Advance schedule so this proposition isn't picked up again immediately
+    // 9. Advance schedule so this proposition isn't picked up again immediately
     if (proposition.schedule_type && proposition.schedule_type !== 'on_demand') {
       await advancePropositionSchedule(
         proposition.id,
@@ -2561,7 +2563,7 @@ async function runProposition(proposition, force) {
  *
  * @param {Object} proposition - Proposition row from DB.
  * @param {Object} context     - Run context (client, recipients, etc.).
- * @returns {Promise<boolean>} true if resume succeeded, false if nothing to resume.
+ * @returns {Promise<{resumed: true, reportId: string}|null>} Resume result, or null if nothing to resume.
  */
 async function tryResumeFromContent(proposition, context) {
   const history = await getReportsByPropositionId(proposition.id);
@@ -2609,11 +2611,12 @@ async function tryResumeFromContent(proposition, context) {
       contentFile   = path.join(tmpDir, `${failedReport.id}_content.json`);
       fs.writeFileSync(contentFile, contentText);
 
-      // Re-upload content JSON to Storage (upsert — idempotent)
-      await supabase.storage.from('reports').upload(contentPath, contentText, {
+      // Re-upload content JSON to Storage (upsert — idempotent; already there but ensures consistency)
+      const { error: reuploadError } = await supabase.storage.from('reports').upload(contentPath, contentText, {
         contentType: 'application/json',
         upsert:      true,
       });
+      if (reuploadError) console.warn(`    ⚠ Content JSON re-upload failed (non-fatal): ${reuploadError.message}`);
 
       // Build PDF
       const outputsDir = path.join(__dirname, 'outputs');
