@@ -690,11 +690,11 @@ async function getPropositionsToRun(args) {
  */
 async function createReportRecord(proposition) {
   const history  = await getReportsByPropositionId(proposition.id);
-  // Count only completed runs — failed/crashed attempts don't count as real runs
-  const runNumber = history.filter(r => r.status === 'complete').length + 1;
+  // Count runs that reached admin review or were sent — failed/crashed don't count
+  const runNumber = history.filter(r => r.status === 'complete' || r.status === 'pending_review').length + 1;
 
-  // The most recent completed report is the baseline for "What Changed"
-  const previousCompleted = history.find(r => r.status === 'complete');
+  // The most recent finished report is the baseline for "What Changed"
+  const previousCompleted = history.find(r => r.status === 'complete' || r.status === 'pending_review');
   const previousReportId  = previousCompleted ? previousCompleted.id : null;
 
   const title = `${proposition.title} — Report #${runNumber}`;
@@ -1367,12 +1367,26 @@ async function streamSonnetCall(systemPrompt, messages, maxTokens, useCache = fa
   while (true) {
     attempts++;
     try {
-      return await anthropic.messages.stream({
+      const stream = anthropic.messages.stream({
         model:      'claude-sonnet-4-6',
         max_tokens: maxTokens,
         system:     systemBlock,
         messages,
-      }).finalText();
+      });
+      const msg = await stream.finalMessage();
+
+      // Log cache usage so we can verify caching is working and measure savings
+      if (useCache) {
+        const u = msg.usage;
+        const cacheWrite = u.cache_creation_input_tokens ?? 0;
+        const cacheRead  = u.cache_read_input_tokens     ?? 0;
+        const regular    = u.input_tokens                ?? 0;
+        if (cacheWrite > 0 || cacheRead > 0) {
+          console.log(`      💾 Cache: write=${cacheWrite.toLocaleString()} read=${cacheRead.toLocaleString()} uncached=${regular.toLocaleString()} out=${u.output_tokens.toLocaleString()}`);
+        }
+      }
+
+      return msg.content.map(b => b.type === 'text' ? b.text : '').join('');
     } catch (err) {
       const is429        = err.status === 429 || (err.message && err.message.includes('rate_limit_error'));
       const isTerminated = err.message && err.message.includes('terminated');
@@ -2071,18 +2085,16 @@ ${proofreaderView}`;
   await updateReportPdfUrl(reportId, storagePath);
   console.log('    ✓ PDF uploaded to Storage');
 
-  // ── Email recipients ──────────────────────────────────────────────────────
+  // ── Notify admin — client delivery happens manually from the admin panel ─────
+  // Recipients are NOT emailed here. Brendon reviews the report first, then clicks
+  // "Send to Client" on the website to trigger delivery.
   const viabilityScoreObj = contentJson.viability_score || {};
-  for (const recipient of context.recipients) {
-    await sendReportEmail(recipient, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence);
-    console.log(`    ✓ Report emailed to ${recipient.email}`);
-  }
   await sendAdminReportCopy(context.recipients, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence);
-  console.log(`    ✓ Admin copy sent (${context.recipients.length} recipient(s) notified)`);
+  console.log(`    ✓ Admin review copy sent`);
 
-  // ── Mark complete + cleanup ───────────────────────────────────────────────
-  await updateReportStatus(reportId, 'complete');
-  console.log('  ✓ Report status → complete');
+  // ── Mark pending_review — admin approves before client delivery ──────────
+  await updateReportStatus(reportId, 'pending_review');
+  console.log('  ✓ Report status → pending_review');
 
   try { fs.unlinkSync(contentFile); } catch (_) { /* Non-fatal */ }
   try { fs.unlinkSync(pdfPath);     } catch (_) { /* Non-fatal */ }
@@ -2251,11 +2263,11 @@ async function sendAdminReportCopy(recipients, proposition, pdfPath, reportMonth
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
       <div style="background:#1C3557;padding:24px 32px;">
         <h1 style="color:#C8A94A;font-size:22px;margin:0;">McKeever Consulting</h1>
-        <p style="color:#8A9BB0;font-size:13px;margin:4px 0 0;">Admin Copy — Report Delivered</p>
+        <p style="color:#8A9BB0;font-size:13px;margin:4px 0 0;">Admin Copy — Pending Your Review</p>
       </div>
 
       <div style="padding:32px;background:#F7F8FA;border:1px solid #e0e0e0;">
-        <h2 style="color:#1C3557;margin-top:0;">Report delivered to ${recipients.length} recipient(s)</h2>
+        <h2 style="color:#1C3557;margin-top:0;">Report ready for your review — not yet sent to client</h2>
 
         <table style="width:100%;border-collapse:collapse;">
           ${recipientRows}
