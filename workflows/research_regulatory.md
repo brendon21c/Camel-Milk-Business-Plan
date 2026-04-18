@@ -165,6 +165,67 @@ python tools/search_perplexity.py --query "[product_type] USDA certification req
 Use when: Brave returned fewer than 3 results with specific regulatory requirements.
 Perplexity returns synthesized regulatory summaries with cited sources.
 
+**CBP import compliance checklist (run for ALL import propositions where origin != target):**
+```
+python tools/fetch_cbp_data.py requirements [product_category] --origin [origin_country]
+```
+Product category options: food, furniture, electronics, apparel, medical_device, cosmetics.
+Use to: surface the full CBP import compliance checklist — agencies, required documents, certifications, and any country-specific notes (Section 301 tariffs, AGOA eligibility, etc.).
+
+**FTC marketing claim rules (run based on proposition type):**
+
+For food, beverage, or health products:
+```
+python tools/fetch_ftc_data.py guidance health_claims
+python tools/fetch_ftc_data.py guidance food_labelling
+```
+
+For apparel or textile products:
+```
+python tools/fetch_ftc_data.py guidance textile_labelling
+```
+
+For any product with sustainability/eco claims:
+```
+python tools/fetch_ftc_data.py guidance green_environmental
+```
+
+For any product with "Made in USA" claims:
+```
+python tools/fetch_ftc_data.py guidance made_in_usa
+```
+
+Use to: establish the FTC marketing claim boundaries that will constrain how the product can be marketed in the US. This directly affects the marketing section.
+
+**CPSC product safety (run for all physical consumer product propositions):**
+```
+python tools/fetch_cpsc_data.py recalls --query "[product_type]"
+python tools/fetch_cpsc_data.py standards [product_type_category]
+```
+Product category options: furniture, electronics, food, toys, apparel, kitchen, medical.
+Use to: check if this product category has a history of recalls and identify which safety standards apply. A recall history is a material regulatory risk.
+
+**Medical device propositions only:**
+```
+python tools/fetch_fda_device_data.py clearances "[device_type]" --limit 10
+python tools/fetch_fda_device_data.py recalls "[device_type]" --limit 10
+```
+Use to: find predicate devices cleared under 510(k) and any recall history for this device type.
+
+**Electronics/chemicals/software with export implications:**
+```
+python tools/fetch_bis_data.py eccn [product_type]
+python tools/fetch_bis_data.py screening [origin_country]
+```
+Use to: identify ECCN classification and any export control concerns for the origin country.
+
+**EU market propositions only:**
+```
+python tools/fetch_rapex_data.py summary [product_category]
+```
+Product category options: furniture, electronics, clothing_apparel, food, toys, cosmetics.
+Use to: understand EU safety alert patterns and regulatory scrutiny level for this product category in the EU market.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete details wherever available.

@@ -144,6 +144,45 @@ python tools/search_perplexity.py --query "[product_type] market size [target_co
 Use when: Brave returned fewer than 3 results with actual market size figures.
 Perplexity returns a synthesized answer with citations — add those citations to sources.
 
+**GDELT global news — market sentiment and recent coverage:**
+```
+python tools/fetch_gdelt_news.py search "[product_type] market [target_country]" --limit 10
+```
+Use to: find recent news coverage about this product category. Useful for identifying emerging trends, consumer sentiment shifts, or newsworthy market events not yet indexed by web search.
+
+**International economic context (run if origin_country != target_country OR if any market is non-US):**
+
+If target country is NOT the US — fetch target market economic profile:
+```
+python tools/fetch_world_bank.py indicators [target_country_iso2]
+```
+Use to: validate market size assumptions with GDP per capita, population, and income data. Provides the economic foundation for demand estimates.
+
+If target country is an OECD member (EU, Japan, Canada, Australia, South Korea, etc.):
+```
+python tools/fetch_oecd_data.py indicators [target_country_iso3]
+```
+Use to: supplement World Bank data with OECD-specific labour market and trade statistics.
+
+If target country is an EU country:
+```
+python tools/fetch_eurostat_data.py market [eu_country_code]
+```
+Use to: get EU-specific GDP per capita (in EUR), population, and household income for the target EU market.
+
+**Food and agriculture propositions only (if product is food, beverage, or agricultural):**
+```
+python tools/fetch_fao_data.py production "[product_commodity]" --country [target_country]
+python tools/fetch_fao_data.py trade "[product_commodity]"
+```
+Use to: find authoritative production volume and global trade flow data for the commodity. FAO data provides the highest-confidence numbers for food market sizing.
+
+**SBA small business context (US domestic propositions):**
+```
+python tools/fetch_sba_data.py stats
+```
+Use to: add national small business formation and survival rate context when the proposition involves entering the US as a small business.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

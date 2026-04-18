@@ -112,6 +112,42 @@ After running all primary and triggered fallback queries, assess the overall qua
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 Do not add extra delays — the tool handles it.
 
+### 1b. Supplement with Official Data Sources
+
+After completing all Brave searches, enrich the origin country assessment with authoritative data.
+Run all of the following unless a tool errors (log errors in `data_gaps`, continue).
+
+**Origin country economic and political context (ALWAYS run for import propositions):**
+```
+python tools/fetch_world_bank.py indicators [origin_country_iso2]
+```
+Use to: get authoritative GDP, inflation, trade openness, FDI inflows, and internet penetration for the origin country. World Bank data provides the credible foundation for country risk assessment. Extract: GDP per capita (proxy for wage costs), inflation (currency stability signal), trade (% of GDP) (openness of the economy).
+
+**IMF macro stability — run when origin country has elevated currency or debt risk:**
+```
+python tools/fetch_imf_data.py indicators [origin_country_3letter]
+```
+Use to: cross-check inflation trajectory, government debt-to-GDP ratio, and current account balance. IMF data is the authoritative source for macroeconomic stability assessment.
+
+**GDELT recent news — always run for origin country:**
+```
+python tools/fetch_gdelt_news.py search "[origin_country] business trade export" --country [origin_country] --limit 10
+```
+Use to: surface very recent news (last 30 days) about the origin country's political and trade environment. GDELT updates every 15 minutes — catches developments that web search may miss.
+
+**Tariff corridor context (run for all import propositions):**
+```
+python tools/fetch_wto_data.py tariff [origin_country] [product_hts_code]
+```
+Use to: establish FTA status, AGOA eligibility (for African countries), and any Section 301 tariff exposure for the trade corridor. This directly feeds the financials section's import duty estimate.
+
+**Food and agriculture supply — run for food/beverage/agricultural propositions:**
+```
+python tools/fetch_fao_data.py production "[product_commodity]" --country [origin_country]
+python tools/fetch_fao_data.py trade "[product_commodity]" --reporter [origin_country]
+```
+Use to: get authoritative FAO production volume data for the origin country. This is the highest-confidence supply availability signal available — a country producing large volumes in FAO data is a reliable sourcing base.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures and named

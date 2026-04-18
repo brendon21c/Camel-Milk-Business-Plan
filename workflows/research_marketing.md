@@ -101,6 +101,31 @@ python tools/search_brave.py --query "[industry] niche communities dietary movem
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
+### 1b. Supplement with Official Data Sources
+
+After completing all Brave searches, enrich the marketing picture with authoritative regulatory and news data.
+Run all of the following unless a tool errors (log errors in `data_gaps`, continue).
+
+**FTC health claim and endorsement compliance — always run for health food propositions:**
+```
+python tools/fetch_ftc_data.py guidance health_claims
+python tools/fetch_ftc_data.py guidance endorsements
+```
+Use to: establish the legal boundaries for marketing claims before drafting any recommended strategy. Health claims that exceed FTC safe harbour rules are a legal risk that must be flagged in `data_gaps`. Endorsement rules apply to all influencer and affiliate partnerships.
+
+**FTC food labelling compliance — run for food and beverage propositions:**
+```
+python tools/fetch_ftc_data.py guidance food_labelling
+```
+Use to: determine what labelling language is permitted for marketing and packaging copy. Feeds `health_claims[].fda_compliant` assessments.
+
+**GDELT consumer and market news — always run:**
+```
+python tools/fetch_gdelt_news.py search "[product_type] consumer market [target_country]" --limit 10
+python tools/fetch_gdelt_news.py search "[target_demographic] [industry] trend [target_country]" --limit 10
+```
+Use to: surface very recent consumer sentiment, market trend coverage, and brand launches that Brave searches may have missed. Feeds `community_opportunities` and validates `marketing_channels` data.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

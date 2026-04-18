@@ -167,6 +167,32 @@ python tools/search_perplexity.py --query "[industry] startup capital requiremen
 ```
 Use when: Brave returned fewer than 3 results with actual financial figures.
 
+**SBA loan programs — always run to surface financing options for the client:**
+```
+python tools/fetch_sba_data.py loans --industry [naics_code]
+python tools/fetch_sba_data.py standards [naics_code]
+```
+Use to: identify SBA loan programs available to the client (7a, 504, Microloan) and their size standard eligibility. These are non-dilutive financing paths that should always appear in financial projections.
+
+**Import tariff verification (for import propositions):**
+```
+python tools/fetch_wto_data.py hts [product_hts_code]
+python tools/fetch_wto_data.py tariff [origin_country] [product_hts_code]
+```
+Use to: get the authoritative MFN tariff rate from USITC HTS schedule and FTA/AGOA eligibility. This is the most accurate input for import duty calculations in financial projections.
+
+**Energy and operating cost benchmarks (for manufacturing propositions):**
+```
+python tools/fetch_doe_data.py fuel_costs --sector [industry]
+```
+Use to: add authoritative energy cost line items to production cost modeling when manufacturing is part of the proposition.
+
+**Origin country macro context (for import propositions):**
+```
+python tools/fetch_world_bank.py indicators [origin_country_iso2]
+```
+Use to: extract GDP per capita and inflation rate for the origin country. These are inputs for wage cost benchmarks and currency risk assessment in the financial model.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

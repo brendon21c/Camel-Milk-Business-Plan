@@ -89,6 +89,33 @@ Do not add extra delays — the tool handles it.
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
+### 1b. Supplement with Official Data Sources
+
+After completing all Brave searches, enrich the packaging picture with authoritative regulatory data.
+Run all of the following unless a tool errors (log errors in `data_gaps`, continue).
+
+**CPSC packaging safety standards — always run for consumer product propositions:**
+```
+python tools/fetch_cpsc_data.py standards [product_type_category]
+python tools/fetch_cpsc_data.py recalls --query "[product_type] packaging" --limit 10
+```
+Product category options: furniture, electronics, food, toys, apparel, kitchen, medical.
+Use to: identify any mandatory CPSC safety standards that apply to the packaging (child-resistant closures, warning labels, material restrictions). Packaging-related recalls are a material risk — surface them in `data_gaps` if found.
+
+**FTC labelling compliance — always run:**
+```
+python tools/fetch_ftc_data.py guidance food_labelling
+python tools/fetch_ftc_data.py guidance green_environmental
+```
+Use to: establish what labelling claims are permitted. Food labelling rules determine mandatory panel requirements and what optional claims (e.g. "natural", "sustainable") are defensible. Green/environmental guidance applies if any eco-packaging claims will be made.
+
+**EU RAPEX safety alerts (run if target_country is an EU member state):**
+```
+python tools/fetch_rapex_data.py summary [product_category]
+python tools/fetch_rapex_data.py alerts --query "[product_type] packaging" --limit 10
+```
+Use to: identify EU safety alerts involving packaging for this product category. A history of packaging-related RAPEX alerts signals a known compliance risk that must appear in the report.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

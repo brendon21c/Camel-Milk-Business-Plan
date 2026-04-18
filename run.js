@@ -265,6 +265,442 @@ const RESEARCH_TOOLS = [
       required: ['command'],
     },
   },
+
+  // ---------------------------------------------------------------------------
+  // International economic data tools (no API key required)
+  // ---------------------------------------------------------------------------
+  {
+    name: 'fetch_world_bank',
+    description: (
+      'Fetch World Bank development indicators for any country. No API key required. ' +
+      'Use for international propositions to get GDP, GDP per capita, population, inflation, trade openness, ' +
+      'FDI inflows, internet penetration, and poverty rate. ' +
+      'Use "indicators" for a full country profile. Use "compare" to contrast two countries side-by-side. ' +
+      'Call this whenever the proposition involves a non-US origin or target country.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:   { type: 'string', enum: ['indicators', 'compare'], default: 'indicators',
+                     description: 'indicators = full country profile; compare = side-by-side two countries' },
+        country:   { type: 'string', description: 'ISO-2 country code (e.g. US, SO, DE, CN, AE, IN)' },
+        country2:  { type: 'string', description: 'Second country for compare command (ISO-2)' },
+        indicator: { type: 'string', description: 'World Bank indicator code for compare command (default: NY.GDP.PCAP.CD)' },
+        year:      { type: 'integer', description: 'Specific year (default: most recent available)' },
+      },
+      required: ['country'],
+    },
+  },
+  {
+    name: 'fetch_imf_data',
+    description: (
+      'Fetch IMF macroeconomic indicators for any country. No API key required. ' +
+      'Use for international propositions to assess economic stability, inflation trajectory, ' +
+      'current account balance, unemployment, and government debt. ' +
+      'Use "indicators" for current snapshot; "outlook" for growth and inflation trajectory (forecast included). ' +
+      'Call for origin country risk assessment and target market economic context. ' +
+      'Complements World Bank data — IMF focuses on macroeconomic stability and forecasts.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['indicators', 'outlook'], default: 'indicators',
+                   description: 'indicators = current macroeconomic snapshot; outlook = GDP growth and inflation trajectory with IMF forecasts' },
+        country: { type: 'string', description: 'IMF 3-letter country code (e.g. USA, SOM, DEU, CHN, ARE, IND)' },
+      },
+      required: ['country'],
+    },
+  },
+  {
+    name: 'fetch_oecd_data',
+    description: (
+      'Fetch OECD economic and trade statistics. No API key required. Covers 38 OECD member economies only ' +
+      '(US, EU countries, Japan, Canada, Australia, South Korea, Mexico, etc.). ' +
+      'Use when target market is an OECD country — national accounts, trade flows, labour market data. ' +
+      'Do NOT use for non-OECD countries (Somalia, most of Africa/Middle East) — use World Bank instead.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['indicators', 'trade'], default: 'indicators',
+                   description: 'indicators = key economic indicators; trade = bilateral trade flows' },
+        country: { type: 'string', description: 'ISO-3 country code — OECD members only (e.g. USA, DEU, GBR, JPN, AUS)' },
+        partner: { type: 'string', description: 'Partner country ISO-3 for bilateral trade filter (trade command only)' },
+      },
+      required: ['country'],
+    },
+  },
+  {
+    name: 'fetch_eurostat_data',
+    description: (
+      'Fetch Eurostat EU market and trade statistics. No API key required. ' +
+      'Use when the target market is the EU or a specific EU country. ' +
+      '"trade" command fetches EU import/export flows by CN product code — critical for EU market sizing. ' +
+      '"industry" command fetches EU industrial production index by NACE sector. ' +
+      '"market" command fetches GDP, population, and household income for an EU country. ' +
+      'Call this for any proposition targeting EU or European markets.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:      { type: 'string', enum: ['trade', 'industry', 'market'],
+                        description: 'trade = EU imports/exports by CN product code; industry = production index by NACE sector; market = country GDP/population/income profile' },
+        product_code: { type: 'string', description: 'CN (8-digit) or HS (6-digit) code for trade command (e.g. "04039090" for specialty dairy)' },
+        nace_code:    { type: 'string', description: 'NACE Rev.2 code for industry command (e.g. C10=food, C31=furniture, C26=electronics)' },
+        country:      { type: 'string', description: 'EU country ISO-2 or "EU" for aggregate. Examples: DE, FR, NL, IT, EU' },
+        reporter:     { type: 'string', description: 'EU reporter country for trade command (optional — defaults to EU27 aggregate)' },
+        year:         { type: 'integer', description: 'Data year (default: 2022)' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'fetch_fao_data',
+    description: (
+      'Fetch FAO (UN Food and Agriculture Organization) global food and agricultural data. No API key required. ' +
+      'Use for any food, beverage, or agricultural proposition regardless of country. ' +
+      '"production" = crop/livestock production volumes by country and year. ' +
+      '"trade" = global agricultural export/import flows. ' +
+      '"prices" = producer prices at farm gate. ' +
+      'Critical for: supply availability assessment, competitor country production volumes, ' +
+      'global trade flow sizing, and price benchmarking for food/ag commodities.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:  { type: 'string', enum: ['production', 'trade', 'prices'],
+                    description: 'production = volumes by country; trade = export/import flows; prices = producer price at farm gate' },
+        item:     { type: 'string', description: 'FAO commodity name (e.g. "Camel milk", "Milk", "Wheat", "Cattle", "Sugar cane")' },
+        country:  { type: 'string', description: 'Country name or ISO-2 code for production/prices (default: World aggregate)' },
+        reporter: { type: 'string', description: 'Reporting/exporting country for trade command' },
+        partner:  { type: 'string', description: 'Partner/importing country for trade command (optional filter)' },
+        year:     { type: 'string', description: 'Year or comma-separated years (e.g. "2022" or "2020,2021,2022")' },
+      },
+      required: ['command', 'item'],
+    },
+  },
+  {
+    name: 'fetch_wto_data',
+    description: (
+      'Fetch US tariff schedule (HTS) rates and import trade statistics. No API key required. ' +
+      '"hts" = look up the MFN tariff rate for a product by HTS code — use for any import proposition. ' +
+      '"imports" = US import volume/value for an HTS code from Census data. ' +
+      '"tariff" = tariff corridor context for a specific country→US trade route, including FTA status and AGOA eligibility. ' +
+      'Call "hts" and "tariff" for all import/export propositions to establish landed cost baseline.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:  { type: 'string', enum: ['hts', 'imports', 'tariff'],
+                    description: 'hts = US tariff rate lookup; imports = US import volume stats; tariff = corridor context with FTA/AGOA status' },
+        hts_code: { type: 'string', description: 'HTS code (e.g. "0403.90" for specialty dairy, "9403.30" for furniture)' },
+        country:  { type: 'string', description: 'Origin country for tariff command (e.g. "Somalia", "Germany", "China")' },
+        year:     { type: 'integer', description: 'Data year for imports command (default: 2022)' },
+      },
+      required: ['command'],
+    },
+  },
+
+  // ---------------------------------------------------------------------------
+  // Global news
+  // ---------------------------------------------------------------------------
+  {
+    name: 'fetch_gdelt_news',
+    description: (
+      'Search global news via GDELT Project — 170+ countries, 65+ languages, updated every 15 minutes. No API key required. ' +
+      '"search" returns recent news articles matching a keyword, optionally filtered by country. ' +
+      '"timeline" returns normalised volume trend — shows if coverage is growing or shrinking. ' +
+      'Use for: international market news, competitor mentions in non-English media, country stability signals, ' +
+      'regulatory change news, and trend detection. ' +
+      'Call this for any proposition with an international component or when US web search returns thin results.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['search', 'timeline'], default: 'search',
+                   description: 'search = recent articles list; timeline = normalised volume trend over time' },
+        query:   { type: 'string', description: 'Search query (e.g. "camel milk export", "furniture tariff", "solar panel regulation")' },
+        country: { type: 'string', description: 'Filter by country (e.g. "Somalia", "Germany", "US"). Omit for global results.' },
+        limit:   { type: 'integer', default: 10, description: 'Max articles for search command (default 10, max 25)' },
+      },
+      required: ['query'],
+    },
+  },
+
+  // ---------------------------------------------------------------------------
+  // US government industry-specific tools
+  // ---------------------------------------------------------------------------
+  {
+    name: 'fetch_doe_data',
+    description: (
+      'Fetch DOE EIA energy price benchmarks and NREL renewable resource data. No API key required for reference data; ' +
+      'add EIA_API_KEY to .env for live state-level data. ' +
+      '"electricity" = retail electricity prices by state — use for production facility cost modeling. ' +
+      '"natural_gas" = industrial gas prices. ' +
+      '"renewables" = NREL solar/wind resource quality by state — use for energy/solar propositions. ' +
+      '"fuel_costs" = cross-fuel benchmark table for production planning. ' +
+      'Call this for any proposition involving manufacturing, energy, food processing, or solar/renewable products.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['electricity', 'natural_gas', 'renewables', 'fuel_costs'],
+                   description: 'electricity = retail electricity by state; natural_gas = industrial gas prices; renewables = solar/wind resource; fuel_costs = cross-fuel benchmark table' },
+        state:   { type: 'string', description: '2-letter US state code (e.g. TX, CA, MN). Omit for national average.' },
+        sector:  { type: 'string', description: 'Industry sector for fuel_costs context (e.g. food_processing, furniture, electronics)' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'fetch_fda_device_data',
+    description: (
+      'Fetch FDA medical device clearances, approvals, and safety data via openFDA. No API key required (40 req/min keyless). ' +
+      '"clearances" = 510(k) premarket notifications — use to find predicate devices and understand clearance precedents. ' +
+      '"pma" = PMA approvals for Class III (high-risk) devices. ' +
+      '"recalls" = device recall history — use for product safety risk assessment. ' +
+      '"events" = MAUDE adverse event reports. ' +
+      'Call this for any medical device or diagnostic equipment proposition.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['clearances', 'pma', 'recalls', 'events'],
+                   description: 'clearances = 510(k) notifications; pma = Class III approvals; recalls = enforcement actions; events = MAUDE adverse events' },
+        query:   { type: 'string', description: 'Device name or type (e.g. "glucose monitor", "orthopedic implant", "diagnostic imaging")' },
+        limit:   { type: 'integer', default: 15, description: 'Max results (default 15)' },
+      },
+      required: ['command', 'query'],
+    },
+  },
+  {
+    name: 'fetch_bis_data',
+    description: (
+      'Fetch BIS (Bureau of Industry and Security) export control classifications and notices. No API key required. ' +
+      '"eccn" = Export Control Classification Number guidance for a product type — use for electronics, chemicals, software. ' +
+      '"search" = BIS Federal Register notices for recent export control updates. ' +
+      '"screening" = restricted party and embargo destination context. ' +
+      'Call this for any proposition involving electronics, software, chemicals, or export to China/Russia/Middle East.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:      { type: 'string', enum: ['search', 'eccn', 'screening'],
+                        description: 'search = Federal Register notices; eccn = export classification guidance; screening = embargoed destinations and party check context' },
+        keyword:      { type: 'string', description: 'Keyword for search command (e.g. "semiconductors", "Entity List", "Russia")' },
+        product_type: { type: 'string', description: 'Product type for eccn command: electronics, food, industrial_machinery, software, chemicals, medical_devices' },
+        party_name:   { type: 'string', description: 'Country or party name for screening command (e.g. "China", "Iran", "Somalia")' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'fetch_cbp_data',
+    description: (
+      'Fetch CBP (US Customs and Border Protection) import requirements and tariff rulings. No API key required. ' +
+      '"requirements" = import compliance checklist for a product category (agencies, documents, certifications) — use for ALL import propositions. ' +
+      '"rulings" = CBP binding tariff classification decisions — use to verify HTS code and precedent rulings. ' +
+      '"hts_lookup" = find the right HTS code for a product by keyword. ' +
+      'Call "requirements" for every physical import proposition to surface the full compliance checklist.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:  { type: 'string', enum: ['rulings', 'requirements', 'hts_lookup'],
+                    description: 'rulings = binding CBP classification decisions; requirements = full import compliance checklist; hts_lookup = find HTS code by product keyword' },
+        hts_code: { type: 'string', description: 'HTS code for rulings command (e.g. "0403.90")' },
+        product:  { type: 'string', description: 'Product category for requirements command: food, furniture, electronics, apparel, medical_device, cosmetics' },
+        origin:   { type: 'string', description: 'Country of origin for country-specific notes in requirements command' },
+        keyword:  { type: 'string', description: 'Product keyword for hts_lookup command' },
+        query:    { type: 'string', description: 'Additional keyword to filter rulings results' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'fetch_ftc_data',
+    description: (
+      'Fetch FTC (Federal Trade Commission) labelling rules, marketing claim guidance, and enforcement actions. No API key required. ' +
+      '"guidance" = pre-loaded rules for: health_claims, food_labelling, green_environmental, made_in_usa, textile_labelling, endorsements, pricing. ' +
+      '"rules" = FTC regulations via Federal Register search. ' +
+      '"cases" = FTC enforcement actions. ' +
+      'Call "guidance health_claims" for any food/supplement proposition, "guidance textile_labelling" for apparel, ' +
+      '"guidance endorsements" for influencer/marketing strategy, "guidance made_in_usa" for domestic manufacturing claims.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['rules', 'cases', 'guidance'],
+                   description: 'rules = Federal Register FTC regulations; cases = enforcement actions; guidance = pre-loaded claim rules by topic' },
+        query:   { type: 'string', description: 'Keyword for rules/cases search (e.g. "health claims", "textile labeling")' },
+        topic:   { type: 'string', description: 'Topic for guidance command: health_claims, food_labelling, green_environmental, made_in_usa, textile_labelling, endorsements, pricing' },
+        limit:   { type: 'integer', default: 15, description: 'Max results for cases command' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'fetch_cpsc_data',
+    description: (
+      'Fetch CPSC (Consumer Product Safety Commission) product recalls and safety standards. No API key required. ' +
+      '"recalls" = CPSC recall database — search by product keyword or category. Use for any consumer product proposition. ' +
+      '"standards" = pre-loaded safety standard list for: furniture, electronics, food, toys, apparel, kitchen, medical. ' +
+      '"incidents" = consumer injury/incident reports from SaferProducts.gov. ' +
+      'Call "recalls" and "standards" for all physical consumer product propositions. ' +
+      'A clean recall record is a positive signal; a pattern of recalls is a material regulatory risk.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:      { type: 'string', enum: ['recalls', 'incidents', 'standards'],
+                        description: 'recalls = CPSC recall database; incidents = consumer injury reports; standards = safety standard list by product type' },
+        query:        { type: 'string', description: 'Product keyword for recalls/incidents search (e.g. "furniture", "kitchen tools", "modular")' },
+        category:     { type: 'string', description: 'Product category shorthand for recalls: furniture, electronics, food, toys, apparel, kitchen, medical' },
+        product_type: { type: 'string', description: 'Product type for standards command: furniture, electronics, food, toys, apparel, kitchen, medical' },
+        limit:        { type: 'integer', default: 15, description: 'Max results (default 15)' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'fetch_sba_data',
+    description: (
+      'Fetch SBA (Small Business Administration) size standards, loan programs, and small business statistics. No API key required. ' +
+      '"standards" = SBA small business size threshold for a NAICS code — use for eligibility context. ' +
+      '"loans" = SBA loan program overview (7a, 504, Microloan) — use in financials section for funding options. ' +
+      '"stats" = national small business formation and survival statistics. ' +
+      'Call "loans" for every proposition to give the client financing pathway context. ' +
+      'Call "standards" when industry classification affects funding or contract eligibility.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:    { type: 'string', enum: ['standards', 'loans', 'stats'],
+                      description: 'standards = size standard by NAICS; loans = SBA loan program overview; stats = US small business formation/survival statistics' },
+        naics_code: { type: 'string', description: 'NAICS code for standards command (e.g. "311511" dairy, "337" furniture, "315" apparel)' },
+        industry:   { type: 'string', description: 'NAICS code for industry-specific loan recommendation (loans command)' },
+        state:      { type: 'string', description: '2-letter US state code for stats command (optional — omit for national)' },
+      },
+      required: ['command'],
+    },
+  },
+
+  // ---------------------------------------------------------------------------
+  // Search quality enhancement tools
+  {
+    name: 'search_tavily',
+    description: (
+      'Full-content AI search purpose-built for research agents. ' +
+      'Unlike Brave (which returns 150-word snippets), Tavily returns complete article text with ads and noise filtered out. ' +
+      'Use when Brave results are thin or when a topic needs thorough coverage with full article text. ' +
+      'The research command returns an AI-synthesized answer across all results — use for complex questions that need cross-referenced evidence. ' +
+      'Use after Brave when snippets are insufficient, not instead of Brave.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['search', 'research'], default: 'search',
+          description: 'search=full-content results; research=advanced depth + synthesized answer' },
+        query:  { type: 'string', description: 'Search query or research question' },
+        count:  { type: 'integer', description: 'Number of results (max 10, default 5)' },
+        answer: { type: 'boolean', description: 'Include AI-synthesized answer across results (search command)' },
+        depth:  { type: 'string', enum: ['basic', 'advanced'], description: 'basic=standard; advanced=more thorough, costs 2x credits' },
+        domains: { type: 'array', items: { type: 'string' }, description: 'Restrict results to specific domains' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'search_exa',
+    description: (
+      'Semantic neural search that finds conceptually related content even when exact keywords are absent. ' +
+      'Brave is keyword-based — Exa understands meaning and surfaces relevant pages that keyword search misses. ' +
+      'Use alongside Brave for competitor discovery, market trends, and research angles keywords would not find. ' +
+      'The similar command finds pages semantically similar to a known good source — excellent for discovering competitors when you have one example. ' +
+      'neural type for conceptual discovery; keyword for exact terms; auto lets Exa decide.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['search', 'similar'], default: 'search',
+          description: 'search=query-based; similar=find pages like a given URL' },
+        query:  { type: 'string', description: 'Search query (search command)' },
+        url:    { type: 'string', description: 'Reference URL to find similar pages for (similar command)' },
+        count:  { type: 'integer', description: 'Number of results (max 10, default 5)' },
+        type:   { type: 'string', enum: ['neural', 'keyword', 'auto'], description: 'neural=conceptual, keyword=exact, auto=Exa decides (default: auto)' },
+        since:  { type: 'string', description: 'Only results published after this date (YYYY-MM-DD)' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'fetch_jina_reader',
+    description: (
+      'Fetches the full clean text of any web page — free, no key required. ' +
+      'Use when a Brave or Exa search returns a promising URL and you need to read the complete article rather than relying on the snippet. ' +
+      'Returns the full page as clean markdown, stripped of ads and navigation. ' +
+      'Use read for a single URL; batch for up to 5 URLs at once. ' +
+      'Best applied to the 2-3 highest-value results from a search — not every result.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['read', 'batch'], default: 'read',
+          description: 'read=single URL; batch=multiple URLs (max 5)' },
+        url:  { type: 'string', description: 'Single URL to fetch full content for (read command)' },
+        urls: { type: 'array', items: { type: 'string' }, description: 'List of URLs to fetch (batch command, max 5)' },
+      },
+      required: [],
+    },
+  },
+
+  // Global IP and product safety tools
+  // ---------------------------------------------------------------------------
+  {
+    name: 'fetch_patents_data',
+    description: (
+      'Fetch USPTO patents (PatentsView) and trademark registrations. No API key required. ' +
+      '"patents" = search US patent filings by keyword — use to assess IP landscape and technology crowding. ' +
+      '"trademarks" = search US trademark registrations — use to check brand name conflicts before launch. ' +
+      '"landscape" = combined IP overview: total patents, top assignees (companies), and trademark sample. ' +
+      'Call "trademarks" for brand name validation. Call "landscape" for any proposition in a technology-intensive industry. ' +
+      'High patent count = crowded IP space. Few patents = open innovation opportunity.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['patents', 'trademarks', 'landscape'],
+                   description: 'patents = US patent search; trademarks = US trademark search; landscape = combined IP overview with top patent holders' },
+        query:   { type: 'string', description: 'Technology, product, or brand name to search (e.g. "camel milk processing", "modular kitchen", "solar panel mounting")' },
+        limit:   { type: 'integer', default: 10, description: 'Max results for patents/trademarks commands (default 10)' },
+      },
+      required: ['command', 'query'],
+    },
+  },
+  {
+    name: 'fetch_rapex_data',
+    description: (
+      'Fetch EU Safety Gate (formerly RAPEX) product safety alerts. No API key required. ' +
+      '"summary" = pre-loaded EU safety risk profile for a product category: furniture, electronics, clothing_apparel, food, toys, cosmetics. ' +
+      '"alerts" = search live EU Safety Gate notifications. ' +
+      'Use for any proposition targeting EU or European markets. ' +
+      'Call "summary" to quickly understand EU safety alert patterns and key hazards for a product category. ' +
+      'A high EU alert volume means stronger market surveillance and higher compliance scrutiny at EU customs.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:          { type: 'string', enum: ['alerts', 'summary'],
+                            description: 'alerts = search live EU Safety Gate notifications; summary = pre-loaded risk profile by product category' },
+        product_category: { type: 'string', description: 'Category for summary command: furniture, electronics, clothing_apparel, food, toys, cosmetics' },
+        query:            { type: 'string', description: 'Product keyword for alerts search (e.g. "furniture", "kitchen tools")' },
+        category:         { type: 'string', description: 'Category filter for alerts search' },
+        year:             { type: 'integer', description: 'Alert year filter (e.g. 2023)' },
+        limit:            { type: 'integer', default: 15, description: 'Max alerts to return (default 15)' },
+      },
+      required: ['command'],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -460,6 +896,317 @@ function executeTool(toolName, input) {
                          '--year', String(input.year || 2022)];
         if (input.country_code) impArgs.push('--country', input.country_code);
         return execPython('tools/fetch_itc_data.py', impArgs);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // International economic data tools (no API key required)
+    // ---------------------------------------------------------------------------
+
+    case 'fetch_world_bank': {
+      if (input.command === 'indicators') {
+        const wbArgs = ['indicators', input.country];
+        if (input.year) wbArgs.push('--year', String(input.year));
+        return execPython('tools/fetch_world_bank.py', wbArgs);
+      } else {
+        // compare command
+        if (!input.country2) return { error: 'country2 is required for the compare command' };
+        const cmpArgs = ['compare', input.country, input.country2];
+        if (input.indicator) cmpArgs.push('--indicator', input.indicator);
+        return execPython('tools/fetch_world_bank.py', cmpArgs);
+      }
+    }
+
+    case 'fetch_imf_data': {
+      if (input.command === 'outlook') {
+        return execPython('tools/fetch_imf_data.py', ['outlook', input.country]);
+      } else {
+        return execPython('tools/fetch_imf_data.py', ['indicators', input.country]);
+      }
+    }
+
+    case 'fetch_oecd_data': {
+      if (input.command === 'trade') {
+        const oecdArgs = ['trade', input.country];
+        if (input.partner) oecdArgs.push('--partner', input.partner);
+        return execPython('tools/fetch_oecd_data.py', oecdArgs);
+      } else {
+        return execPython('tools/fetch_oecd_data.py', ['indicators', input.country]);
+      }
+    }
+
+    case 'fetch_eurostat_data': {
+      if (input.command === 'trade') {
+        const euArgs = ['trade', input.product_code];
+        if (input.reporter) euArgs.push('--reporter', input.reporter);
+        if (input.year) euArgs.push('--year', String(input.year));
+        return execPython('tools/fetch_eurostat_data.py', euArgs);
+      } else if (input.command === 'industry') {
+        const euIndArgs = ['industry', input.nace_code];
+        if (input.country) euIndArgs.push('--country', input.country);
+        if (input.year) euIndArgs.push('--year', String(input.year));
+        return execPython('tools/fetch_eurostat_data.py', euIndArgs);
+      } else {
+        // market command
+        return execPython('tools/fetch_eurostat_data.py', ['market', input.country || 'EU']);
+      }
+    }
+
+    case 'fetch_fao_data': {
+      if (input.command === 'trade') {
+        const faoArgs = ['trade', input.item];
+        if (input.reporter) faoArgs.push('--reporter', input.reporter);
+        if (input.partner)  faoArgs.push('--partner',  input.partner);
+        if (input.year)     faoArgs.push('--year',     String(input.year));
+        return execPython('tools/fetch_fao_data.py', faoArgs);
+      } else if (input.command === 'prices') {
+        const priceArgs = ['prices', input.item];
+        if (input.country) priceArgs.push('--country', input.country);
+        if (input.year)    priceArgs.push('--year',    String(input.year));
+        return execPython('tools/fetch_fao_data.py', priceArgs);
+      } else {
+        // production command
+        const prodArgs = ['production', input.item];
+        if (input.country) prodArgs.push('--country', input.country);
+        if (input.year)    prodArgs.push('--year',    String(input.year));
+        return execPython('tools/fetch_fao_data.py', prodArgs);
+      }
+    }
+
+    case 'fetch_wto_data': {
+      if (input.command === 'imports') {
+        const impArgs = ['imports', input.hts_code];
+        if (input.year) impArgs.push('--year', String(input.year));
+        return execPython('tools/fetch_wto_data.py', impArgs);
+      } else if (input.command === 'tariff') {
+        if (!input.country) return { error: 'country is required for the tariff command' };
+        return execPython('tools/fetch_wto_data.py', ['tariff', input.country, input.hts_code || '']);
+      } else {
+        // hts command
+        if (!input.hts_code) return { error: 'hts_code is required for the hts command' };
+        return execPython('tools/fetch_wto_data.py', ['hts', input.hts_code]);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Global news tool
+    // ---------------------------------------------------------------------------
+
+    case 'fetch_gdelt_news': {
+      if (input.command === 'timeline') {
+        const tlArgs = ['timeline', input.query];
+        if (input.country) tlArgs.push('--country', input.country);
+        return execPython('tools/fetch_gdelt_news.py', tlArgs);
+      } else {
+        // search command
+        const gdArgs = ['search', input.query];
+        if (input.country) gdArgs.push('--country', input.country);
+        if (input.limit)   gdArgs.push('--limit',   String(input.limit));
+        return execPython('tools/fetch_gdelt_news.py', gdArgs);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // US government industry-specific tools
+    // ---------------------------------------------------------------------------
+
+    case 'fetch_doe_data': {
+      if (input.command === 'natural_gas') {
+        const ngArgs = ['natural_gas'];
+        if (input.state) ngArgs.push('--state', input.state);
+        return execPython('tools/fetch_doe_data.py', ngArgs);
+      } else if (input.command === 'renewables') {
+        const renArgs = ['renewables'];
+        if (input.state) renArgs.push('--state', input.state);
+        return execPython('tools/fetch_doe_data.py', renArgs);
+      } else if (input.command === 'fuel_costs') {
+        const fuelArgs = ['fuel_costs'];
+        if (input.sector) fuelArgs.push('--sector', input.sector);
+        return execPython('tools/fetch_doe_data.py', fuelArgs);
+      } else {
+        // electricity command
+        const elecArgs = ['electricity'];
+        if (input.state) elecArgs.push('--state', input.state);
+        return execPython('tools/fetch_doe_data.py', elecArgs);
+      }
+    }
+
+    case 'fetch_fda_device_data': {
+      if (input.command === 'pma') {
+        return execPython('tools/fetch_fda_device_data.py', [
+          'pma', input.query, '--limit', String(input.limit || 10)
+        ]);
+      } else if (input.command === 'recalls') {
+        return execPython('tools/fetch_fda_device_data.py', [
+          'recalls', input.query, '--limit', String(input.limit || 15)
+        ]);
+      } else if (input.command === 'events') {
+        return execPython('tools/fetch_fda_device_data.py', [
+          'events', input.query, '--limit', String(input.limit || 10)
+        ]);
+      } else {
+        // clearances command
+        if (!input.query) return { error: 'query is required for the clearances command' };
+        return execPython('tools/fetch_fda_device_data.py', [
+          'clearances', input.query, '--limit', String(input.limit || 15)
+        ]);
+      }
+    }
+
+    case 'fetch_bis_data': {
+      if (input.command === 'eccn') {
+        if (!input.product_type) return { error: 'product_type is required for the eccn command' };
+        return execPython('tools/fetch_bis_data.py', ['eccn', input.product_type]);
+      } else if (input.command === 'screening') {
+        if (!input.party_name) return { error: 'party_name is required for the screening command' };
+        return execPython('tools/fetch_bis_data.py', ['screening', input.party_name]);
+      } else {
+        // search command
+        if (!input.keyword) return { error: 'keyword is required for the search command' };
+        return execPython('tools/fetch_bis_data.py', ['search', input.keyword]);
+      }
+    }
+
+    case 'fetch_cbp_data': {
+      if (input.command === 'requirements') {
+        if (!input.product) return { error: 'product is required for the requirements command' };
+        const reqArgs = ['requirements', input.product];
+        if (input.origin) reqArgs.push('--origin', input.origin);
+        return execPython('tools/fetch_cbp_data.py', reqArgs);
+      } else if (input.command === 'hts_lookup') {
+        if (!input.keyword) return { error: 'keyword is required for the hts_lookup command' };
+        return execPython('tools/fetch_cbp_data.py', ['hts_lookup', input.keyword]);
+      } else {
+        // rulings command
+        if (!input.hts_code) return { error: 'hts_code is required for the rulings command' };
+        const rulArgs = ['rulings', input.hts_code];
+        if (input.query) rulArgs.push('--query', input.query);
+        return execPython('tools/fetch_cbp_data.py', rulArgs);
+      }
+    }
+
+    case 'fetch_ftc_data': {
+      if (input.command === 'rules') {
+        const ftcArgs = ['rules'];
+        if (input.query) ftcArgs.push('--query', input.query);
+        return execPython('tools/fetch_ftc_data.py', ftcArgs);
+      } else if (input.command === 'cases') {
+        const caseArgs = ['cases'];
+        if (input.query) caseArgs.push('--query', input.query);
+        if (input.limit) caseArgs.push('--limit', String(input.limit));
+        return execPython('tools/fetch_ftc_data.py', caseArgs);
+      } else {
+        // guidance command
+        if (!input.topic) return { error: 'topic is required for the guidance command' };
+        return execPython('tools/fetch_ftc_data.py', ['guidance', input.topic]);
+      }
+    }
+
+    case 'fetch_cpsc_data': {
+      if (input.command === 'incidents') {
+        const incArgs = ['incidents'];
+        if (input.query) incArgs.push('--query', input.query);
+        if (input.limit) incArgs.push('--limit', String(input.limit));
+        return execPython('tools/fetch_cpsc_data.py', incArgs);
+      } else if (input.command === 'standards') {
+        if (!input.product_type) return { error: 'product_type is required for the standards command' };
+        return execPython('tools/fetch_cpsc_data.py', ['standards', input.product_type]);
+      } else {
+        // recalls command
+        const recArgs = ['recalls'];
+        if (input.query)    recArgs.push('--query',    input.query);
+        if (input.category) recArgs.push('--category', input.category);
+        if (input.limit)    recArgs.push('--limit',    String(input.limit));
+        return execPython('tools/fetch_cpsc_data.py', recArgs);
+      }
+    }
+
+    case 'fetch_sba_data': {
+      if (input.command === 'loans') {
+        const loanArgs = ['loans'];
+        if (input.industry) loanArgs.push('--industry', input.industry);
+        return execPython('tools/fetch_sba_data.py', loanArgs);
+      } else if (input.command === 'stats') {
+        const statsArgs = ['stats'];
+        if (input.state) statsArgs.push('--state', input.state);
+        return execPython('tools/fetch_sba_data.py', statsArgs);
+      } else {
+        // standards command
+        if (!input.naics_code) return { error: 'naics_code is required for the standards command' };
+        return execPython('tools/fetch_sba_data.py', ['standards', input.naics_code]);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Global IP / product safety tools
+    // ---------------------------------------------------------------------------
+
+    case 'fetch_patents_data': {
+      if (input.command === 'trademarks') {
+        return execPython('tools/fetch_patents_data.py', [
+          'trademarks', input.query, '--limit', String(input.limit || 10)
+        ]);
+      } else if (input.command === 'landscape') {
+        return execPython('tools/fetch_patents_data.py', ['landscape', input.query]);
+      } else {
+        // patents command
+        if (!input.query) return { error: 'query is required for the patents command' };
+        return execPython('tools/fetch_patents_data.py', [
+          'patents', input.query, '--limit', String(input.limit || 10)
+        ]);
+      }
+    }
+
+    case 'fetch_rapex_data': {
+      if (input.command === 'summary') {
+        if (!input.product_category) return { error: 'product_category is required for the summary command' };
+        return execPython('tools/fetch_rapex_data.py', ['summary', input.product_category]);
+      } else {
+        // alerts command
+        const rapexArgs = ['alerts'];
+        if (input.query)    rapexArgs.push('--query',    input.query);
+        if (input.category) rapexArgs.push('--category', input.category);
+        if (input.year)     rapexArgs.push('--year',     String(input.year));
+        if (input.limit)    rapexArgs.push('--limit',    String(input.limit));
+        return execPython('tools/fetch_rapex_data.py', rapexArgs);
+      }
+    }
+
+    // Search quality enhancement tools
+    case 'search_tavily': {
+      if (!input.query) return { error: 'query is required' };
+      const tavArgs = [input.command || 'search', input.query];
+      if (input.count)  tavArgs.push('--count', String(input.count));
+      if (input.depth)  tavArgs.push('--depth', input.depth);
+      if (input.answer) tavArgs.push('--answer');
+      if (input.domains && input.domains.length) tavArgs.push('--domains', ...input.domains);
+      return execPython('tools/search_tavily.py', tavArgs);
+    }
+
+    case 'search_exa': {
+      if (input.command === 'similar') {
+        if (!input.url) return { error: 'url is required for the similar command' };
+        const exaSimilarArgs = ['similar', input.url];
+        if (input.count) exaSimilarArgs.push('--count', String(input.count));
+        return execPython('tools/search_exa.py', exaSimilarArgs);
+      } else {
+        if (!input.query) return { error: 'query is required for the search command' };
+        const exaArgs = ['search', input.query];
+        if (input.count) exaArgs.push('--count', String(input.count));
+        if (input.type)  exaArgs.push('--type',  input.type);
+        if (input.since) exaArgs.push('--since', input.since);
+        return execPython('tools/search_exa.py', exaArgs);
+      }
+    }
+
+    case 'fetch_jina_reader': {
+      if (input.command === 'batch') {
+        const urls = (input.urls || []).slice(0, 5);
+        if (!urls.length) return { error: 'urls array is required for the batch command' };
+        return execPython('tools/fetch_jina_reader.py', ['batch', ...urls]);
+      } else {
+        if (!input.url) return { error: 'url is required for the read command' };
+        return execPython('tools/fetch_jina_reader.py', ['read', input.url]);
       }
     }
 

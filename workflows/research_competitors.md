@@ -101,6 +101,35 @@ python tools/search_brave.py --query "[product_type] [target_country] best brand
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
+### 1b. Supplement with Official Data Sources
+
+After completing all Brave searches, enrich the competitive picture with structured data.
+Run all of the following unless a tool errors (log in `data_gaps`, continue).
+
+**IP landscape — run for all propositions:**
+```
+python tools/fetch_patents_data.py landscape "[product_type]"
+```
+Use to: identify which companies hold the most patents in this technology/product area. Top patent assignees are often the strongest competitors or most defensible incumbents. Few patents = open market.
+
+**Trademark screening — always run:**
+```
+python tools/fetch_patents_data.py trademarks "[product_type]"
+```
+Use to: find registered US trademarks in this product category. Reveals active brand names and potential naming conflicts the client should know about before brand development.
+
+**GDELT competitor news — run for international propositions:**
+```
+python tools/fetch_gdelt_news.py search "[product_type] brand market [target_country]" --limit 10
+```
+Use to: surface recent news coverage about competitor products in the target market. Useful for identifying competitive events (acquisitions, product launches, recalls) that web search may have missed.
+
+**SEC EDGAR — run to find public competitors' financials:**
+```
+python tools/fetch_sec_edgar.py search --query "[product_type] [industry]" --form 10-K --limit 10
+```
+Use to: identify publicly traded companies in this space. If found, look up CIK to get revenue scale — public competitor revenues provide the strongest financial benchmarks.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following for each identified competitor.

@@ -89,6 +89,30 @@ Do not add extra delays — the tool handles it.
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
+### 1b. Supplement with Official Data Sources
+
+After completing all Brave searches, enrich the distribution picture with authoritative structured data.
+Run all of the following unless a tool errors (log errors in `data_gaps`, continue).
+
+**CBP import compliance obligations (run for all import propositions where origin_country != target_country):**
+```
+python tools/fetch_cbp_data.py requirements [product_category] --origin [origin_country]
+```
+Use to: establish the official customs compliance checklist for this trade corridor — Importer of Record obligations, customs bond, ISF filing, and any country-specific entry restrictions. Feeds directly into `customs_and_import_process`.
+
+**WTO tariff data (run for all import propositions):**
+```
+python tools/fetch_wto_data.py hts [product_hts_code]
+python tools/fetch_wto_data.py tariff [origin_country] [product_hts_code]
+```
+Use to: establish the MFN tariff rate and any FTA or AGOA preferential rate for the trade corridor. Feeds landed cost modeling in the financials section and informs import duty disclosure in `customs_and_import_process`.
+
+**GDELT competitor and distribution news (run for all international propositions):**
+```
+python tools/fetch_gdelt_news.py search "[product_type] distribution channel [target_country]" --limit 10
+```
+Use to: surface recent news about distribution channel shifts, new retail partnerships, or logistics disruptions relevant to this product category. Helps validate or challenge data from Brave searches.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

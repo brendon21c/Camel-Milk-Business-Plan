@@ -82,14 +82,13 @@ They share the same Supabase project. The website writes intake data; the backen
 **Decision (Session 29):** We are close to the end of V2. Adding the international research pipeline now — translation APIs, language detection, and international data tools — before the final V2 E2E test. This unlocks multi-market propositions and non-English source research.
 
 **Build order:**
-1. Sign up for DeepL API free tier, Google Cloud Translation free tier, MyMemory — add keys to `.env`
-2. Build `tools/translate_text.py` — routes to DeepL (European) or Google Cloud (Arabic/CJK/other) based on detected language
-3. Build `tools/detect_language.py` — `lingua-py` offline, returns ISO code + confidence
-4. Build `tools/fetch_un_comtrade.py` — bilateral trade flows, free with registration
-5. Build `tools/fetch_world_bank.py` — economic indicators, fully free, no key
-6. Build `tools/fetch_gdelt_news.py` — global news, free, no key
-7. Build `tools/normalize_international_data.py` — dates, currency, number format normalization
-8. Wire translation layer into `run.js` — called by research agents when `target_country` or `origin_country` is non-English
+1. Build `tools/fetch_un_comtrade.py` — bilateral trade flows, free with registration (UN Comtrade key needed)
+2. ~~Build `tools/translate_text.py`~~ — **DROPPED.** Agents translate non-English sources inline using their own Claude capabilities. No external translation API needed.
+3. ~~Build `tools/detect_language.py`~~ — **DROPPED.** Agents detect language inline.
+4. ~~Build `tools/normalize_international_data.py`~~ — **DROPPED.** Agents normalize inline.
+5. `tools/fetch_world_bank.py` ✅ Built (Session 30)
+6. `tools/fetch_gdelt_news.py` ✅ Built (Session 30)
+7. `workflows/international_research.md` ✅ Updated — reflects agent-inline translation approach
 
 See the comprehensive API master list below for all APIs planned across V2 and V3.
 
@@ -158,6 +157,16 @@ If the intake form submission path hasn't been activated yet (org status still `
 ---
 
 ## Session Log
+
+### Session 30 — No-key API tools, search quality tools, translation decision (2026-04-17)
+
+- **16 no-key API tools built and registered** — World Bank, IMF, OECD, Eurostat, FAO, WTO/HTS, GDELT, DOE/EIA, FDA Device, BIS, CBP, FTC, CPSC, SBA, USPTO Patents+Trademarks, EU RAPEX. All registered in `RESEARCH_TOOLS` (with "use when" language) and `executeTool`. All 10 research workflow `.md` files updated with explicit Step 1b tool-call sections.
+- **Translation decision** — no external translation API. Agents (Claude) translate non-English sources inline using their own multilingual capabilities. Agents generate native-language Brave queries directly from `target_country` input. `international_research.md` rewritten to reflect this. `translate_text.py`, `detect_language.py`, `normalize_international_data.py` dropped from build plan.
+- **Search quality tools built** — three tools that materially improve research depth:
+  - `tools/search_tavily.py` — returns full article text (not snippets). Use after Brave when snippets are insufficient. `TAVILY_API_KEY` pending — sign up at tavily.com (1,000 free calls/month).
+  - `tools/search_exa.py` — semantic/neural search. Finds relevant content keyword search misses. `similar` command finds competitors from one known URL. `EXA_API_KEY` pending — sign up at exa.ai (1,000 free/month).
+  - `tools/fetch_jina_reader.py` — reads any URL and returns full clean markdown. Free, no key, already working. Optional `JINA_API_KEY` for higher rate limits.
+- **HANDOFF pricing corrected** — DeepL free tier is 50k chars/month (not 500k as previously noted).
 
 ### Session 29 — International API planning, V2 end-game (2026-04-17)
 
@@ -492,6 +501,14 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 
 ## API Keys (.env)
 
+**Search quality tools (V2 — new):**
+
+| Key | Variable | Notes |
+|---|---|---|
+| Tavily | `TAVILY_API_KEY` | Sign up at tavily.com — 1,000 free calls/month. Returns full article text, not snippets. |
+| Exa AI | `EXA_API_KEY` | Sign up at exa.ai — 1,000 free searches/month. Semantic/neural search. |
+| Jina Reader | `JINA_API_KEY` | Optional — jina.ai. Free without key (rate limited). Higher limits with free key. |
+
 **Currently active (V1):**
 
 | Key | Variable |
@@ -530,17 +547,9 @@ Everything we plan to integrate across V2 and V3, organized by category. Include
 
 ---
 
-### Translation & Language (V2 — starting now)
+### Translation & Language
 
-| API | Variable | Free Tier | Paid Rate | Best For | Action |
-|---|---|---|---|---|---|
-| **DeepL API** | `DEEPL_API_KEY` | 500k chars/month | $25/1M chars | European languages (DE, FR, ES, IT, PL, NL, PT, etc.) | Sign up at deepl.com/pro-api |
-| **Google Cloud Translation** | `GOOGLE_TRANSLATE_API_KEY` | 500k chars/month | $20/1M chars | Arabic, CJK, 100+ languages, RTL | Enable in Google Cloud Console |
-| **MyMemory API** | `MYMEMORY_API_KEY` | 10k chars/day | Contact for paid | Low-volume fallback / overflow | Register at mymemory.translated.net |
-
-**Language detection (no API cost):** `pip install lingua-language-detector` — 75 languages, offline, better than `langdetect` on short text. No key needed.
-
-Combined DeepL + Google free tier = 1M chars/month. Typical international run (~10 sources × 2k chars) = 20k chars. You'd need 50 international runs/month before paying anything.
+**Decision (Session 30):** No external translation API. Agents (Claude) translate non-English sources inline during the tool-use loop. Claude handles all languages natively — quality is better than any translation API and no additional cost/key/signup is needed. `international_research.md` updated to reflect this. `translate_text.py`, `detect_language.py`, and `normalize_international_data.py` are dropped from the build plan.
 
 ---
 

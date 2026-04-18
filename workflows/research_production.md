@@ -103,6 +103,37 @@ python tools/search_brave.py --query "[industry] production facility specificati
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
+### 1b. Supplement with Official Data Sources
+
+After completing all Brave searches, enrich production research with authoritative data sources.
+Run all of the following unless a tool errors (log errors in `data_gaps`, continue).
+
+**Energy cost benchmarks — always run for manufacturing propositions:**
+```
+python tools/fetch_doe_data.py fuel_costs --sector [industry_sector]
+python tools/fetch_doe_data.py electricity --state [state_if_us_manufacturing]
+```
+Use to: establish authoritative energy cost inputs for the production cost model. Electricity and natural gas are major operating costs for most manufacturing operations. State-specific rates vary up to 4x — use the state where production will occur.
+
+**IP landscape — run for technology-intensive or innovative product propositions:**
+```
+python tools/fetch_patents_data.py landscape "[product_type] manufacturing"
+```
+Use to: assess whether the production process is patent-protected. High patent count in manufacturing methods = IP risk and potential licensing costs. Few patents = opportunity.
+
+**CPSC safety standards — run for all consumer product manufacturing:**
+```
+python tools/fetch_cpsc_data.py standards [product_type_category]
+```
+Product category options: furniture, electronics, food, toys, apparel, kitchen, medical.
+Use to: identify which safety standards apply to the production process and what quality control systems must be built into the manufacturing line.
+
+**Food and agriculture raw materials — run for food/beverage propositions:**
+```
+python tools/fetch_fao_data.py production "[primary_input_commodity]" --country [origin_country]
+```
+Use to: verify authoritative data on raw material production volumes and availability in the origin country. Directly informs supply availability assessment.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

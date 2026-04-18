@@ -86,6 +86,43 @@ After running all primary and triggered fallback queries, assess the overall qua
 
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
 
+### 1b. Supplement with Official Legal and Compliance Data
+
+After completing all Brave searches, fetch authoritative compliance data.
+Run all of the following unless a tool errors (log in `data_gaps`, continue).
+
+**Trademark conflict screening — always run:**
+```
+python tools/fetch_patents_data.py trademarks "[product_type]"
+python tools/fetch_patents_data.py trademarks "[proposed_brand_name_if_known]"
+```
+Use to: surface existing US trademark registrations in this product category. A conflicting live trademark is a material legal risk that must be disclosed.
+
+**Export control and sanctions screening (run for all import propositions):**
+```
+python tools/fetch_bis_data.py screening [origin_country]
+```
+Use to: check whether the origin country appears on any BIS embargoed or enhanced-scrutiny list. OFAC sanctions involving the origin country must be disclosed as a legal risk.
+
+**Electronics/chemicals/software propositions — ECCN classification:**
+```
+python tools/fetch_bis_data.py eccn [product_type]
+```
+Use to: determine if BIS export controls affect sourcing or resale of the product.
+
+**CBP import compliance obligations (for import propositions):**
+```
+python tools/fetch_cbp_data.py requirements [product_category] --origin [origin_country]
+```
+Use to: establish the legal compliance checklist for importing — Importer of Record obligations, customs bond requirement, ISF filing, and any country-specific restrictions.
+
+**FTC marketing claim compliance:**
+```
+python tools/fetch_ftc_data.py guidance health_claims
+python tools/fetch_ftc_data.py guidance endorsements
+```
+Use to: establish FTC legal boundaries for how the product can be marketed. FTC violations are legal risks that belong in the legal section.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following:
