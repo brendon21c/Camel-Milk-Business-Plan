@@ -183,6 +183,47 @@ python tools/fetch_sba_data.py stats
 ```
 Use to: add national small business formation and survival rate context when the proposition involves entering the US as a small business.
 
+**UN Comtrade — bilateral trade flows (import/export propositions):**
+If the proposition involves cross-border trade, call `fetch_un_comtrade` to get official bilateral trade data. Requires a 6-digit HS code for the product.
+```
+fetch_un_comtrade top_partners [reporter_iso3] [hs_code] --flow M --count 10
+fetch_un_comtrade bilateral [origin_iso3] [target_iso3] [hs_code]
+```
+Use to: size the actual import market, identify which countries currently dominate supply, confirm the trade route exists in official data.
+**Important:** HS codes cover a full commodity class (all sub-types, all species, all grades). Always cross-reference with a web search to confirm what specifically comprises the reported volume before attributing it to the proposition's specific product.
+
+### 1c. Search Quality Escalation
+
+After completing Brave searches and government data calls, evaluate coverage quality.
+For any critical research area where results are still thin — fewer than 3 useful sources,
+or only snippet-level data on a key question — use these escalation tools:
+
+**Tavily — full article text when Brave snippets are insufficient:**
+Call `search_tavily` when a Brave result is promising but the snippet does not give enough
+detail to extract a concrete figure or conclusion. Returns complete article text.
+```
+search_tavily search "[specific question needing full coverage]" --count 5
+```
+
+**Exa — semantic search when keyword search misses:**
+Call `search_exa` when relevant content likely exists but Brave is not surfacing it.
+Exa understands meaning, not just keywords — best for competitor discovery, niche market
+angles, and research where the exact terminology is uncertain.
+```
+search_exa search "[conceptual query]" --type neural --count 5
+```
+
+**Jina — read a full page when a URL needs complete content:**
+Call `fetch_jina_reader` when a Brave or Exa result returns a promising URL and you need
+the full page rather than the snippet.
+```
+fetch_jina_reader read "[url from search results]"
+```
+
+These are **escalation tools** — use when Brave coverage is insufficient for a specific
+research area. Do not run all three on every topic. One or two targeted calls per gap
+is the right pattern.
+
 ### 2. Extract and Synthesise
 
 From the search results, extract the following. Pull concrete figures wherever available.

@@ -7,7 +7,7 @@
 
 An automated business viability intelligence system. Generic by design — first proposition is camel milk powder export from Somalia to the US. Future propositions are new DB rows, no new code needed.
 
-Pipeline: Perplexity briefings → research agents → assembler → branded PDF → Resend email → client inbox.
+Pipeline: Perplexity briefings → research agents → quality gate → **fact-check agent** → assembler → branded PDF → Resend email → client inbox.
 
 **There are two projects:**
 
@@ -157,6 +157,21 @@ If the intake form submission path hasn't been activated yet (org status still `
 ---
 
 ## Session Log
+
+### Session 31 — Search quality keys added, UN Comtrade built (2026-04-18)
+
+- **Exa AI key added** — `EXA_API_KEY` in `.env`. Variable name mismatch fixed (`EXA_AI_API_KEY` → `EXA_API_KEY`). Smoke tested and live.
+- **Tavily key added** — `TAVILY_API_KEY` in `.env`. Smoke tested and live.
+- **Jina key added** — `JINA_API_KEY` in `.env`. Smoke tested and live (FDA page blocked by bot protection — expected, tool is functional).
+- **UN Comtrade key added** — `UN_COMTRADE_API_KEY` in `.env` (primary key from Free APIs subscription). OpenCorporates skipped — $2,000/year, not worth it. Brave `site:opencorporates.com` queries cover the same ground.
+- **`tools/fetch_un_comtrade.py` built and registered** — two commands:
+  - `bilateral <reporter> <partner> <hs_code>` — export + import flows between two specific countries for a product
+  - `top_partners <reporter> <hs_code> [--flow X|M]` — ranked list of trading partners by trade value
+  - Accepts ISO-3 country codes, converts to M49 internally. Includes 50+ country lookup table.
+  - Smoke tested: US milk powder (040210) imports — returned real 2023 data (New Zealand #1 at $3.2M, no African suppliers in top 5 — confirms the market gap for Somalia camel milk).
+  - Registered in `RESEARCH_TOOLS` and `executeTool` in `run.js`.
+- **Key insight on Comtrade free tier** — `partnerCode: 0` does NOT mean "all partners" in v1. Omit partnerCode entirely to get the per-partner breakdown needed for top_partners ranking.
+- **Fact-check agent built** — new `runFactCheckAgent()` in `run.js`. Runs after the 2-minute cooldown, before the assembler. Uses Sonnet in a tool-use loop with web_search, Tavily, Exa, and Jina only (no data tools — it verifies, not researches). Checks: (1) category-level data misrepresentation, (2) unsupported statistics, (3) regulatory claims, (4) named competitors. Non-fatal — pipeline continues on failure, assembler gets a caution stub. Results injected into assembler system prompt; assembler applies corrections and qualifications before writing. `FACT_CHECK_TOOLS` defined as a filtered subset of RESEARCH_TOOLS. `workflows/fact_check_research.md` written. Does not break prompt caching (researchContext cached prefix unchanged).
 
 ### Session 30 — No-key API tools, search quality tools, translation decision (2026-04-17)
 
@@ -505,9 +520,10 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 
 | Key | Variable | Notes |
 |---|---|---|
-| Tavily | `TAVILY_API_KEY` | Sign up at tavily.com — 1,000 free calls/month. Returns full article text, not snippets. |
-| Exa AI | `EXA_API_KEY` | Sign up at exa.ai — 1,000 free searches/month. Semantic/neural search. |
-| Jina Reader | `JINA_API_KEY` | Optional — jina.ai. Free without key (rate limited). Higher limits with free key. |
+| Tavily | `TAVILY_API_KEY` | ✅ Active — 1,000 free calls/month. Returns full article text, not snippets. |
+| Exa AI | `EXA_API_KEY` | ✅ Active — 1,000 free searches/month. Semantic/neural search. |
+| Jina Reader | `JINA_API_KEY` | ✅ Active — higher rate limits with key. Free without key too. |
+| UN Comtrade | `UN_COMTRADE_API_KEY` | ✅ Active — Free APIs tier (comtrade-v1). 500 req/hr. `tools/fetch_un_comtrade.py` built. |
 
 **Currently active (V1):**
 

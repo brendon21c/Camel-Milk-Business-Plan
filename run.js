@@ -402,6 +402,39 @@ const RESEARCH_TOOLS = [
   },
 
   // ---------------------------------------------------------------------------
+  // International trade flows
+  // ---------------------------------------------------------------------------
+  {
+    name: 'fetch_un_comtrade',
+    description: (
+      'Fetch bilateral trade flow data from UN Comtrade — official trade statistics for all countries, by HS commodity code. ' +
+      'Requires UN_COMTRADE_API_KEY. Free tier: 500 req/hr. Data typically lags 1–2 years (2023 is current). ' +
+      '"bilateral" returns export and import values between two specific countries for a product. ' +
+      '"top_partners" returns the top trading partners for a country/product combination — use to find who a country actually trades with. ' +
+      'Always requires an HS code — use 6-digit HS codes for specificity (e.g. 040210 = milk powder, 940360 = wooden furniture). ' +
+      'IMPORTANT LIMITATION: HS codes aggregate all sub-types within a category — species, material, grade, and origin are not separated at the 6-digit level. ' +
+      'A country appearing as a top supplier means they supply that commodity class broadly, not necessarily the specific product in this proposition. ' +
+      'Always cross-reference Comtrade volume data with web_search or search_exa to verify what actually comprises the reported trade flow. ' +
+      'Use Comtrade for: verifying a trade route exists, sizing the total commodity category, identifying the import landscape. ' +
+      'Treat results as a market-sizing proxy — not as direct proof of competitor activity in the specific product.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:  { type: 'string', enum: ['bilateral', 'top_partners'],
+                    description: 'bilateral = flows between two specific countries; top_partners = ranked list of trading partners' },
+        reporter: { type: 'string', description: 'Reporting country ISO-3 code (e.g. SOM, USA, ARE, DEU, KEN)' },
+        partner:  { type: 'string', description: 'Partner country ISO-3 code — bilateral command only (e.g. USA, CHN, GBR)' },
+        hs_code:  { type: 'string', description: '6-digit HS commodity code (e.g. 040210 = milk powder, 940360 = wooden furniture, 620342 = cotton trousers)' },
+        flow:     { type: 'string', enum: ['X', 'M'], description: 'X = exports, M = imports — top_partners command only (default: X)' },
+        year:     { type: 'integer', description: 'Trade year (default: 2023 — most recent reliable data)' },
+        count:    { type: 'integer', description: 'Number of partners to return for top_partners command (default 10, max 20)' },
+      },
+      required: ['command', 'reporter', 'hs_code'],
+    },
+  },
+
+  // ---------------------------------------------------------------------------
   // Global news
   // ---------------------------------------------------------------------------
   {
@@ -704,6 +737,14 @@ const RESEARCH_TOOLS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Fact-check agent tools — web verification only, no data-collection tools.
+// The fact-checker reads what research agents found and verifies it via search.
+// ---------------------------------------------------------------------------
+const FACT_CHECK_TOOLS = RESEARCH_TOOLS.filter(t =>
+  ['web_search', 'search_tavily', 'search_exa', 'fetch_jina_reader'].includes(t.name)
+);
+
+// ---------------------------------------------------------------------------
 // Python tool execution
 // ---------------------------------------------------------------------------
 
@@ -985,6 +1026,27 @@ function executeTool(toolName, input) {
         // hts command
         if (!input.hts_code) return { error: 'hts_code is required for the hts command' };
         return execPython('tools/fetch_wto_data.py', ['hts', input.hts_code]);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // International trade flows
+    // ---------------------------------------------------------------------------
+
+    case 'fetch_un_comtrade': {
+      if (!input.reporter || !input.hs_code) return { error: 'reporter and hs_code are required' };
+      if (input.command === 'bilateral') {
+        if (!input.partner) return { error: 'partner is required for the bilateral command' };
+        const bilArgs = ['bilateral', input.reporter, input.partner, input.hs_code];
+        if (input.year) bilArgs.push('--year', String(input.year));
+        return execPython('tools/fetch_un_comtrade.py', bilArgs);
+      } else {
+        // top_partners
+        const tpArgs = ['top_partners', input.reporter, input.hs_code];
+        if (input.flow)  tpArgs.push('--flow',  input.flow);
+        if (input.year)  tpArgs.push('--year',  String(input.year));
+        if (input.count) tpArgs.push('--count', String(input.count));
+        return execPython('tools/fetch_un_comtrade.py', tpArgs);
       }
     }
 
@@ -2300,6 +2362,144 @@ function buildProofreadView(contentJson) {
 }
 
 // ---------------------------------------------------------------------------
+// Fact-check agent
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs a targeted verification pass over all research agent outputs.
+ *
+ * Uses web search (Brave, Tavily, Exa, Jina) to check that specific claims —
+ * especially those derived from category-level data tools — are genuinely
+ * applicable to the proposition's specific product, not just to the broader
+ * commodity class or industry sector.
+ *
+ * Non-fatal: if this agent fails for any reason, the pipeline continues.
+ * The assembler receives a failure notice and applies extra caution in its
+ * own synthesis pass.
+ *
+ * @param {Object} context      - Run context (proposition, product type, etc.)
+ * @param {Object} agentOutputs - Map of agent_name → parsed research output.
+ * @returns {Object} Structured fact-check result, or a failure stub.
+ */
+async function runFactCheckAgent(context, agentOutputs) {
+  console.log('\n  Running fact-check agent...');
+
+  const { proposition } = context;
+  const factCheckWorkflow = loadWorkflow('fact_check_research.md');
+
+  // Extract claim-dense fields from each agent output rather than blindly
+  // truncating. Naive truncation would cut off most of a large agent like
+  // financials and create false confidence — the fact-checker would see
+  // only the first few fields and mark the rest as "not checked".
+  //
+  // Instead, pull the fields most likely to contain verifiable claims:
+  // specific numbers, regulatory statements, named competitors, trade volumes.
+  // This gives the fact-checker full fidelity on the claims that matter
+  // while keeping total context manageable.
+  const CLAIM_DENSE_KEYS = new Set([
+    // Market sizing and growth — most likely to use category-level data
+    'market_size', 'market_size_usd', 'market_growth', 'market_growth_rate',
+    'tam', 'sam', 'market_value', 'cagr', 'total_market',
+    // Trade and volume figures — Comtrade / Census sourced
+    'trade_volume', 'import_volume', 'export_volume', 'trade_value',
+    'import_value', 'export_value', 'bilateral_trade',
+    // Financials — numbers most likely to be unverified or category-level
+    'unit_economics', 'cost_structure', 'margins', 'gross_margin',
+    'price_point', 'pricing', 'landed_cost', 'production_cost',
+    'revenue_projection', 'break_even', 'roi', 'payback_period',
+    // Regulatory — high-stakes claims
+    'regulatory_requirements', 'compliance_requirements', 'restrictions',
+    'approval_status', 'permits_required', 'banned', 'prohibited',
+    'legal_status', 'certification', 'labeling_requirements',
+    // Named competitors — identity claims
+    'competitors', 'key_players', 'market_leaders', 'competitor_list',
+    'companies', 'brands', 'market_share',
+    // Data sources — lets fact-checker know what tools backed each claim
+    'data_sources', 'sources', 'citations',
+    // Data gaps — honest gaps are not claims; include so fact-checker skips them
+    'data_gaps', 'limitations',
+  ]);
+
+  const extractClaims = (output) => {
+    if (!output || typeof output !== 'object') return output;
+    const extracted = {};
+    for (const [key, value] of Object.entries(output)) {
+      if (CLAIM_DENSE_KEYS.has(key.toLowerCase())) {
+        extracted[key] = value;
+      } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        // One level of nesting — capture claim-dense keys inside sub-objects
+        const nested = extractClaims(value);
+        if (nested && Object.keys(nested).length > 0) extracted[key] = nested;
+      }
+    }
+    // If nothing matched, fall back to the full output capped at 6000 chars
+    // so no agent is completely invisible to the fact-checker
+    if (Object.keys(extracted).length === 0) {
+      return { _full_fallback: JSON.stringify(output).slice(0, 6000) };
+    }
+    return extracted;
+  };
+
+  const agentSummaries = Object.entries(agentOutputs)
+    .filter(([, output]) => output !== null)
+    .map(([name, output]) => {
+      const claims = extractClaims(output);
+      return `### Agent: ${name}\n${JSON.stringify(claims, null, 2)}`;
+    })
+    .join('\n\n');
+
+  const systemPrompt = `You are the fact-check agent for McKeever Consulting's Business Viability Intelligence System.
+
+Your job is to verify that specific claims made by research agents are accurate and genuinely applicable to the proposition's specific product — not just to the broader commodity category, industry sector, or country.
+
+The proposition being verified:
+- Title: ${proposition.title}
+- Product type: ${proposition.product_type}
+- Industry: ${proposition.industry || 'not specified'}
+- Origin country: ${proposition.origin_country || 'not specified'}
+- Target country: ${proposition.target_country}
+
+CRITICAL RULES:
+1. Your final response must be ONLY the JSON object defined in the workflow — no markdown fences, no preamble
+2. Use tools to verify claims — do not guess or rely on training knowledge for specific statistics
+3. If you cannot verify a claim after 2-3 targeted searches, mark it as unverifiable and move on
+4. Focus on quantitative claims, regulatory claims, and named competitors — not narrative analysis
+5. Do not re-run data tool queries (Comtrade, Census, etc.) — verify via web search only`;
+
+  const userPrompt = `## FACT-CHECK WORKFLOW\n${factCheckWorkflow}\n\n## RESEARCH AGENT OUTPUTS TO VERIFY\n\n${agentSummaries}`;
+
+  try {
+    const raw = await callClaude({
+      model:      SONNET,
+      system:     systemPrompt,
+      userPrompt,
+      tools:      FACT_CHECK_TOOLS,
+      maxTokens:  8000,
+      maxIter:    30,
+    });
+
+    const result = parseJSON(raw);
+    const issueCount = result.issues_found ?? result.corrections?.length ?? 0;
+    const checkCount = result.checks_performed ?? 0;
+    console.log(`  ✓ Fact check complete — ${checkCount} claims checked, ${issueCount} issue(s) found`);
+    return result;
+
+  } catch (err) {
+    console.warn(`  ⚠ Fact check agent failed: ${err.message.slice(0, 120)}`);
+    // Return a stub so the assembler knows to apply extra caution
+    return {
+      checks_performed: 0,
+      issues_found: 0,
+      corrections: [],
+      verified_claims: [],
+      unverifiable_claims: [],
+      summary: `Fact check agent failed to complete: ${err.message.slice(0, 200)}. Assembler should treat all quantitative claims from data tools as category-level estimates and apply appropriate qualification.`,
+      agent_error: true,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Assembler agent
 // ---------------------------------------------------------------------------
 
@@ -2313,10 +2513,11 @@ function buildProofreadView(contentJson) {
  *
  * This function owns the final `updateReportStatus('complete')` transition.
  *
- * @param {Object} context      - Run context.
- * @param {Object} agentOutputs - Map of agent_name → parsed research output.
+ * @param {Object} context          - Run context.
+ * @param {Object} agentOutputs     - Map of agent_name → parsed research output.
+ * @param {Object} [factCheckResults] - Structured output from runFactCheckAgent (optional).
  */
-async function runAssemblerAgent(context, agentOutputs) {
+async function runAssemblerAgent(context, agentOutputs, factCheckResults = null) {
   console.log('\n  Running assembler (section-by-section)...');
 
   const { reportId, proposition, client, runNumber, previousReportId } = context;
@@ -2354,7 +2555,13 @@ async function runAssemblerAgent(context, agentOutputs) {
     .replace(/^-|-$/g, '')
     .slice(0, 60);
 
-  // 6. System prompt — shared across all section calls
+  // 6. System prompt — shared across all section calls.
+  // Fact-check results are injected here so the assembler applies corrections
+  // and qualifications before writing each section.
+  const factCheckBlock = factCheckResults
+    ? `\n\n## FACT-CHECK RESULTS\nA verification agent reviewed the research outputs before assembly. Apply the corrections and qualifications below when writing sections.\n\n${JSON.stringify(factCheckResults, null, 2)}\n\nRULES FOR USING FACT-CHECK RESULTS:\n- For any claim listed in "corrections": use the corrected_claim, not the original\n- For any claim listed in "unverifiable_claims": include the claim but qualify it (e.g. "industry estimates suggest..." rather than stating it as fact)\n- For corrections with severity "high": these must be applied — do not use the original claim\n- Category-level data: always note the broader scope (e.g. "for this commodity class" not "for this product")`
+    : '\n\n## FACT-CHECK\nNo fact-check results available. Treat all quantitative claims from data tools (Comtrade, Census, BLS, etc.) as category-level estimates. Qualify any statistic that may cover a broader product class than the specific proposition product.';
+
   const systemPrompt = `You are the report assembler for McKeever Consulting's Business Viability Intelligence System.
 Your role is to write ONE specific section of a professional business viability report.
 
@@ -2362,7 +2569,7 @@ CRITICAL RULES:
 1. Your response must be ONLY the JSON object specified — no markdown code fences, no text before or after
 2. Write all prose in plain, professional English — paragraphs, not bullet-point walls
 3. Every claim must be traceable to the research data provided — do not invent figures
-4. Every block must have non-empty content — no empty strings, no placeholder text`;
+4. Every block must have non-empty content — no empty strings, no placeholder text${factCheckBlock}`;
 
   // 7. Build the shared research context — injected into every section prompt.
   // All research data is included in every call so sections can cross-reference freely.
@@ -3269,8 +3476,13 @@ async function runProposition(proposition, force) {
     console.log('\n  Cooling down 2 minutes before assembler (rate limit recovery)...');
     await new Promise(r => setTimeout(r, 120_000));
 
+    // 7.5. Fact-check agent — verifies that specific claims from data tools
+    // are genuinely applicable to the proposition's product (not just the
+    // broader commodity category). Non-fatal: pipeline continues regardless.
+    const factCheckResults = await runFactCheckAgent(context, agentOutputs);
+
     // 8. Run assembler — synthesizes, builds PDF, uploads, emails, marks complete
-    await runAssemblerAgent(context, agentOutputs);
+    await runAssemblerAgent(context, agentOutputs, factCheckResults);
 
     // NOTE: updateReportStatus('complete') is called inside runAssemblerAgent()
     // after successful email delivery. Do not duplicate it here.
