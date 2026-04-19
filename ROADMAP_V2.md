@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-17 (international pipeline starting; comprehensive API master list added to HANDOFF.md; V2 end-game in sight)
+**Last updated:** 2026-04-18 (international pipeline tools complete; search quality tools live; fact-check agent built; Kitchen Tools test run is next)
 
 ---
 
@@ -11,7 +11,7 @@
 |---|---|---|
 | V1 | Physical import/export — any product, food-biased gov data | ✅ Complete |
 | Website | Main page, intake form, admin panel | ✅ Complete |
-| V2 | Any physical product, any industry — adaptive research | In progress — international pipeline building now |
+| V2 | Any physical product, any industry — adaptive research | In progress — pipeline tools complete, Kitchen Tools test run next |
 | V3 | General business ventures — SaaS, services, digital, franchise | Future |
 
 The foundation (WAT architecture, agent pipeline, PDF delivery) carries through all phases unchanged. Each phase adds capability on top without rebuilding from scratch.
@@ -168,61 +168,41 @@ Recommendation: Start with Option A (already partially working via venture intel
 
 **Workflow:** `workflows/international_research.md` — defines the full pipeline: keyword translation → source discovery → language detection → content translation → normalization → agent handoff.
 
-**New tools to build (in order):**
+**International data tools — status:**
 
-| Tool | Purpose | Priority |
+| Tool | Status | Notes |
 |---|---|---|
-| `tools/translate_text.py` | Translate text to English. Routes to DeepL (European) or Google Cloud Translation (Arabic/CJK/other) based on source language. Returns translated text + metadata (service used, char count, source language). | High — needed for any non-English run |
-| `tools/detect_language.py` | Detect language of a text block using `lingua-py` (offline). Returns ISO 639-1 code + confidence score. Routes to translation if non-English; skips if already English. | High — companion to translate_text |
-| `tools/normalize_international_data.py` | Normalize translated content: convert dates to ISO format, retain local currency + USD equivalent, standardize number formatting, normalize units to metric. | Medium — build alongside first international test proposition |
-| `tools/fetch_gdelt_news.py` | Query GDELT Project API for news events by country and keyword. Returns multilingual news events with article URLs, publication date, tone score, and event codes. Free, no API key. | Medium — primary free source for international news |
-| `tools/fetch_opencorporates.py` | Look up company records by jurisdiction via OpenCorporates API. Returns local-language company data for 140+ countries. Free tier, rate-limited. | Medium — useful for competitor research in non-English markets |
-| `tools/fetch_un_comtrade.py` | Query UN Comtrade API for bilateral trade flows between any two countries at HS code level. Free with registration. Critical for import/export propositions researching non-US markets. | Medium — replaces Census tool when target market is not the US |
+| `tools/fetch_un_comtrade.py` | ✅ Built (Session 31) | Bilateral trade flows by HS code. `bilateral` + `top_partners` commands. Key in `.env`. |
+| `tools/fetch_world_bank.py` | ✅ Built (Session 30) | GDP, population, inflation, trade openness — all countries. No key. |
+| `tools/fetch_gdelt_news.py` | ✅ Built (Session 30) | Global news, 170 countries, 65 languages. No key. |
+| `tools/translate_text.py` | ~~DROPPED~~ | Agents translate non-English sources inline using Claude. No external API needed. |
+| `tools/detect_language.py` | ~~DROPPED~~ | Agents detect language inline. |
+| `tools/normalize_international_data.py` | ~~DROPPED~~ | Agents normalize inline. |
+| `tools/fetch_opencorporates.py` | SKIPPED | $2,000/year for API access. Brave `site:opencorporates.com` covers the use case for free. |
 
-**Translation APIs — recommended stack (starting now):**
+**Search quality tools — status (all active, Session 31):**
 
-| Service | Free Tier | Paid Rate | Best For | Action |
-|---|---|---|---|---|
-| **DeepL API** | 500,000 chars/month | $25/1M chars | European languages (DE, FR, ES, IT, PL, etc.) | Sign up at deepl.com/pro-api. Add `DEEPL_API_KEY` to `.env`. |
-| **Google Cloud Translation** | 500,000 chars/month | $20/1M chars | Arabic, CJK, broad coverage (100+ languages) | Enable in Google Cloud Console. Add `GOOGLE_TRANSLATE_API_KEY` to `.env`. |
-| **MyMemory API** | 10,000 chars/day (free key) | Contact for paid | Low-volume fallback, emergency overflow | Register at mymemory.translated.net. Add `MYMEMORY_API_KEY` to `.env`. |
+| Tool | Key | What it adds |
+|---|---|---|
+| `tools/search_exa.py` | `EXA_API_KEY` ✅ | Semantic/neural search — finds conceptually related content keywords miss. `similar` command finds competitor pages from one known URL. |
+| `tools/search_tavily.py` | `TAVILY_API_KEY` ✅ | Full article text, not snippets. Use when Brave returns thin results on a key question. |
+| `tools/fetch_jina_reader.py` | `JINA_API_KEY` ✅ | Reads any URL as clean markdown. Use when a specific page needs full content. |
 
-Combined free tier: 1M chars/month. A typical research run translating 10 sources averages ~20,000 chars. You'd need 50 international runs/month before incurring any translation cost.
+All 10 research workflows updated with Step 1c (Search Quality Escalation) — agents now know when and how to use these alongside Brave.
 
-**Language detection (no API cost):** `pip install lingua-language-detector` — 75 languages, offline, better than `langdetect` on short text. No key needed.
-
-**International trade & economic data APIs (all free):**
-
-| API | Variable | What it provides | Action |
-|---|---|---|---|
-| **UN Comtrade** | `UN_COMTRADE_API_KEY` | Bilateral trade flows, all countries, HS code level. 500 req/hour free. Replaces Census tool when target market is non-US. | Register at comtradeplus.un.org |
-| **World Bank Open Data** | *(no key)* | GDP, income, population, inflation, ease-of-doing-business. Fully open. | No action needed |
-| **IMF Data API** | *(no key)* | Macroeconomic + financial indicators, all countries. Fully open. | No action needed |
-| **OECD API** | *(no key)* | OECD member country stats — labour, trade, taxes, business. | No action needed |
-| **Eurostat API** | *(no key)* | EU statistical data — industry production, import/export, population. | No action needed |
-| **FAO STAT API** | *(no key)* | Global food and agriculture data — critical for food/beverage in non-US markets. | No action needed |
-| **WTO Tariff API** | *(no key)* | Bound and applied tariff rates, all WTO members. Import cost modeling. | No action needed |
-| **OpenCorporates API** | `OPENCORPORATES_API_KEY` | 160M+ company records, 140+ jurisdictions, local-language. Competitor research in non-English markets. | Register at opencorporates.com/api_accounts |
-
-**Global news (free, no key):**
+**International economic data APIs (all free, no key):**
 
 | API | What it provides |
 |---|---|
-| **GDELT Project** | Global news events, 170 countries, 65 languages, updated every 15 min. No key, no rate limit. |
-| **MediaStack** (optional) | 7,500+ sources, multilingual, 500 free req/month. Add only if GDELT insufficient for a specific market. |
+| World Bank Open Data | GDP, income, population, inflation, FDI — all countries |
+| IMF Data API | Macroeconomic stability, inflation trajectory, government debt |
+| OECD API | OECD member country stats — labour, trade, taxes |
+| Eurostat API | EU statistical data — industry production, import/export |
+| FAO STAT API | Global food and agriculture data — critical for food/beverage propositions |
+| WTO Tariff API | Bound and applied tariff rates, all WTO members |
+| GDELT Project | Global news, 170 countries, 65 languages, 15-min updates |
 
-**How this fits in the pipeline:**
-
-```
-Keyword Translation → Source Discovery (Brave + Perplexity + GDELT) → Language Detection
-→ [if non-English] Translation (DeepL or Google) → Normalization → Research Agent
-```
-
-The translation layer is transparent to research agents — they receive English text with source metadata tags. The assembled report treats translated sources identically to English sources. Translation notes and gaps surface in the consultant brief's "Where the data was thin" section.
-
-**Proposition types that trigger this workflow:**
-
-Any proposition where `target_country` or `origin_country` has a non-English primary language. The `international_research.md` workflow should be referenced in each of the 10 research workflows with a conditional block: "If target or origin country is non-English, run Step 1 of `international_research.md` before beginning source discovery."
+**Translation approach:** Agents translate non-English sources inline using Claude's native multilingual capability. No external translation API. Agents generate native-language Brave queries directly from `target_country` input. `international_research.md` documents this approach.
 
 **Test proposition for validation:**
 
@@ -385,13 +365,15 @@ Add a dedicated social media intelligence layer to the marketing agent — movin
 
 2. **Venture intelligence scales.** The Perplexity venture intelligence brief already partially bridges the gap between phases. As new proposition types are added, the brief's framing improves the output even before dedicated workflow sets exist.
 
-3. **Model tiers hold.** Haiku for research agents (fast, narrow), Sonnet for assembly (synthesis). Escalation to Sonnet on failure. This holds for all venture types.
+3. **Model tiers hold.** Haiku for research agents (fast, narrow), Sonnet for assembly and fact-checking (synthesis and verification). Escalation to Sonnet on research agent failure. This holds for all venture types.
 
-4. **Delivery pipeline is unchanged.** PDF → Supabase Storage → Resend email. The report format may grow more sections, but the delivery mechanism stays the same.
+4. **Fact-check is built in, not bolted on.** `runFactCheckAgent()` runs after quality gate, before the assembler, on every run. Proposition-agnostic — checks category-level data misrepresentation, unsupported statistics, regulatory claims, and named competitors. The assembler applies corrections before writing. This cannot be sold around.
 
-5. **New propositions = new DB rows, not new code** (as much as possible). The goal in V2/V3 is that adding a new industry or venture type only requires new workflow markdown files and possibly one new tool script — not a rewrite of the orchestrator.
+5. **Delivery pipeline is unchanged.** PDF → Supabase Storage → Resend email. The report format may grow more sections, but the delivery mechanism stays the same.
 
-6. **Data retention is automated.** `agent_outputs` are purged after every run. A monthly cron runs `node tools/cleanup.js --prune --confirm` to enforce the 6-month report retention window (reports, sources, Storage files) and sweep expired `api_cache` entries (7-day TTL). Set this up once the V1 end-to-end test passes and real client data starts accumulating.
+6. **New propositions = new DB rows, not new code** (as much as possible). The goal in V2/V3 is that adding a new industry or venture type only requires new workflow markdown files and possibly one new tool script — not a rewrite of the orchestrator.
+
+7. **Data retention is automated.** `agent_outputs` are purged after every run. A monthly cron runs `node tools/cleanup.js --prune --confirm` to enforce the 6-month report retention window (reports, sources, Storage files) and sweep expired `api_cache` entries (7-day TTL). Set this up once the V1 end-to-end test passes and real client data starts accumulating.
 
 ---
 

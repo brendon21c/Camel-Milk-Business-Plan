@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-17 (Session 29 — International API planning, translation pipeline starting, comprehensive API master list added.)
+**Last updated:** 2026-04-18 (Session 31 — Search quality keys live, UN Comtrade built, fact-check agent built, all 10 research workflows updated.)
 
 ---
 
@@ -33,9 +33,9 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ---
 
-## Current State (as of 2026-04-17)
+## Current State (as of 2026-04-18)
 
-### Backend — `Camel-Milk-Business-Plan` ✅ V1 + Step 2.5 + caching + resume complete
+### Backend — `Camel-Milk-Business-Plan` ✅ V1 + Step 2.5 + caching + resume + fact-check complete
 
 - V1 pipeline fully working and tested
 - E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever
@@ -45,7 +45,10 @@ They share the same Supabase project. The website writes intake data; the backen
 - **Failed-run resume live:** `tryResumeFromContent()` runs before creating a new report record. Creates a fresh report record (new `created_at`) so the admin panel's polling detects it. Re-computes data confidence from the original failed run's `agent_outputs` (now preserved on failure). Patches the content JSON with the fresh score. Deletes the old content JSON from Storage after success so the next trigger runs fresh. Agent_outputs are cleaned up after the resume completes.
 - **Sources extraction fixed:** Replaced LLM-based sources compilation (call 15/15) with deterministic JS that iterates `agentOutputs` directly. No API cost, no missed URLs, no hallucinated sources.
 - **Census API key fallback:** `fetch_census_data.py` detects the "Invalid Key" HTML response (status 200) and retries without the key. Keyless access gives 500 req/day — enough for one report run. Census key updated to `b15633b8...` (pending activation; fallback covers in the meantime).
-- **Pending for V2:** Industry routing, consultant brief, new gov tool scripts, international research pipeline
+- **Search quality tools live (Session 31):** Exa AI (`search_exa.py`), Tavily (`search_tavily.py`), and Jina Reader (`fetch_jina_reader.py`) all active with keys in `.env`. All registered in `RESEARCH_TOOLS` and `executeTool`. All 10 research workflows updated with Step 1c (Search Quality Escalation) instructing agents when and how to use each tool alongside Brave.
+- **UN Comtrade live (Session 31):** `tools/fetch_un_comtrade.py` built and registered. Two commands: `bilateral` (reporter ↔ partner flows for an HS code) and `top_partners` (ranked trading partners). Added to `research_market_overview.md` and `research_origin_ops.md` workflows. Key caveat baked in at tool level, description level, and JSON output level: HS codes cover commodity classes, not specific products — agents must cross-reference with web search. OpenCorporates skipped ($2,000/year — Brave `site:opencorporates.com` queries cover the same use case for free).
+- **Fact-check agent live (Session 31):** `runFactCheckAgent()` in `run.js`. Runs after quality gate + 2-min cooldown, before assembler. Uses Sonnet in a tool-use loop with `FACT_CHECK_TOOLS` (Brave, Tavily, Exa, Jina — web verification only, no data tools). Extracts claim-dense fields from each agent output (market sizes, regulatory claims, competitor names, financials, sources) rather than truncating raw JSON — avoids false confidence from truncation. Non-fatal: pipeline continues on failure, assembler receives a caution stub. Results injected into assembler system prompt; assembler applies corrections before writing. Workflow SOP at `workflows/fact_check_research.md`. Does not break prompt caching.
+- **Pending for V2:** Migration 013 (formatting_notes column), Kitchen Tools test run, industry routing, consultant brief
 
 **Note:** Camel Milk proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
 
@@ -77,35 +80,44 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
-### Immediate — International pipeline build ← in progress
+### Immediate — Kitchen Tools test run ← next
 
-**Decision (Session 29):** We are close to the end of V2. Adding the international research pipeline now — translation APIs, language detection, and international data tools — before the final V2 E2E test. This unlocks multi-market propositions and non-English source research.
+**The international data pipeline tools are now complete.** All tools needed for the V2 pipeline are built and live. The next step is a real run.
 
-**Build order:**
-1. Build `tools/fetch_un_comtrade.py` — bilateral trade flows, free with registration (UN Comtrade key needed)
-2. ~~Build `tools/translate_text.py`~~ — **DROPPED.** Agents translate non-English sources inline using their own Claude capabilities. No external translation API needed.
-3. ~~Build `tools/detect_language.py`~~ — **DROPPED.** Agents detect language inline.
-4. ~~Build `tools/normalize_international_data.py`~~ — **DROPPED.** Agents normalize inline.
+**International pipeline tools — status:**
+1. `tools/fetch_un_comtrade.py` ✅ Built (Session 31) — bilateral trade flows by HS code
+2. ~~`tools/translate_text.py`~~ **DROPPED** — agents translate inline using Claude
+3. ~~`tools/detect_language.py`~~ **DROPPED** — agents detect language inline
+4. ~~`tools/normalize_international_data.py`~~ **DROPPED** — agents normalize inline
 5. `tools/fetch_world_bank.py` ✅ Built (Session 30)
 6. `tools/fetch_gdelt_news.py` ✅ Built (Session 30)
-7. `workflows/international_research.md` ✅ Updated — reflects agent-inline translation approach
+7. `tools/search_exa.py` ✅ Built + key active (Session 31)
+8. `tools/search_tavily.py` ✅ Built + key active (Session 31)
+9. `tools/fetch_jina_reader.py` ✅ Built + key active (Session 31)
+10. `workflows/international_research.md` ✅ Updated — agent-inline translation
+11. All 10 research workflows ✅ Updated with Step 1c (Exa/Tavily/Jina escalation)
 
-See the comprehensive API master list below for all APIs planned across V2 and V3.
-
-### Kitchen Tools test run ← next after pipeline tools are built
+**Kitchen Tools proposition details:**
 
 **Proposition:** Mark Jones — "High end modular kitchen tools for home cooks." Physical domestic, Food & Beverage, Retainer. Two context notes already added:
 - `financial` → "The client would like updated information, they can secure a 150,000 USD business loan"
 - `sourcing` → "The client would like comparison data for manufacturing in the United States, China and Bangladesh"
 
-**Purpose of this run:**
-1. Verify context notes inject into the correct agents (`financials` gets the financial note; `production` + `origin_ops` get the sourcing note) and shape the research output
-2. Confirm a clean fresh research run executes end-to-end (no resume path — no prior failed content JSON for this proposition)
-3. Verify sources section is populated (deterministic JS extraction fix)
-4. Verify data confidence score appears (not null)
-5. **Check prompt caching savings** — after the run, open the Anthropic usage dashboard and look for `cache_read_input_tokens`. Should see a large number across the 15 assembler section calls. Compare total input tokens vs. cache reads to confirm the ~40% cost reduction.
+**What this run verifies:**
+1. Context notes inject into the correct agents (`financials` gets the financial note; `production` + `origin_ops` get the sourcing note)
+2. Clean fresh research run end-to-end (no resume path)
+3. New search quality tools (Exa, Tavily, Jina) actually used by agents — check run logs for tool calls
+4. Fact-check agent runs and produces output — check logs for "Fact check complete — X claims checked"
+5. Sources section populated (deterministic JS extraction)
+6. Data confidence score appears (not null)
+7. Prompt caching savings — check Anthropic dashboard for `cache_read_input_tokens` after run
 
-**To trigger:** Go to the admin panel, navigate to the Mark Jones proposition, hit **Run Now**.
+**To trigger:** Admin panel → Mark Jones proposition → **Run Now**.
+
+**Before triggering:** Run migration 013 in Supabase:
+```sql
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS formatting_notes TEXT;
+```
 
 ### Step 8 — V2 End-to-End Test ← next milestone after Kitchen Tools
 
@@ -128,7 +140,7 @@ This is the only thing left before the system is fully V2-ready. Run the complet
 
 If the intake form submission path hasn't been activated yet (org status still `prospect`), use `tools/activate.js` to flip it to `active` before hitting Run Now.
 
-**Europe market version** of this proposition (Minnesota → US + Europe) is deferred until the international research pipeline is built (UN Comtrade, GDELT, translation tools).
+**Europe market version** of this proposition (Minnesota → US + Europe) is the logical next test after the US version passes — international pipeline tools (UN Comtrade, GDELT, Exa/Tavily/Jina) are now all built and live.
 
 ---
 
@@ -158,20 +170,15 @@ If the intake form submission path hasn't been activated yet (org status still `
 
 ## Session Log
 
-### Session 31 — Search quality keys added, UN Comtrade built (2026-04-18)
+### Session 31 — Search quality tools live, UN Comtrade built, fact-check agent built (2026-04-18)
 
-- **Exa AI key added** — `EXA_API_KEY` in `.env`. Variable name mismatch fixed (`EXA_AI_API_KEY` → `EXA_API_KEY`). Smoke tested and live.
+- **Exa AI key added** — `EXA_API_KEY` in `.env`. Variable name mismatch fixed on discovery (`EXA_AI_API_KEY` → `EXA_API_KEY`). Smoke tested and live.
 - **Tavily key added** — `TAVILY_API_KEY` in `.env`. Smoke tested and live.
-- **Jina key added** — `JINA_API_KEY` in `.env`. Smoke tested and live (FDA page blocked by bot protection — expected, tool is functional).
-- **UN Comtrade key added** — `UN_COMTRADE_API_KEY` in `.env` (primary key from Free APIs subscription). OpenCorporates skipped — $2,000/year, not worth it. Brave `site:opencorporates.com` queries cover the same ground.
-- **`tools/fetch_un_comtrade.py` built and registered** — two commands:
-  - `bilateral <reporter> <partner> <hs_code>` — export + import flows between two specific countries for a product
-  - `top_partners <reporter> <hs_code> [--flow X|M]` — ranked list of trading partners by trade value
-  - Accepts ISO-3 country codes, converts to M49 internally. Includes 50+ country lookup table.
-  - Smoke tested: US milk powder (040210) imports — returned real 2023 data (New Zealand #1 at $3.2M, no African suppliers in top 5 — confirms the market gap for Somalia camel milk).
-  - Registered in `RESEARCH_TOOLS` and `executeTool` in `run.js`.
-- **Key insight on Comtrade free tier** — `partnerCode: 0` does NOT mean "all partners" in v1. Omit partnerCode entirely to get the per-partner breakdown needed for top_partners ranking.
-- **Fact-check agent built** — new `runFactCheckAgent()` in `run.js`. Runs after the 2-minute cooldown, before the assembler. Uses Sonnet in a tool-use loop with web_search, Tavily, Exa, and Jina only (no data tools — it verifies, not researches). Checks: (1) category-level data misrepresentation, (2) unsupported statistics, (3) regulatory claims, (4) named competitors. Non-fatal — pipeline continues on failure, assembler gets a caution stub. Results injected into assembler system prompt; assembler applies corrections and qualifications before writing. `FACT_CHECK_TOOLS` defined as a filtered subset of RESEARCH_TOOLS. `workflows/fact_check_research.md` written. Does not break prompt caching (researchContext cached prefix unchanged).
+- **Jina key added** — `JINA_API_KEY` in `.env`. Smoke tested and live.
+- **UN Comtrade key added** — `UN_COMTRADE_API_KEY` (primary key, Free APIs subscription). OpenCorporates skipped — $2,000/year. Brave `site:opencorporates.com` queries cover the same use case for free.
+- **`tools/fetch_un_comtrade.py` built and registered** — `bilateral` and `top_partners` commands. ISO-3 input converted to M49 internally (50+ country table). Smoke tested with real 2023 data: US milk powder (HS 040210) imports — New Zealand #1 at $3.2M, no African suppliers in top 5. Key fix: `partnerCode: 0` does NOT mean "all partners" in Comtrade v1 — omit it to get per-partner breakdown. HS code caveat baked into tool docstring, RESEARCH_TOOLS description, and JSON output `data_warning` field — generic, not camel-milk specific.
+- **All 10 research workflows updated — Step 1c added** — "Search Quality Escalation" section added to every research workflow before Step 2. Tells agents when and how to use Tavily (full article text), Exa (semantic/neural search), and Jina (read a specific URL). UN Comtrade added to `research_market_overview.md` and `research_origin_ops.md`. This was a critical gap — tools were registered but agents had no instruction to use them.
+- **Fact-check agent built** — `runFactCheckAgent()` in `run.js`, pipeline position: after 2-min cooldown, before assembler. `FACT_CHECK_TOOLS` = filtered subset of RESEARCH_TOOLS (Brave, Tavily, Exa, Jina only — no data tools). Uses Sonnet. Extracts claim-dense fields from agent outputs (market sizes, regulatory claims, competitor names, financials, data sources) rather than truncating raw JSON — avoids false confidence from truncation. Falls back to 6,000 chars raw JSON if no claim-dense fields match. Checks: category-level data misrepresentation, unsupported statistics, regulatory claims, named competitors. Non-fatal — failure yields a caution stub to the assembler. Results injected into assembler system prompt (not the cached researchContext prefix — caching unaffected). `workflows/fact_check_research.md` written — proposition-agnostic, applies to any industry. Assembler uses corrections before writing each section; qualifies unverifiable claims.
 
 ### Session 30 — No-key API tools, search quality tools, translation decision (2026-04-17)
 
