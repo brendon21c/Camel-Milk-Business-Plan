@@ -151,6 +151,20 @@ After the E2E test passes. New workflow `workflows/assemble_consultant_brief.md`
 
 ---
 
+## Website — Future Work
+
+### Billing Support (build after Regen PDF fix + V2 E2E test)
+
+Clients need to request invoices, request refunds, and ask billing questions. Admins need a single inbox to see and respond.
+
+**Client side:** Magic-link form at `/support/billing?token=<contract_token>` — uses the existing contract token for identity, no new auth needed. Token added as a "Billing help" link in the report delivery email and contract confirmation email. Three request types: invoice request, refund request, billing question.
+
+**Admin side:** New `/admin/support` page — open ticket list, ticket detail with full client/org context, reply via Resend email, one-click invoice generation via Stripe API, resolve/close.
+
+**DB:** Two new tables — `support_tickets` and `support_ticket_replies`. Full schema in ROADMAP_V2.md (Website Phase 2 section).
+
+---
+
 ## V2 Backend Work (remaining)
 
 1. **Industry-aware gov data routing** ← next — replace the flat `executeTool` switch with routing based on `industry_category`. Non-applicable tools return a structured "not applicable" so agents don't waste iterations.

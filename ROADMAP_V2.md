@@ -360,6 +360,67 @@ Add a dedicated social media intelligence layer to the marketing agent — movin
 
 ---
 
+## Website — Phase 2 (Future Enhancements)
+
+### Billing Support — Client requests + Admin inbox
+
+Clients need a way to request invoices, request refunds, and ask billing questions without emailing directly. Admins need a single place to see and respond to all open requests.
+
+#### Client side
+
+There is currently no authenticated client portal — clients only interact via the intake form, the contract signing page (magic link), and the report email. Billing support can be delivered without a full portal by adding a **magic-link support form** linked from the report delivery email and the contract signed confirmation email.
+
+| Feature | Implementation |
+|---|---|
+| Request invoice | Link in report email → pre-filled form with their name/email/proposition. Triggers Stripe invoice generation (Stripe has `invoices.create` + `invoices.sendInvoice` API). |
+| Request refund | Form with required reason field. Creates a `support_tickets` row with `type = 'refund'`. Admin sees it, reviews, processes manually via Stripe dashboard or API. |
+| Billing question | Same form, `type = 'billing_question'`. Free text. |
+| Confirmation | On submit: "We received your request and will respond within 1 business day." Resend email to client confirming receipt. |
+
+The form page lives at `/support/billing?token=<contract_token>` — uses the existing contract token for identity (no new auth needed). Token is included in the report delivery email and contract confirmation email as a "Billing help" link.
+
+#### Admin side
+
+New admin page: `/admin/support`
+
+| Feature | Implementation |
+|---|---|
+| Inbox | List of all open tickets — client name, type, date submitted, message preview. Sorted by newest first. |
+| Ticket detail | Full message, client/org/proposition context, status (open / in progress / resolved). |
+| Reply | Compose and send a Resend email to the client directly from the admin panel. Reply stored as a `support_ticket_replies` row. |
+| Resolve | Mark ticket resolved — removes from open queue, stays in history. |
+| Invoice generation | For invoice requests: one-click button that calls Stripe `invoices.create` + `invoices.sendInvoice` and marks the ticket resolved. |
+
+#### DB schema additions
+
+```sql
+CREATE TABLE support_tickets (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID REFERENCES organizations(id),
+  client_id     UUID REFERENCES clients(id),
+  proposition_id UUID REFERENCES propositions(id),
+  type          TEXT NOT NULL CHECK (type IN ('invoice_request', 'refund_request', 'billing_question')),
+  message       TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved')),
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE support_ticket_replies (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id  UUID REFERENCES support_tickets(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  sent_by    TEXT NOT NULL DEFAULT 'admin',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+#### Sequencing
+
+Build after the current Regen PDF fix and V2 E2E test — this is a website enhancement, not a backend pipeline requirement. It becomes more pressing once real clients start signing contracts and submitting reports.
+
+---
+
 ## Architectural principles that carry through all phases
 
 1. **WAT stays intact.** Workflows → Agents → Tools. Adding a new industry or venture type means adding new workflow markdown files and optionally new tool scripts. The orchestrator (`run.js`) changes minimally.
