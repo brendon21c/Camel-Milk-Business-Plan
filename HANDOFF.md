@@ -84,6 +84,23 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
+### Immediate — Fix Regen PDF (broken, do this first) ← next
+
+Three bugs discovered 2026-04-20. The Regen PDF button exists and triggers correctly but the feature doesn't actually work yet.
+
+**Bug 1 — Formatting notes ignored (most important)**
+`regenPdfFromStorage()` in `run.js` downloads the content JSON and rebuilds the PDF but never reads `report.formatting_notes` from the DB. Notes are stored but not passed to the PDF generator. Fix: after fetching the `report` row, read `report.formatting_notes` and pass it to `generate_report_pdf.py` (new `--notes` arg or injected as a top-level field in the content JSON). The PDF generator needs to display or act on the notes — likely as a visible "Admin Notes" callout on the cover or as instructions to the layout engine.
+
+**Bug 2 — No completion signal**
+Regen keeps the report status as `pending_review` throughout, so the admin panel has no way to detect it finished. The button shows "Rebuilding…" forever. Fix: either (a) send an admin email when regen completes (simplest), or (b) flip report to a transient status like `regenerating` at start and back to `pending_review` at end so the page can poll. Email is simpler — add a `sendRegenCompleteNotification()` call at the end of the upload path in `regenPdfFromStorage()`.
+
+**Bug 3 — Double-trigger not guarded**
+Clicking the button twice dispatches two GitHub Actions runs. The dispatch call returns quickly so `isLoading` resets before the user sees feedback. Fix: once `triggered = true`, disable the button permanently for that session (it already sets `triggered` to true — just ensure the JSX check prevents re-clicks. Currently the `triggered` state renders a text label instead of the button, so this may already be handled — verify).
+
+**To test after fixing:** Add a formatting note, click Regen PDF once, wait ~2–3 min, receive admin email, download new PDF and confirm the note influenced the output.
+
+---
+
 ### Remaining V2 work (in order)
 
 All migrations run (001–013). NHD test run complete. The remaining items before V2 is fully done:
