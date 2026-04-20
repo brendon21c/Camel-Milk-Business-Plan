@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-18 (international pipeline tools complete; search quality tools live; fact-check agent built; Kitchen Tools test run is next)
+**Last updated:** 2026-04-20 (Northern Heritage Designs test run complete; four pipeline bugs fixed; existing business analysis product vision added)
 
 ---
 
@@ -11,8 +11,9 @@
 |---|---|---|
 | V1 | Physical import/export — any product, food-biased gov data | ✅ Complete |
 | Website | Main page, intake form, admin panel | ✅ Complete |
-| V2 | Any physical product, any industry — adaptive research | In progress — pipeline tools complete, Kitchen Tools test run next |
+| V2 | Any physical product, any industry — adaptive research | In progress — NHD test run complete, bugs fixed |
 | V3 | General business ventures — SaaS, services, digital, franchise | Future |
+| Existing Business Analysis | Audit + strategy report for operating businesses (after V3) | Future |
 
 The foundation (WAT architecture, agent pipeline, PDF delivery) carries through all phases unchanged. Each phase adds capability on top without rebuilding from scratch.
 
@@ -36,7 +37,7 @@ The foundation (WAT architecture, agent pipeline, PDF delivery) carries through 
 
 **Current workaround:** The venture intelligence brief tells agents which agencies are relevant. A solar-panel proposition gets DOE/EPA framing from the brief; agents naturally skip FDA/USDA calls. This works but is not structurally enforced.
 
-**Remaining task:** V2 end-to-end test — furniture manufacturing, Minnesota → US (see HANDOFF.md Step 8).
+**Remaining task:** V2 end-to-end test — furniture manufacturing, Minnesota → US. Requires industry routing to be built first so the right gov APIs are called.
 
 ---
 
@@ -218,7 +219,7 @@ This is a natural V2 test since the current camel milk proposition targets the U
 
 | Proposition | Industry category | Key tools needed | Notes |
 |---|---|---|---|
-| Furniture manufacturing, Minnesota → US | general_manufacturing | ITC, EPA, BLS | **First V2 test — E2E test proposition.** US market only. |
+| Furniture manufacturing, Minnesota → US | general_manufacturing | ITC, EPA, BLS | **First V2 test — E2E test proposition.** US market only. Requires industry routing first. |
 | Furniture manufacturing, Minnesota → US + Europe | general_manufacturing + international | ITC, EPA, BLS, UN Comtrade, GDELT | Europe version — deferred until international pipeline built |
 | Solar panels, China → US | energy | DOE EIA, EPA, ITC | — |
 | Apparel / activewear, Bangladesh → US | apparel | CBP, FTC, CPSC | — |
@@ -374,6 +375,73 @@ Add a dedicated social media intelligence layer to the marketing agent — movin
 6. **New propositions = new DB rows, not new code** (as much as possible). The goal in V2/V3 is that adding a new industry or venture type only requires new workflow markdown files and possibly one new tool script — not a rewrite of the orchestrator.
 
 7. **Data retention is automated.** `agent_outputs` are purged after every run. A monthly cron runs `node tools/cleanup.js --prune --confirm` to enforce the 6-month report retention window (reports, sources, Storage files) and sweep expired `api_cache` entries (7-day TTL). Set this up once the V1 end-to-end test passes and real client data starts accumulating.
+
+---
+
+## Existing Business Analysis — Audit & Strategy Report (After V3)
+
+**Prerequisite:** V3 complete. This product shares the same research pipeline — building it before V3 would mean re-doing intake and workflow work twice.
+
+### What it is
+
+A second product tier alongside the viability report: an **audit and strategy report for businesses that are already operating.** Same research pipeline (all 10 agents, same tools, same data sources), different assembler that reframes findings around what to do *now* rather than whether to start.
+
+The client already has a business. They're not asking "will this work?" They're asking "how do I compete better, grow revenue, fix what's broken?" The research answers those questions — we just need an assembler that frames the output accordingly.
+
+### Why the lift is small
+
+The research pipeline is already industry-agnostic. The 10 agents don't know or care whether the client is pitching a new idea or running an existing shop — they produce the same competitive landscape, regulatory environment, market sizing, and financial benchmarks regardless. The only thing that changes is what the assembler *does* with that data.
+
+- **Same 10 research agents** — unchanged
+- **Same tools, same APIs** — unchanged
+- **Same fact-check agent** — unchanged
+- **Same PDF delivery pipeline** — unchanged
+- **New: one assembler workflow** — `workflows/assemble_existing_business.md`
+- **New: one DB field** — `business_stage` (`idea` | `existing`)
+
+That's it. One new field routes to a different assembler. The rest runs as-is.
+
+### New intake fields required
+
+For existing businesses, the intake form needs three additional questions:
+
+| Field | Question | Why it matters |
+|---|---|---|
+| `annual_revenue` | Approximate annual revenue (range OK) | Anchors financial benchmarking — agents compare to same-size peers |
+| `years_operating` | How long have you been in business? | Distinguishes early-stage survival from growth-stage optimization |
+| `primary_challenge` | What's the single biggest challenge you're trying to solve? | Lets the assembler lead with the section most relevant to the client |
+
+### Report sections vs. viability report
+
+| Viability report section | Existing business equivalent |
+|---|---|
+| Market Opportunity | Market Position — where you sit vs. the opportunity |
+| Competitive Landscape | Competitive Position Score — ranked vs. named peers |
+| Financial Projections | Revenue & Margin Optimization — benchmarks vs. your actuals |
+| Regulatory Compliance | Compliance Gap Analysis — what you may be missing |
+| Go-to-Market Strategy | Growth Channels — what's working in your category |
+| Executive Summary / Verdict | Quick Wins (30/60/90 days) — prioritized action list |
+
+The assembler instructions shift the framing from "here is what you'd need to do to start" to "here is what the data shows about where you are and what to do next." The research data is the same.
+
+### Implementation plan (when ready)
+
+1. Add `business_stage TEXT DEFAULT 'idea'` to propositions table — new migration
+2. Add existing-business branch to intake form (website) — 3 extra questions shown when `business_stage = 'existing'`
+3. Write `workflows/assemble_existing_business.md` — same structure as `assemble_report.md`, different section prompts and framing
+4. Add `business_stage` branch in `run.js` assembler call — one conditional to select which workflow markdown to load
+5. Test with a real existing business as the proposition (not synthetic data)
+
+### Pricing position
+
+Viability reports are for people with an idea. Existing business audits are for people with revenue — a meaningfully different buyer with more at stake and more ability to pay. Price accordingly: same or higher than viability reports, positioned as a "get an outside expert's read on your business" rather than "research before I launch."
+
+### Decision log entry
+
+| Decision | Outcome | Rationale |
+|---|---|---|
+| Sequence after V3 | After V3 complete | V3 adds SaaS/services venture types — existing businesses include those types. Build the general non-physical venture infrastructure first, then the existing-business assembler works for all venture types at once. |
+| Same research pipeline | No new agents | Research output is the same regardless of business stage — the framing changes, not the data. Avoids maintaining two separate agent pipelines. |
 
 ---
 

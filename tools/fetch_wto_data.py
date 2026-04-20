@@ -17,80 +17,37 @@ import time
 import httpx
 from dotenv import load_dotenv
 
+# Note: httpx and time are still used by cmd_imports (Census trade data).
+
 load_dotenv()
 
 MAX_RETRIES = 3
-HTS_BASE    = "https://hts.usitc.gov/reststop"
 CENSUS_BASE = "https://api.census.gov/data"
 
 
-def hts_get(path, params=None):
-    """Fetch from USITC HTS API with retries."""
-    url = f"{HTS_BASE}/{path}"
-    for attempt in range(MAX_RETRIES):
-        try:
-            resp = httpx.get(url, params=params, timeout=20)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            if attempt == MAX_RETRIES - 1:
-                print(f"[fetch_wto_data] HTS API failed {path}: {e}", file=sys.stderr)
-                return None
-            time.sleep(2 ** attempt)
-    return None
-
-
 def cmd_hts(args):
-    """Look up US Harmonized Tariff Schedule entry for an HTS code."""
-    code = args.hts_code.replace(".", "").replace(" ", "")
+    """Look up US Harmonized Tariff Schedule entry for an HTS code.
 
-    # USITC HTS API — returns tariff schedule chapter/heading/subheading info
-    data = hts_get(f"exportHts/{code}")
-
-    if not data:
-        # Try the search endpoint as fallback
-        data = hts_get("exportHts/search", {"query": args.hts_code, "format": "json"})
-
-    if not data:
-        return {
-            "source": "USITC Harmonized Tariff Schedule",
-            "hts_code": args.hts_code,
-            "error": "No HTS data returned. Verify the code is a valid US HTS code (8-10 digits).",
-            "records": [],
-            "tip": "HTS codes: 04.03.90 = yoghurt/kefir/specialty milks, 04.01 = fresh milk, 94.03 = furniture",
-        }
-
-    # Flatten HTS response structure
-    records = []
-    if isinstance(data, list):
-        for item in data:
-            records.append({
-                "hts_code":        item.get("htsno"),
-                "description":     item.get("description"),
-                "general_rate":    item.get("general"),      # MFN general rate
-                "special_rate":    item.get("special"),      # Special (FTA) rates
-                "other_rate":      item.get("other"),        # Column 2 (non-MFN)
-                "unit_of_quantity": item.get("units"),
-            })
-    elif isinstance(data, dict):
-        records.append({
-            "hts_code":    data.get("htsno"),
-            "description": data.get("description"),
-            "general_rate": data.get("general"),
-            "special_rate": data.get("special"),
-            "other_rate":   data.get("other"),
-            "units":        data.get("units"),
-        })
-
+    The USITC /reststop REST API was decommissioned in 2025. The site now
+    serves a JavaScript SPA with no public JSON API. This command returns a
+    structured fallback that directs the agent to retrieve rates via web search.
+    """
     return {
-        "source": "USITC Harmonized Tariff Schedule (HTS) — free, no key required",
-        "hts_code_queried": args.hts_code,
-        "records": records[:20],
-        "data_notes": (
-            "General rate = MFN tariff (applies to most countries). "
-            "Special rate = reduced rates under FTAs (e.g. USMCA, KORUS). "
-            "Other = Column 2 rate for non-market economies. "
-            "Rates shown as % ad valorem or specific (e.g. '$0.22/kg')."
+        "source": "USITC Harmonized Tariff Schedule (HTS)",
+        "hts_code": args.hts_code,
+        "status": "api_unavailable",
+        "message": (
+            "The USITC HTS REST API was decommissioned. "
+            "Use web_search to retrieve the tariff rate: "
+            f"'HTS {args.hts_code} US tariff rate MFN 2024' or "
+            f"'site:hts.usitc.gov {args.hts_code}'. "
+            "Alternatively use the tariff command for FTA corridor context."
+        ),
+        "records": [],
+        "tip": (
+            "HTS code reference: 0403.90 = specialty dairy/kefir, "
+            "0401 = fresh milk, 9403 = furniture, 8471 = computers, "
+            "6109 = T-shirts/apparel, 2710 = petroleum products."
         ),
     }
 

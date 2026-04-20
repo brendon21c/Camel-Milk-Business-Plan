@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-18 (Session 31 — Search quality keys live, UN Comtrade built, fact-check agent built, all 10 research workflows updated.)
+**Last updated:** 2026-04-20 (Session 32 — NHD test run complete, four pipeline bugs fixed, intake form expanded, PDF title fixed, existing business analysis product vision added to roadmap.)
 
 ---
 
@@ -39,18 +39,22 @@ They share the same Supabase project. The website writes intake data; the backen
 
 - V1 pipeline fully working and tested
 - E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever
-- 12 migrations run (001–012)
+- **13 migrations run (001–013)**
+- **Northern Heritage Designs test run complete (2026-04-20):** First real non-food, non-import proposition. `pending_review` status, 80.5/100 confidence, 3.5/5.0 Moderate viability. Indian Arts and Crafts Act flagged as key legal risk. Origin country was null (domestic) — supply chain section was data-limited as a result.
 - **Step 2.5 complete:** `getPropositionContext()` added to `db.js`. At run start, backend queries `proposition_context`, groups rows by category, and injects relevant notes into each research agent's prompt as a `## ADMIN CONTEXT NOTES` block. Category → agent mapping is in `run.js` (`CATEGORY_TO_AGENTS`).
 - **Prompt caching live:** All 15+ assembler section calls pass the shared `researchContext` as a cached prefix. Saves ~$5/run (~40% cost reduction). Inter-section delay 17s (15 × 17 = 255s, safely under the 300s TTL).
 - **Failed-run resume live:** `tryResumeFromContent()` runs before creating a new report record. Creates a fresh report record (new `created_at`) so the admin panel's polling detects it. Re-computes data confidence from the original failed run's `agent_outputs` (now preserved on failure). Patches the content JSON with the fresh score. Deletes the old content JSON from Storage after success so the next trigger runs fresh. Agent_outputs are cleaned up after the resume completes.
 - **Sources extraction fixed:** Replaced LLM-based sources compilation (call 15/15) with deterministic JS that iterates `agentOutputs` directly. No API cost, no missed URLs, no hallucinated sources.
-- **Census API key fallback:** `fetch_census_data.py` detects the "Invalid Key" HTML response (status 200) and retries without the key. Keyless access gives 500 req/day — enough for one report run. Census key updated to `b15633b8...` (pending activation; fallback covers in the meantime).
-- **Search quality tools live (Session 31):** Exa AI (`search_exa.py`), Tavily (`search_tavily.py`), and Jina Reader (`fetch_jina_reader.py`) all active with keys in `.env`. All registered in `RESEARCH_TOOLS` and `executeTool`. All 10 research workflows updated with Step 1c (Search Quality Escalation) instructing agents when and how to use each tool alongside Brave.
-- **UN Comtrade live (Session 31):** `tools/fetch_un_comtrade.py` built and registered. Two commands: `bilateral` (reporter ↔ partner flows for an HS code) and `top_partners` (ranked trading partners). Added to `research_market_overview.md` and `research_origin_ops.md` workflows. Key caveat baked in at tool level, description level, and JSON output level: HS codes cover commodity classes, not specific products — agents must cross-reference with web search. OpenCorporates skipped ($2,000/year — Brave `site:opencorporates.com` queries cover the same use case for free).
-- **Fact-check agent live (Session 31):** `runFactCheckAgent()` in `run.js`. Runs after quality gate + 2-min cooldown, before assembler. Uses Sonnet in a tool-use loop with `FACT_CHECK_TOOLS` (Brave, Tavily, Exa, Jina — web verification only, no data tools). Extracts claim-dense fields from each agent output (market sizes, regulatory claims, competitor names, financials, sources) rather than truncating raw JSON — avoids false confidence from truncation. Non-fatal: pipeline continues on failure, assembler receives a caution stub. Results injected into assembler system prompt; assembler applies corrections before writing. Workflow SOP at `workflows/fact_check_research.md`. Does not break prompt caching.
-- **Pending for V2:** Migration 013 (formatting_notes column), Kitchen Tools test run, industry routing, consultant brief
+- **Census API key fallback:** `fetch_census_data.py` detects the "Invalid Key" HTML response (status 200) and retries without the key. Keyless access gives 500 req/day — enough for one report run.
+- **Search quality tools live:** Exa AI (`search_exa.py`), Tavily (`search_tavily.py`), and Jina Reader (`fetch_jina_reader.py`) all active with keys in `.env`. All 10 research workflows updated with Step 1c making Exa and Tavily mandatory on every run (not optional).
+- **UN Comtrade live:** `tools/fetch_un_comtrade.py` built and registered. Two commands: `bilateral` and `top_partners`. HS code caveat baked in everywhere.
+- **Fact-check agent live:** `runFactCheckAgent()` in `run.js`. Runs after quality gate + 2-min cooldown, before assembler. Uses Sonnet with `FACT_CHECK_TOOLS`. Non-fatal: failure yields a caution stub.
+- **PDF title fixed:** Cover page now uses `client.company_name` instead of `proposition.title`. Intake actions updated so new submissions store just the company name as the proposition title.
+- **Pending for V2:** Industry routing, workflow generalisation, consultant brief, furniture manufacturing E2E test
 
 **Note:** Camel Milk proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
+
+**Note:** `report_sources` DB table has 0 rows for the NHD run despite 129 sources in the content JSON. The deterministic JS extractor writes to `content.sources` for PDF use but does not write to the `report_sources` table. Minor bug — not blocking, but sources aren't queryable from the DB.
 
 ### Website — `mckeever-consulting-website` ✅ All pages built
 
@@ -80,80 +84,66 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
-### Immediate — Kitchen Tools test run ← next
+### Remaining V2 work (in order)
 
-**The international data pipeline tools are now complete.** All tools needed for the V2 pipeline are built and live. The next step is a real run.
+All migrations run (001–013). NHD test run complete. The remaining items before V2 is fully done:
 
-**International pipeline tools — status:**
-1. `tools/fetch_un_comtrade.py` ✅ Built (Session 31) — bilateral trade flows by HS code
-2. ~~`tools/translate_text.py`~~ **DROPPED** — agents translate inline using Claude
-3. ~~`tools/detect_language.py`~~ **DROPPED** — agents detect language inline
-4. ~~`tools/normalize_international_data.py`~~ **DROPPED** — agents normalize inline
-5. `tools/fetch_world_bank.py` ✅ Built (Session 30)
-6. `tools/fetch_gdelt_news.py` ✅ Built (Session 30)
-7. `tools/search_exa.py` ✅ Built + key active (Session 31)
-8. `tools/search_tavily.py` ✅ Built + key active (Session 31)
-9. `tools/fetch_jina_reader.py` ✅ Built + key active (Session 31)
-10. `workflows/international_research.md` ✅ Updated — agent-inline translation
-11. All 10 research workflows ✅ Updated with Step 1c (Exa/Tavily/Jina escalation)
+#### 1. Industry-aware gov data routing ← next
 
-**Kitchen Tools proposition details:**
+Replace the flat `executeTool` switch statement with a routing layer that checks `industry_category` before calling gov API tools. Non-applicable tools should return a structured "not applicable" response so agents don't waste iterations.
 
-**Proposition:** Mark Jones — "High end modular kitchen tools for home cooks." Physical domestic, Food & Beverage, Retainer. Two context notes already added:
-- `financial` → "The client would like updated information, they can secure a 150,000 USD business loan"
-- `sourcing` → "The client would like comparison data for manufacturing in the United States, China and Bangladesh"
+**Why this must come before the E2E test:** The furniture manufacturing run will call FDA and USDA tools by default (they're registered for all industries). Industry routing is what ensures the right tools (ITC, EPA, BLS) get called and the wrong ones are skipped. Without routing, the E2E test result is ambiguous.
 
-**What this run verifies:**
-1. Context notes inject into the correct agents (`financials` gets the financial note; `production` + `origin_ops` get the sourcing note)
-2. Clean fresh research run end-to-end (no resume path)
-3. New search quality tools (Exa, Tavily, Jina) actually used by agents — check run logs for tool calls
-4. Fact-check agent runs and produces output — check logs for "Fact check complete — X claims checked"
-5. Sources section populated (deterministic JS extraction)
-6. Data confidence score appears (not null)
-7. Prompt caching savings — check Anthropic dashboard for `cache_read_input_tokens` after run
+**Implementation:** Add an `INDUSTRY_TOOL_MAP` constant in `run.js` (or `db.js`) that maps `industry_category` → allowed tool names. In `executeTool()`, check whether the called tool is in the allowed set for the proposition's category. Return `{ status: "not_applicable", message: "..." }` for out-of-scope tools.
 
-**To trigger:** Admin panel → Mark Jones proposition → **Run Now**.
+#### 2. Workflow generalisation
 
-**Before triggering:** Run migration 013 in Supabase:
-```sql
-ALTER TABLE reports ADD COLUMN IF NOT EXISTS formatting_notes TEXT;
-```
+Audit the 10 research workflows and remove food-specific hardcoding:
+- `research_regulatory.md` Step 1b explicitly calls FDA and USDA — generalise to "call the gov tools relevant to this proposition's industry category"
+- `research_marketing.md` has FDA-specific framing — remove
 
-### Step 8 — V2 End-to-End Test ← next milestone after Kitchen Tools
+Option A (in use now): Venture intelligence brief steers agents away from irrelevant tools. Partially working — NHD run scored Moderate without FDA/USDA routing, so the brief helped. Test the furniture run under Option A first; upgrade to Option B (per-industry substitution blocks) if output quality is poor.
 
-This is the only thing left before the system is fully V2-ready. Run the complete flow:
+#### 3. V2 E2E Test — Furniture Manufacturing ← milestone
 
-**Test proposition:** Furniture manufacturing, Minnesota → US (domestic physical product). Scoped to US market only — Europe requires the international research pipeline which is not yet built.
+**Proposition:** Furniture manufacturing, Minnesota → US (domestic physical, `general_manufacturing`). US market only — validates industry routing is working.
 
-**Gov tool scripts are built and tested** (Session 25):
-- `tools/fetch_itc_data.py` ✅ — Federal Register trade remedy cases + Census annual import stats by NAICS
-- `tools/fetch_epa_data.py` ✅ — EPA ECHO facility compliance search + Toxic Release Inventory
-- `tools/fetch_bls_data.py` ✅ — BLS manufacturing wage benchmarks + employment trends (v2 API with key)
+**Gov tool scripts ready:**
+- `tools/fetch_itc_data.py` ✅ — Federal Register trade remedy cases + Census annual import stats
+- `tools/fetch_epa_data.py` ✅ — EPA ECHO compliance + Toxic Release Inventory
+- `tools/fetch_bls_data.py` ✅ — BLS manufacturing wage benchmarks + employment trends
 
 **Flow:**
-1. Open `/intake` as a "client" — fill out for furniture manufacturing, Minnesota → US. Use a fresh client/org — this validates the intake form creates new DB records correctly, not just re-running an existing proposition
-2. Check `/admin/propositions` — new submission appears
-3. Navigate to the proposition detail page — add a context note for the run (e.g. a sourcing note about the wood supply chain)
-4. Hit **Run Now** → backend fires via GitHub Actions
-5. Watch status update live (polling every 5 seconds)
-6. Report generates, PDF delivered, view/download from the reports table on the detail page or `/admin/reports`
+1. Submit via `/intake` — fresh client/org (tests the intake-to-run path end to end with new form fields)
+2. Activate the org (`tools/activate.js` or flip `status = 'active'` in Supabase)
+3. Add a context note (e.g. sourcing note about wood supply chain)
+4. Admin panel → **Run Now**
+5. Watch logs — confirm ITC/EPA/BLS are called, FDA/USDA are skipped or return "not_applicable"
+6. Report delivered — check PDF cover shows just the company name
 
-If the intake form submission path hasn't been activated yet (org status still `prospect`), use `tools/activate.js` to flip it to `active` before hitting Run Now.
+**What this run verifies:**
+1. Industry routing working — right gov APIs called, wrong ones skipped
+2. New intake form fields (company location, credentials, existing resources, etc.) flowing into `client_context` and appearing in agent prompts
+3. PDF title correct (company name only)
+4. Exa + Tavily mandatory calls confirmed in logs
+5. Fact-check agent fires — check logs for "Fact check complete"
 
-**Europe market version** of this proposition (Minnesota → US + Europe) is the logical next test after the US version passes — international pipeline tools (UN Comtrade, GDELT, Exa/Tavily/Jina) are now all built and live.
+#### 4. Consultant Intelligence Brief
+
+After the E2E test passes. New workflow `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses existing `agent_outputs` — no new research API calls. Single admin email with both PDFs attached (client report + consultant brief). See ROADMAP_V2.md for full spec.
 
 ---
 
-## V2 Backend Work (after E2E test passes)
+## V2 Backend Work (remaining)
 
-1. **Industry-aware gov data routing** — replace the flat `executeTool` switch with routing based on `industry_category`. Non-applicable tools return a structured "not applicable" so agents don't waste iterations.
-2. **Remaining gov tool scripts** — ITC/EPA/BLS are done. Still to build when needed:
-   - `tools/fetch_doe_data.py` — DOE EIA + NREL (energy/solar) ← build before solar test proposition
-   - `tools/fetch_fda_device_data.py` — FDA 510(k) clearances + device recalls (medical) ← build before medical test proposition
-   - `tools/fetch_bis_data.py` — BIS export control classifications ← build before electronics test proposition
-3. **Workflow generalisation** — audit the 10 research workflows, remove food-specific hardcoding. Start with Option A (venture intelligence brief steers tool selection). Move to Option B (per-industry substitution blocks) only if results are poor.
-4. **Consultant Intelligence Brief** — new `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Delivered as a single admin email with both PDFs (client report + consultant brief) attached.
-5. **International research pipeline** ← **starting now** — see comprehensive API master list section below for full details and signup actions. Build order: translate_text → detect_language → fetch_un_comtrade → fetch_world_bank → fetch_gdelt_news → normalize_international_data.
+1. **Industry-aware gov data routing** ← next — replace the flat `executeTool` switch with routing based on `industry_category`. Non-applicable tools return a structured "not applicable" so agents don't waste iterations.
+2. **Workflow generalisation** — audit the 10 research workflows, remove food-specific hardcoding. Start with Option A (venture intelligence brief steers tool selection). Move to Option B (per-industry substitution blocks) only if Option A produces poor results.
+3. **V2 E2E Test** — furniture manufacturing, Minnesota → US. Validates industry routing, new intake fields, PDF title fix.
+4. **Consultant Intelligence Brief** — after E2E test passes. New `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Single admin email with both PDFs attached.
+5. **Remaining gov tool scripts** — build when needed for the next test proposition:
+   - `tools/fetch_doe_data.py` — DOE EIA + NREL (energy/solar)
+   - `tools/fetch_fda_device_data.py` — FDA 510(k) clearances + device recalls (medical)
+   - `tools/fetch_bis_data.py` — BIS export control classifications (electronics)
 
 **V2 test propositions:**
 | Proposition | Industry category | Key tools needed | Notes |
@@ -169,6 +159,25 @@ If the intake form submission path hasn't been activated yet (org status still `
 ---
 
 ## Session Log
+
+### Session 32 — NHD test run, pipeline bug fixes, intake form expanded, PDF title fixed (2026-04-20)
+
+- **Northern Heritage Designs test run complete** — replaced Kitchen Tools / Mark Jones as the test client. NHD: Indigenous-inspired heirloom furniture, Minnesota, domestic physical, general manufacturing. Result: `pending_review`, 80.5/100 confidence, 3.5/5.0 Moderate viability. Indian Arts and Crafts Act flagged as primary legal risk. Origin country null (domestic) — supply chain section data-limited.
+- **GitHub token added to backend `.env`** — `GITHUB_TOKEN` and `GITHUB_REPO_OWNER` were empty (zero-length). Found in website `.env.local`. Copied across. Was causing "Bad credentials" errors in GitHub Actions log fetch.
+- **Four pipeline bugs fixed:**
+  - **`SONNET` undefined** — `run.js` line 2473 referenced variable `SONNET` (never declared). Changed to literal `'claude-sonnet-4-6'`. Fact-check agent was crashing silently on every run.
+  - **Exa/Tavily/Jina never called** — Step 1c in all 10 workflow files was conditional ("evaluate and decide"). Agents decided Brave was sufficient every time. Fixed by making Exa and Tavily calls **mandatory** on every run. Confirmed via GitHub Actions logs (zero calls in NHD run, now required).
+  - **GDELT 429 causing 3 retries** — added 429 detection in `gdelt_get()`. Raises `RuntimeError` immediately on 429 — no retry. Saves 2 wasted iterations per GDELT hit.
+  - **WTO HTS API returning 404** — USITC decommissioned `/reststop` entirely (tested 8+ endpoint variations). Replaced `cmd_hts()` with a structured fallback that directs agents to use web search. `cmd_imports` (Census) and `cmd_tariff` (FTA) still work.
+- **Migration 013 run** — `ALTER TABLE reports ADD COLUMN IF NOT EXISTS formatting_notes TEXT;`
+- **Intake form expanded** — 6 new fields added to `app/intake/page.tsx` and `app/intake/actions.ts`:
+  - Step 0: `companyLocation` (where the company is based — state-level regulatory routing)
+  - Step 1: `credentials` (certifications, licenses, cultural affiliations) + `existingResources` (equipment, inventory, workspace already owned)
+  - Step 3: hybrid capital field (range dropdown + exact amount toggle), `primaryQuestion` (biggest question the client wants answered), `legalSensitivities` (known legal/regulatory/cultural issues)
+  - Target market placeholder updated to show EU/country/state examples
+  - All new fields stored in `client_context` JSONB — no schema migration needed
+- **PDF cover title fixed** — was showing `proposition.title` (company name + full product description). Now uses `client.company_name` in `run.js` assembler. `actions.ts` updated so new submissions store just the company name as proposition title.
+- **Existing business analysis product vision added to ROADMAP_V2** — full spec for "existing business audit" product tier. Same research pipeline, new assembler framing. Scheduled after V3 complete.
 
 ### Session 31 — Search quality tools live, UN Comtrade built, fact-check agent built (2026-04-18)
 
@@ -472,7 +481,7 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 
 ## DB Schema
 
-**12 migrations run (001–012) — run 011 then 012 before deploying.**
+**13 migrations run (001–013).**
 
 | Table | Purpose |
 |---|---|
@@ -498,7 +507,10 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 - `propositions.is_test` — BOOLEAN NOT NULL DEFAULT false
 
 **New fields added in migration 012:**
-- `propositions.client_context` — JSONB DEFAULT NULL. Keys: `product_scope`, `development_stage`, `price_point`, `revenue_model` (array), `customer_type`, `ideal_customer`, `sales_channel`, `comparable_brands`, `key_differentiator`. Injected into all research agent prompts as `## CLIENT CONTEXT` block.
+- `propositions.client_context` — JSONB DEFAULT NULL. Keys: `product_scope`, `development_stage`, `price_point`, `revenue_model` (array), `customer_type`, `ideal_customer`, `sales_channel`, `comparable_brands`, `key_differentiator`, `starting_capital`, `company_location`, `credentials`, `existing_resources`, `capital_secured_exact`, `primary_question`, `legal_sensitivities`. Injected into all research agent prompts as `## CLIENT CONTEXT` block.
+
+**New fields added in migration 013:**
+- `reports.formatting_notes` — TEXT, nullable. Used by the admin formatting panel to store per-report presentation notes.
 
 **Extensions enabled:** `moddatetime` — required for the `proposition_context.updated_at` trigger.
 
@@ -721,6 +733,7 @@ See `ROADMAP_V2.md` for full detail.
 | Phase | Status | Key work |
 |---|---|---|
 | V1 | ✅ Complete | Physical import/export pipeline. E2E tested. |
-| Website | ✅ Complete | All pages built and live. One E2E test remaining. |
-| V2 | Planned | Industry-aware routing · new gov tool scripts · workflow generalisation · consultant brief · prompt caching · international research pipeline |
+| Website | ✅ Complete | All pages built and live. Intake form expanded with 6 new fields. |
+| V2 | In progress | **Remaining:** industry routing → workflow generalisation → furniture E2E test → consultant brief |
 | V3 | Future | SaaS, services, digital, franchise — new workflow sets, dynamic agent selection, social media research layer |
+| Existing Business Analysis | Future (after V3) | Same pipeline, new assembler framing. Audit + strategy report for operating businesses. |

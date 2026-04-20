@@ -193,37 +193,30 @@ python tools/fetch_world_bank.py indicators [origin_country_iso2]
 ```
 Use to: extract GDP per capita and inflation rate for the origin country. These are inputs for wage cost benchmarks and currency risk assessment in the financial model.
 
-### 1c. Search Quality Escalation
+### 1c. Search Quality Escalation (Required)
 
-After completing Brave searches and government data calls, evaluate coverage quality.
-For any critical research area where results are still thin — fewer than 3 useful sources,
-or only snippet-level data on a key question — use these escalation tools:
+Before concluding your research you **must** make at least these two calls — every run,
+regardless of how much Brave returned. They surface content keyword search misses.
 
-**Tavily — full article text when Brave snippets are insufficient:**
-Call `search_tavily` when a Brave result is promising but the snippet does not give enough
-detail to extract a concrete figure or conclusion. Returns complete article text.
+**Required — one Exa search:**
+Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
+where exact terminology is uncertain. Rephrase your most important question conceptually.
 ```
-search_tavily search "[specific question needing full coverage]" --count 5
-```
-
-**Exa — semantic search when keyword search misses:**
-Call `search_exa` when relevant content likely exists but Brave is not surfacing it.
-Exa understands meaning, not just keywords — best for competitor discovery, niche market
-angles, and research where the exact terminology is uncertain.
-```
-search_exa search "[conceptual query]" --type neural --count 5
+search_exa search "[your key research question reframed conceptually]" --type neural --count 5
 ```
 
-**Jina — read a full page when a URL needs complete content:**
-Call `fetch_jina_reader` when a Brave or Exa result returns a promising URL and you need
-the full page rather than the snippet.
+**Required — one Tavily search:**
+Tavily returns full article text, not snippets. Use it for the most important quantitative
+claim you found via Brave — get the complete data behind the number.
 ```
-fetch_jina_reader read "[url from search results]"
+search_tavily search "[specific question for the key stat you need full detail on]" --count 3
 ```
 
-These are **escalation tools** — use when Brave coverage is insufficient for a specific
-research area. Do not run all three on every topic. One or two targeted calls per gap
-is the right pattern.
+**Optional — Jina to read a full URL:**
+If a result links to a page with data you need but the snippet is truncated:
+```
+fetch_jina_reader read "[url]"
+```
 
 ### 2. Extract and Synthesise
 

@@ -55,21 +55,25 @@ def build_query(query, country=None):
 
 
 def gdelt_get(endpoint, params):
-    """Make a GET to GDELT API with retries."""
+    """Make a GET to GDELT API with retries. 429 fails immediately — no retry value."""
     url = f"{BASE_URL}/{endpoint}"
     for attempt in range(MAX_RETRIES):
         try:
             resp = httpx.get(url, params=params, timeout=20)
+            # 429 means GDELT is rate-limiting this runner IP; retrying immediately
+            # won't help and just wastes tool-call iterations.
+            if resp.status_code == 429:
+                raise RuntimeError("GDELT rate limit (429) — skip and use web search instead")
             resp.raise_for_status()
-            # GDELT returns JSON or HTML depending on format param
             ct = resp.headers.get("content-type", "")
             if "json" in ct:
                 return resp.json()
-            # Some endpoints return newline-delimited JSON
             text = resp.text.strip()
             if text.startswith("{") or text.startswith("["):
                 return json.loads(text)
             raise ValueError(f"Unexpected content-type: {ct}")
+        except RuntimeError:
+            raise  # propagate 429 immediately — no retry
         except Exception as e:
             if attempt == MAX_RETRIES - 1:
                 raise

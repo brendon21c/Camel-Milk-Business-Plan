@@ -2470,7 +2470,7 @@ CRITICAL RULES:
 
   try {
     const raw = await callClaude({
-      model:      SONNET,
+      model:      'claude-sonnet-4-6',
       system:     systemPrompt,
       userPrompt,
       tools:      FACT_CHECK_TOOLS,
@@ -2637,7 +2637,7 @@ Score each factor 1–5 using the scoring guide in the workflow above. Calculate
 Return ONLY this JSON object (no markdown fences, no other text):
 {
   "meta": {
-    "proposition_title": "${proposition.title}",
+    "proposition_title": "${client.company_name || proposition.title}",
     "proposition_slug":  "${slug}",
     "client_name":       "${client.name}",
     "report_date":       "${reportMonth}",
