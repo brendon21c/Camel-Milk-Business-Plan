@@ -2637,7 +2637,7 @@ Score each factor 1–5 using the scoring guide in the workflow above. Calculate
 Return ONLY this JSON object (no markdown fences, no other text):
 {
   "meta": {
-    "proposition_title": "${client.company_name || proposition.title}",
+    "proposition_title": "${client.company_name || proposition.title.split(' — ')[0].trim()}",
     "proposition_slug":  "${slug}",
     "client_name":       "${client.name}",
     "report_date":       "${reportMonth}",
@@ -3083,7 +3083,7 @@ async function sendReportEmail(recipient, proposition, pdfPath, reportMonth, via
   const client = recipient;
   const pdfBuffer = fs.readFileSync(pdfPath);
   const pdfBase64 = pdfBuffer.toString('base64');
-  const filename  = `McKeever_${proposition.title.replace(/[^a-z0-9]+/gi, '_')}_${reportMonth.replace(' ', '_')}.pdf`;
+  const filename  = `${(proposition.title.split(' — ')[0].trim()).replace(/[^a-z0-9]+/gi, '_')}_${reportMonth.replace(' ', '_')}.pdf`;
 
   const overall = viabilityScore.overall ?? '—';
   const verdict = viabilityScore.verdict ?? '—';
@@ -3198,7 +3198,7 @@ async function sendReportEmail(recipient, proposition, pdfPath, reportMonth, via
 async function sendAdminReportCopy(recipients, proposition, pdfPath, reportMonth, viabilityScore, confidence) {
   const pdfBuffer = fs.readFileSync(pdfPath);
   const pdfBase64 = pdfBuffer.toString('base64');
-  const filename  = `McKeever_${proposition.title.replace(/[^a-z0-9]+/gi, '_')}_${reportMonth.replace(' ', '_')}.pdf`;
+  const filename  = `${(proposition.title.split(' — ')[0].trim()).replace(/[^a-z0-9]+/gi, '_')}_${reportMonth.replace(' ', '_')}.pdf`;
 
   const overall = viabilityScore.overall ?? '—';
   const verdict = viabilityScore.verdict ?? '—';

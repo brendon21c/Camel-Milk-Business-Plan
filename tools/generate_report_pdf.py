@@ -578,12 +578,25 @@ def estimate_col_widths(headers: list, rows: list, total_width: float) -> list:
     total_weight = sum(weights) or 1
     raw_widths   = [total_width * w / total_weight for w in weights]
 
-    # Clamp: no column narrower than its computed minimum or wider than 3.5" (wasteful)
-    clamped = [max(col_min, min(MAX_W, w)) for col_min, w in zip(col_mins, raw_widths)]
+    # Guarantee-minimums-first: assign each column its minimum, distribute the
+    # remainder proportionally.  Simple rescaling (scale = total / sum(clamped))
+    # compresses ALL columns — including those already at minimum — back below
+    # minimum when sum(clamped) > total_width.  This approach never violates mins.
+    sum_mins = sum(col_mins)
+    if sum_mins >= total_width:
+        # Not enough space to guarantee minimums; scale minimums down uniformly.
+        scale = total_width / sum_mins
+        return [m * scale for m in col_mins]
 
-    # Rescale so column widths always sum exactly to total_width
-    scale = total_width / sum(clamped)
-    return [w * scale for w in clamped]
+    remainder = total_width - sum_mins
+    result = []
+    for i in range(n):
+        extra = remainder * weights[i] / total_weight
+        result.append(min(MAX_W, col_mins[i] + extra))
+
+    # Final normalise: min(MAX_W, ...) clamping may leave total slightly off.
+    total = sum(result)
+    return [w * total_width / total for w in result]
 
 
 def render_table(block: dict, styles: dict) -> list:
