@@ -22,14 +22,14 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## Seed IDs
 
-| Record | ID |
+| Record | How to find |
 |---|---|
 | Organization (B & I) | query `organizations` by `name = 'B & I'` |
 | Organization (McKeever Consulting) | query `organizations` by `name = 'McKeever Consulting'` |
-| Client — Brendon McKeever | `ea134c2d-547e-4fcb-b475-65383680c8fb` |
-| Client — Iman Warsame | query `clients` by `email = 'imanw22@gmail.com'` |
-| Proposition (Camel Milk Export) | `54f51272-d819-4d82-825a-15603ed48654` |
-| Supabase project | `https://vupnhlpwfqwmrysohhrq.supabase.co` |
+| Client — Brendon McKeever | query `clients` by `name = 'Brendon McKeever'` |
+| Client — Iman Warsame | query `clients` by `name = 'Iman Warsame'` |
+| Proposition (Camel Milk Export) | query `propositions` by `title = 'B & I'` |
+| Supabase project | see `.env` / Supabase dashboard |
 
 ---
 
@@ -318,7 +318,7 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ## End-to-End Test (V1)
 
 ```
-node run.js --proposition-id 54f51272-d819-4d82-825a-15603ed48654 --force
+node run.js --proposition-id <camel-milk-proposition-id> --force
 ```
 
 **What to watch for:**
@@ -497,7 +497,7 @@ Sonnet retry uses maxIter=20. If Sonnet also fails, agent is marked `failed`. Es
 ### Multi-recipient delivery
 - `proposition_recipients` table controls who gets the report per proposition
 - Falls back to `proposition.client_id` if no recipients are seeded
-- Separate admin copy sent to `brennon.mckeever@gmail.com` listing all recipients
+- Separate admin copy sent to `ADMIN_EMAIL` (env var) listing all recipients
 
 ### Plan tier gating (post-run)
 After each successful run, `advancePropositionSchedule()` checks plan tier + completed report count:
