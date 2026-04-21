@@ -3688,6 +3688,67 @@ async function tryResumeFromContent(proposition, context) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Sends a short admin notification when a PDF regen completes.
+ * Non-fatal — a send failure never blocks the regen from completing.
+ *
+ * @param {Object} proposition  - The proposition row.
+ * @param {Object} report       - The report row.
+ */
+async function sendRegenCompleteNotification(proposition, report) {
+  const reportMonth = new Date(report.created_at).toISOString().slice(0, 7);
+  const notesSnippet = report.formatting_notes
+    ? `<p style="margin:16px 0 0;color:#555;font-size:13px;">
+         <strong>Notes applied:</strong><br>
+         <em style="color:#777;">${report.formatting_notes.replace(/\n/g, '<br>')}</em>
+       </p>`
+    : '';
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+      <div style="background:#1C3557;padding:24px 32px;">
+        <h1 style="color:#C8A94A;font-size:22px;margin:0;">McKeever Consulting</h1>
+        <p style="color:#8A9BB0;font-size:13px;margin:4px 0 0;">PDF Regen Complete</p>
+      </div>
+      <div style="padding:32px;background:#F7F8FA;border:1px solid #e0e0e0;">
+        <h2 style="color:#1C3557;margin-top:0;">PDF rebuilt — ready for review</h2>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr><td style="padding:6px 0;color:#555;width:140px;"><strong>Proposition</strong></td>
+              <td>${proposition.title}</td></tr>
+          <tr><td style="padding:6px 0;color:#555;"><strong>Report period</strong></td>
+              <td>${reportMonth}</td></tr>
+          <tr><td style="padding:6px 0;color:#555;"><strong>Status</strong></td>
+              <td>pending_review — not yet sent to client</td></tr>
+        </table>
+        ${notesSnippet}
+        <p style="margin:24px 0 0;font-size:13px;color:#555;">
+          Open the admin panel to download and review the new PDF.
+          Click <strong>Send to Client</strong> when you're happy with it.
+        </p>
+      </div>
+    </div>
+  `;
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from:    FROM_EMAIL,
+      to:      [ADMIN_EMAIL],
+      subject: `[Regen Complete] ${proposition.title} — ${reportMonth}`,
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend error (regen notification) ${res.status}: ${body}`);
+  }
+}
+
+/**
  * Rebuilds the PDF for an existing report without re-running any agents.
  * Downloads the content JSON from Supabase Storage, runs generate_report_pdf.py,
  * and either saves locally (default) or uploads back to Supabase (--upload).
@@ -3721,13 +3782,22 @@ async function regenPdfFromStorage(reportId, upload = false) {
     );
   }
 
-  // 3. Write content JSON to .tmp/ so the PDF script can read it
+  // 3. Write content JSON to .tmp/ so the PDF script can read it.
+  //    If formatting_notes exist on the report, inject them so the PDF generator
+  //    can render an admin callout on page 2 for visibility during review.
   const tmpDir      = path.join(__dirname, '.tmp');
   fs.mkdirSync(tmpDir, { recursive: true });
   const contentFile = path.join(tmpDir, `${reportId}_content.json`);
   const contentText = await fileData.text();
-  fs.writeFileSync(contentFile, contentText);
-  console.log(`  ✓ Content JSON downloaded`);
+
+  const contentJson = JSON.parse(contentText); // throws naturally if malformed
+
+  if (report.formatting_notes && report.formatting_notes.trim()) {
+    contentJson.formatting_notes = report.formatting_notes.trim();
+  }
+
+  fs.writeFileSync(contentFile, JSON.stringify(contentJson));
+  console.log(`  ✓ Content JSON downloaded${report.formatting_notes ? ' (formatting notes injected)' : ''}`);
 
   // 4. Determine output path
   const slug        = proposition.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -3770,6 +3840,14 @@ async function regenPdfFromStorage(reportId, upload = false) {
 
     // 9. Clean up local PDF (it's now in Supabase)
     try { fs.unlinkSync(pdfPath); } catch (_) { /* Non-fatal */ }
+
+    // 10. Notify admin that regen is done — non-fatal
+    try {
+      await sendRegenCompleteNotification(proposition, report);
+      console.log(`  ✓ Admin notification sent → ${ADMIN_EMAIL}`);
+    } catch (emailErr) {
+      console.error(`  ⚠ Admin notification failed (non-fatal): ${emailErr.message}`);
+    }
 
     console.log('\n✓ PDF regenerated and uploaded. Review it on the admin panel, then click Send to Client when ready.');
   } else {

@@ -957,6 +957,34 @@ def render_sources(sources: list, styles: dict) -> list:
     return out
 
 
+# ── Admin formatting notes callout ─────────────────────────────────────────────
+
+def render_admin_notes(notes: str, styles) -> list:
+    """
+    Render a visible amber callout containing the admin's formatting notes.
+    Only appears in regen runs where formatting_notes was injected into the content JSON.
+    Placed on page 2 before the TOC so it's immediately visible on review.
+    """
+    label = Paragraph('<b>Admin Review Notes</b>', styles['h3'])
+    body  = Paragraph(notes, styles['body'])
+
+    inner = Table(
+        [[label], [body]],
+        colWidths=[PAGE_W - MARGIN_L - MARGIN_R],
+    )
+    inner.setStyle(TableStyle([
+        ('BACKGROUND',  (0, 0), (-1, -1), HexColor('#FFF8E1')),
+        ('LEFTPADDING',  (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+        ('TOPPADDING',   (0, 0), (0, 0),   10),
+        ('BOTTOMPADDING',(0, -1),(-1, -1), 10),
+        ('BOX',         (0, 0), (-1, -1), 1.5, HexColor('#C8A94A')),
+        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [HexColor('#FFF8E1')]),
+    ]))
+
+    return [inner, Spacer(1, 16)]
+
+
 # ── PDF builder ────────────────────────────────────────────────────────────────
 
 def build_pdf(content: dict, output_path: str):
@@ -989,6 +1017,12 @@ def build_pdf(content: dict, output_path: str):
     # Switch to interior template before the PageBreak so page 2 uses 'report'.
     story.append(NextPageTemplate('report'))
     story.append(PageBreak())
+
+    # Admin formatting notes — only present when regenPdfFromStorage() injects them.
+    # Shown at the top of page 2 so Brendon sees the review notes immediately on open.
+    formatting_notes = content.get('formatting_notes')
+    if formatting_notes:
+        story.extend(render_admin_notes(formatting_notes, styles))
 
     # Page 2 — Table of Contents
     story.extend(render_toc(content['sections'], styles))
