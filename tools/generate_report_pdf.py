@@ -541,27 +541,45 @@ def estimate_col_widths(headers: list, rows: list, total_width: float) -> list:
     e.g. a short "Score" column getting the same space as a wide "Description" column.
     This heuristic narrows short columns and widens long ones, staying within
     a per-column min/max clamp so no column becomes unreadably narrow or wastefully wide.
+
+    Per-column minimum: derived from the longest unbreakable word in the column.
+    This prevents short-header columns (e.g. "Competitor") from being squeezed below
+    the width needed to render that word on one line — the old fixed 0.6" minimum
+    wasn't wide enough for 10-char words at typical table font sizes.
     """
     n = len(headers)
     if n == 0:
         return []
 
-    weights = []
+    # ~5.5pt per character in 9pt Helvetica + 8pt horizontal cell padding allowance
+    AVG_CHAR_PT = 5.5
+    CELL_PAD_PT = 8
+    MAX_W       = 3.50 * inch
+
+    weights  = []
+    col_mins = []
+
     for i, h in enumerate(headers):
-        # Measure max character length across header and first 6 rows of this column
-        lengths = [len(str(h))]
+        all_cells = [str(h)]
         for row in rows[:6]:
             if i < len(row):
-                lengths.append(len(str(row[i])))
+                all_cells.append(str(row[i]))
+
+        lengths = [len(c) for c in all_cells]
+
+        # Longest single word across all sampled cells — this token can never break,
+        # so the column must be at least wide enough to render it on one line.
+        longest_word = max((len(w) for text in all_cells for w in text.split()), default=1)
+        col_min = max(0.60 * inch, longest_word * AVG_CHAR_PT + CELL_PAD_PT)
+
         weights.append(max(lengths))
+        col_mins.append(col_min)
 
     total_weight = sum(weights) or 1
     raw_widths   = [total_width * w / total_weight for w in weights]
 
-    # Clamp: no column narrower than 0.6" (readable) or wider than 3.5" (wasteful)
-    MIN_W   = 0.60 * inch
-    MAX_W   = 3.50 * inch
-    clamped = [max(MIN_W, min(MAX_W, w)) for w in raw_widths]
+    # Clamp: no column narrower than its computed minimum or wider than 3.5" (wasteful)
+    clamped = [max(col_min, min(MAX_W, w)) for col_min, w in zip(col_mins, raw_widths)]
 
     # Rescale so column widths always sum exactly to total_width
     scale = total_width / sum(clamped)

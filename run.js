@@ -3783,21 +3783,21 @@ async function regenPdfFromStorage(reportId, upload = false) {
   }
 
   // 3. Write content JSON to .tmp/ so the PDF script can read it.
-  //    If formatting_notes exist on the report, inject them so the PDF generator
-  //    can render an admin callout on page 2 for visibility during review.
+  //    We always write a CLEAN copy (no formatting_notes) for the Storage upload —
+  //    the client-facing PDF must never contain admin review notes.
+  //    A separate annotated copy (with notes injected) is built only for local
+  //    admin review and is never uploaded to Supabase.
   const tmpDir      = path.join(__dirname, '.tmp');
   fs.mkdirSync(tmpDir, { recursive: true });
   const contentFile = path.join(tmpDir, `${reportId}_content.json`);
   const contentText = await fileData.text();
 
   const contentJson = JSON.parse(contentText); // throws naturally if malformed
-
-  if (report.formatting_notes && report.formatting_notes.trim()) {
-    contentJson.formatting_notes = report.formatting_notes.trim();
-  }
-
+  // Deliberately omit formatting_notes from the clean copy written here.
   fs.writeFileSync(contentFile, JSON.stringify(contentJson));
-  console.log(`  ✓ Content JSON downloaded${report.formatting_notes ? ' (formatting notes injected)' : ''}`);
+
+  const hasNotes = !!(report.formatting_notes && report.formatting_notes.trim());
+  console.log(`  ✓ Content JSON downloaded${hasNotes ? ' (formatting notes will be in admin-only copy)' : ''}`);
 
   // 4. Determine output path
   const slug        = proposition.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -3838,8 +3838,39 @@ async function regenPdfFromStorage(reportId, upload = false) {
     await updateReportStatus(reportId, 'pending_review');
     console.log(`  ✓ Report updated — status: pending_review (ready for admin review)`);
 
-    // 9. Clean up local PDF (it's now in Supabase)
+    // 9. Clean up local clean PDF (it's now in Supabase)
     try { fs.unlinkSync(pdfPath); } catch (_) { /* Non-fatal */ }
+
+    // 9b. If formatting_notes exist, build a second annotated PDF for admin review
+    //     and save it to outputs/ — this version is NEVER uploaded to Storage.
+    let annotatedPdfPath = null;
+    if (hasNotes) {
+      const annotatedContentFile = path.join(tmpDir, `${reportId}_annotated_content.json`);
+      const annotatedPdfName     = `${reportId}_annotated_regen.pdf`;
+      const annotatedPdfDest     = path.join(tmpDir, annotatedPdfName);
+      const outputsDir           = path.join(__dirname, 'outputs');
+      fs.mkdirSync(outputsDir, { recursive: true });
+      annotatedPdfPath           = path.join(outputsDir, `${slug}_${reportMonth}_annotated_regen.pdf`);
+
+      // Write annotated content with formatting_notes injected
+      const annotatedJson = { ...contentJson, formatting_notes: report.formatting_notes.trim() };
+      fs.writeFileSync(annotatedContentFile, JSON.stringify(annotatedJson));
+
+      try {
+        execSync(
+          `${PYTHON} "${pdfScript}" --report-id "${reportId}" --content "${annotatedContentFile}" --output "${annotatedPdfDest}"`,
+          { stdio: 'inherit', cwd: __dirname, timeout: 120_000 }
+        );
+        fs.renameSync(annotatedPdfDest, annotatedPdfPath);
+        console.log(`  ✓ Annotated review PDF saved → ${annotatedPdfPath}`);
+        console.log('    (contains admin notes — admin-only, NOT uploaded to Supabase)');
+      } catch (annotErr) {
+        console.error(`  ⚠ Annotated PDF build failed (non-fatal): ${annotErr.message}`);
+        annotatedPdfPath = null;
+      } finally {
+        try { fs.unlinkSync(annotatedContentFile); } catch (_) { /* Non-fatal */ }
+      }
+    }
 
     // 10. Notify admin that regen is done — non-fatal
     try {
@@ -3849,16 +3880,38 @@ async function regenPdfFromStorage(reportId, upload = false) {
       console.error(`  ⚠ Admin notification failed (non-fatal): ${emailErr.message}`);
     }
 
-    console.log('\n✓ PDF regenerated and uploaded. Review it on the admin panel, then click Send to Client when ready.');
+    const annotatedNote = annotatedPdfPath
+      ? `\nAnnotated review copy (admin only) → ${annotatedPdfPath}`
+      : '';
+    console.log(`\n✓ PDF regenerated and uploaded. Clean PDF is in Supabase — safe to send to client.${annotatedNote}`);
   } else {
-    // 7b. Save locally for review only
+    // 7b. Save locally for review only (no upload).
+    //     In this mode we inject formatting_notes so you can review the annotated version
+    //     before deciding whether to upload the clean copy with --upload.
     const outputsDir  = path.join(__dirname, 'outputs');
     fs.mkdirSync(outputsDir, { recursive: true });
     const localPath   = path.join(outputsDir, `${slug}_${reportMonth}_regen.pdf`);
+
+    if (hasNotes) {
+      // Rebuild with notes injected for local review — the pdfPath is the clean build,
+      // so we overwrite it here with an annotated version before saving.
+      const annotatedContentFile = path.join(tmpDir, `${reportId}_annotated_content.json`);
+      const annotatedJson = { ...contentJson, formatting_notes: report.formatting_notes.trim() };
+      fs.writeFileSync(annotatedContentFile, JSON.stringify(annotatedJson));
+      try {
+        execSync(
+          `${PYTHON} "${pdfScript}" --report-id "${reportId}" --content "${annotatedContentFile}" --output "${pdfPath}"`,
+          { stdio: 'inherit', cwd: __dirname, timeout: 120_000 }
+        );
+      } finally {
+        try { fs.unlinkSync(annotatedContentFile); } catch (_) { /* Non-fatal */ }
+      }
+    }
+
     fs.renameSync(pdfPath, localPath);
-    console.log(`  ✓ PDF saved → ${localPath}`);
+    console.log(`  ✓ PDF saved → ${localPath}${hasNotes ? ' (includes admin notes for review)' : ''}`);
     console.log('\nReview the PDF at the path above.');
-    console.log('To upload and update Supabase, re-run with --upload.');
+    console.log('To upload and update Supabase (clean copy, no admin notes), re-run with --upload.');
   }
 }
 
