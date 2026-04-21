@@ -95,12 +95,12 @@ python tools/search_brave.py --query "[industry] commodity price per kg [origin_
 **Query 2 — International shipping and freight:**
 ```
 python tools/search_brave.py --query "freight cost per kg [origin_country] [target_country] air cargo sea shipping" --count 10 --freshness 24
-python tools/search_brave.py --query "international logistics cost [origin_country] export [target_country] food shipment" --count 10 --freshness 24
+python tools/search_brave.py --query "international logistics cost [origin_country] export [target_country] [product_type]" --count 10 --freshness 24
 ```
 
 **Query 3 — Import tariffs and duties:**
 ```
-python tools/search_brave.py --query "[target_country] import duty food products [industry] customs tariff schedule" --count 10 --freshness 24
+python tools/search_brave.py --query "[target_country] import duty [industry] products customs tariff schedule" --count 10 --freshness 24
 python tools/search_brave.py --query "[product_type] HS code customs classification [target_country] duty rate" --count 10 --freshness 24
 ```
 
@@ -118,8 +118,8 @@ python tools/search_brave.py --query "[product_type] B2B price per unit bulk [ta
 
 **Query 6 — Gross margin benchmarks:**
 ```
-python tools/search_brave.py --query "[industry] profit margin benchmark specialty food [target_country]" --count 10 --freshness 24
-python tools/search_brave.py --query "food import business gross margin wholesale retail markup [target_country]" --count 10 --freshness 24
+python tools/search_brave.py --query "[industry] profit margin benchmark [target_country] [current_year]" --count 10 --freshness 24
+python tools/search_brave.py --query "[industry] gross margin wholesale retail markup [target_country]" --count 10 --freshness 24
 ```
 
 #### Agent-Generated Queries
@@ -154,16 +154,37 @@ Use to: identify whether government grants exist for producers in this category
 represent non-dilutive funding options for the client.
 
 **Census CBP — industry payroll benchmarks:**
+
+Select the NAICS code that matches this proposition's `industry` input, then run:
 ```
-python tools/fetch_census_data.py cbp --naics 311 --geography us:1
+python tools/fetch_census_data.py cbp --naics [naics_code] --geography us:1
 ```
-Use to: estimate labour cost benchmarks. Annual payroll divided by employee count
-gives an average salary per employee in food manufacturing — useful for staffing projections.
+
+| Industry | NAICS code |
+|---|---|
+| food / beverage | 311 |
+| furniture / heirloom / wood goods | 337 |
+| wood products / lumber | 321 |
+| apparel / textiles | 315 |
+| chemicals / materials / cosmetics | 325 |
+| electronics / tech hardware | 334 |
+| medical devices | 339 |
+| general manufacturing (other) | 332 |
+| energy / clean tech | 333 |
+
+Use to: estimate industry-specific labour cost benchmarks. Annual payroll divided by employee count gives average salary per employee in that manufacturing sector — useful for staffing projections.
+
+**BLS — labour wage benchmarks (run for all manufacturing propositions):**
+```
+python tools/fetch_bls_data.py wages
+python tools/fetch_bls_data.py employment --sector durable
+```
+Use to: get authoritative BLS wage data for manufacturing workers. `wages` returns average hourly and weekly earnings for production workers across manufacturing. `employment` with `durable` covers furniture (NAICS 337) and wood products (NAICS 321) — the durable goods sector. If admin context notes specify a target role (e.g. skilled woodworker, cabinet maker), use these benchmarks to anchor labour cost line items in financial projections. Cross-reference with web searches for state-specific wage data where the manufacturing is located.
 
 **Perplexity fallback (use only if margin/pricing data is thin):**
 ```
 python tools/search_perplexity.py --query "[product_type] gross margin wholesale retail markup [target_country]"
-python tools/search_perplexity.py --query "[industry] startup capital requirements food import business [target_country]"
+python tools/search_perplexity.py --query "[industry] startup capital requirements [target_country]"
 ```
 Use when: Brave returned fewer than 3 results with actual financial figures.
 
@@ -193,29 +214,36 @@ python tools/fetch_world_bank.py indicators [origin_country_iso2]
 ```
 Use to: extract GDP per capita and inflation rate for the origin country. These are inputs for wage cost benchmarks and currency risk assessment in the financial model.
 
-### 1c. Search Quality Escalation (Required)
+### 1c. Multi-Engine Research Layer (Required)
 
-Before concluding your research you **must** make at least these two calls — every run,
-regardless of how much Brave returned. They surface content keyword search misses.
+Run all four tool types below on every run. Each serves a different purpose and together they surface content that Brave and official APIs alone cannot reach.
 
-**Required — one Exa search:**
-Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
-where exact terminology is uncertain. Rephrase your most important question conceptually.
+**Required — two Perplexity synthesis queries:**
+Perplexity returns a cited, AI-synthesised factual answer — not a list of links to parse. Use it for direct factual questions where Brave returns ten blog posts instead of a clear answer. Ask in plain English, as if briefing an analyst. Replace all bracketed placeholders with your actual input values.
 ```
-search_exa search "[your key research question reframed conceptually]" --type neural --count 5
-```
-
-**Required — one Tavily search:**
-Tavily returns full article text, not snippets. Use it for the most important quantitative
-claim you found via Brave — get the complete data behind the number.
-```
-search_tavily search "[specific question for the key stat you need full detail on]" --count 3
+python tools/search_perplexity.py --query "What are the typical gross margins, unit economics, and operating cost structure for a [industry] business selling [product_type] in [target_country] in [current_year]?"
+python tools/search_perplexity.py --query "What startup capital is typically required to launch a [industry] business selling [product_type] to [target_demographic] in [target_country], including inventory, licensing, marketing, and working capital needs?"
 ```
 
-**Optional — Jina to read a full URL:**
-If a result links to a page with data you need but the snippet is truncated:
+**Required — two Exa semantic searches:**
+Exa finds conceptually related content even when exact keywords are absent. Use `--type deep` for financial benchmarks — industry reports and financial case studies are exactly what deep retrieval surfaces.
 ```
-fetch_jina_reader read "[url]"
+search_exa search "[unit economics, gross margin, and cost structure for businesses in this industry selling this type of product]" --type deep --count 5 --category "financial report"
+search_exa search "[startup capital requirements, funding rounds, and investment patterns for early-stage companies in this industry]" --type deep-lite --count 5
+```
+
+**Required — one Tavily deep research call:**
+Tavily fetches full article text and synthesises an answer across sources. Use the `research` command for the single most important financial figure in this section — the margin benchmark, price point, or cost estimate — where you need full source data, not a snippet.
+```
+search_tavily research "[specific question for the key financial figure you need full context on]" --count 5
+```
+
+**Required — Jina batch read of top source URLs:**
+After all other searches are complete, identify the 3 most data-rich URLs from any source (Brave result, Exa result, Perplexity citation, official API output). Prioritise pages with actual financial data, case studies, or industry benchmarks. Fetch their full content to extract detail that snippets cut off.
+```
+fetch_jina_reader read "[url1]"
+fetch_jina_reader read "[url2]"
+fetch_jina_reader read "[url3]"
 ```
 
 ### 2. Extract and Synthesise

@@ -187,7 +187,7 @@ Flag risks clearly. Cite figures. Every claim should be traceable to a source.
 | 7 | Production & Equipment | production | Use narrative_summary + equipment table |
 | 8 | Packaging | packaging | Use narrative_summary + packaging options table |
 | 9 | Distribution Strategy | distribution | Use narrative_summary + channels table |
-| 10 | Marketing & Influencers | marketing | Use narrative_summary + influencer list + health claims |
+| 10 | Marketing & Influencers | marketing | Use narrative_summary + influencer list + regulatory claim analysis |
 | 11 | Financial Projections | financials | Use narrative_summary + unit economics table + startup capital |
 | 12 | Risk Assessment | legal + regulatory + origin_ops | Consolidate all risks. Rate each: likelihood × impact. |
 | 13 | Recommendations | All | 5–7 prioritised, actionable recommendations. Most important first. |

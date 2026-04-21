@@ -49,7 +49,7 @@ placeholders with values from your inputs. Run them sequentially — do not skip
 python tools/search_brave.py --query "[product_type] packaging formats types pouches tins jars" --count 10 --freshness 72
 python tools/search_brave.py --query "[product_type] packaging suppliers MOQ minimum order quantity" --count 10 --freshness 72
 python tools/search_brave.py --query "[product_type] packaging cost per unit wholesale [current_year]" --count 10 --freshness 72
-python tools/search_brave.py --query "[target_country] FDA packaging labeling requirements [industry] [current_year]" --count 10 --freshness 72
+python tools/search_brave.py --query "[target_country] packaging labeling requirements [industry] regulatory [current_year]" --count 10 --freshness 72
 python tools/search_brave.py --query "[product_type] packaging shelf life barrier materials options" --count 10 --freshness 72
 python tools/search_brave.py --query "[target_demographic] [industry] packaging trends preferences [target_country] [current_year]" --count 10 --freshness 72
 ```
@@ -67,23 +67,23 @@ Do not add extra delays — the tool handles it.
 
 **Query 2 — Packaging suppliers and MOQ**
 - `[product_type] packaging manufacturer wholesale minimum order`
-- `custom food packaging supplier [industry] small batch`
+- `custom [industry] packaging supplier small batch`
 
 **Query 3 — Packaging cost per unit**
 - `[industry] packaging cost breakdown per unit small scale production`
-- `food product packaging price range retail [current_year]`
+- `[product_type] packaging price range retail [current_year]`
 
-**Query 4 — FDA labeling requirements**
-- `[target_country] food labeling rules [industry] imported products requirements`
-- `FDA food label compliance checklist [industry] [current_year]`
+**Query 4 — Labeling requirements**
+- `[target_country] labeling rules [industry] products requirements`
+- `[industry] label compliance checklist [target_country] [current_year]`
 
 **Query 5 — Shelf life and barrier materials**
 - `[product_type] shelf life storage requirements packaging type`
-- `[industry] food packaging barrier properties moisture oxygen protection`
+- `[industry] packaging barrier properties moisture protection`
 
 **Query 6 — Consumer packaging preferences**
 - `[industry] consumer packaging preferences survey [target_country]`
-- `[target_demographic] packaging sustainability preferences health food`
+- `[target_demographic] packaging sustainability preferences [industry]`
 
 #### Agent-Generated Queries
 
@@ -102,12 +102,15 @@ python tools/fetch_cpsc_data.py recalls --query "[product_type] packaging" --lim
 Product category options: furniture, electronics, food, toys, apparel, kitchen, medical.
 Use to: identify any mandatory CPSC safety standards that apply to the packaging (child-resistant closures, warning labels, material restrictions). Packaging-related recalls are a material risk — surface them in `data_gaps` if found.
 
-**FTC labelling compliance — always run:**
+**FTC labelling compliance:**
 ```
-python tools/fetch_ftc_data.py guidance food_labelling
 python tools/fetch_ftc_data.py guidance green_environmental
 ```
-Use to: establish what labelling claims are permitted. Food labelling rules determine mandatory panel requirements and what optional claims (e.g. "natural", "sustainable") are defensible. Green/environmental guidance applies if any eco-packaging claims will be made.
+Always run the green/environmental guidance if any eco-packaging or sustainability claims will be made. For food, beverage, or health product propositions also run:
+```
+python tools/fetch_ftc_data.py guidance food_labelling
+```
+Use to: establish what labelling claims are permitted and what optional claims (e.g. "natural", "sustainable") are defensible under FTC rules.
 
 **EU RAPEX safety alerts (run if target_country is an EU member state):**
 ```
@@ -116,29 +119,36 @@ python tools/fetch_rapex_data.py alerts --query "[product_type] packaging" --lim
 ```
 Use to: identify EU safety alerts involving packaging for this product category. A history of packaging-related RAPEX alerts signals a known compliance risk that must appear in the report.
 
-### 1c. Search Quality Escalation (Required)
+### 1c. Multi-Engine Research Layer (Required)
 
-Before concluding your research you **must** make at least these two calls — every run,
-regardless of how much Brave returned. They surface content keyword search misses.
+Run all four tool types below on every run. Each serves a different purpose and together they surface content that Brave and official APIs alone cannot reach.
 
-**Required — one Exa search:**
-Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
-where exact terminology is uncertain. Rephrase your most important question conceptually.
+**Required — two Perplexity synthesis queries:**
+Perplexity returns a cited, AI-synthesised factual answer — not a list of links to parse. Use it for direct factual questions where Brave returns ten blog posts instead of a clear answer. Ask in plain English, as if briefing an analyst. Replace all bracketed placeholders with your actual input values.
 ```
-search_exa search "[your key research question reframed conceptually]" --type neural --count 5
-```
-
-**Required — one Tavily search:**
-Tavily returns full article text, not snippets. Use it for the most important quantitative
-claim you found via Brave — get the complete data behind the number.
-```
-search_tavily search "[specific question for the key stat you need full detail on]" --count 3
+python tools/search_perplexity.py --query "What are the mandatory labeling and packaging regulatory requirements for [product_type] sold in [target_country] in [current_year], including all required label elements, format rules, and applicable standards?"
+python tools/search_perplexity.py --query "What packaging formats, materials, and design approaches are most effective for [product_type] targeting [target_demographic] consumers in [target_country], and what do they cost at small to mid production volumes?"
 ```
 
-**Optional — Jina to read a full URL:**
-If a result links to a page with data you need but the snippet is truncated:
+**Required — two Exa semantic searches:**
+Exa finds conceptually related content even when exact keywords are absent. Use `--type deep` for regulatory labeling questions — official compliance documentation is exactly what deep retrieval surfaces.
 ```
-fetch_jina_reader read "[url]"
+search_exa search "[mandatory packaging and labeling regulations for this product category sold in the target country]" --type deep --count 5
+search_exa search "[consumer packaging preferences, format trends, and sustainability expectations in this product category and target demographic]" --type deep-lite --count 5
+```
+
+**Required — one Tavily deep research call:**
+Tavily fetches full article text and synthesises an answer across sources. Use the `research` command for the most important packaging figure in this section — per-unit cost, MOQ, or shelf-life spec — where you need full source data, not a snippet.
+```
+search_tavily research "[specific question for the key packaging cost or regulatory figure you need full context on]" --count 5
+```
+
+**Required — Jina batch read of top source URLs:**
+After all other searches are complete, identify the 3 most data-rich URLs from any source (Brave result, Exa result, Perplexity citation, official API output). Prioritise packaging supplier pages, regulatory guidance documents, or trade association guidelines. Fetch their full content to extract detail that snippets cut off.
+```
+fetch_jina_reader read "[url1]"
+fetch_jina_reader read "[url2]"
+fetch_jina_reader read "[url3]"
 ```
 
 ### 2. Extract and Synthesise

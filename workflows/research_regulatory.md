@@ -58,10 +58,10 @@ Execute the following 6 searches using `tools/search_brave.py`. Replace brackete
 placeholders with values from your inputs. Run them sequentially — do not skip any.
 
 ```
-python tools/search_brave.py --query "[product_type] import regulations [target_country] FDA USDA requirements [current_year]" --count 10 --freshness 336
-python tools/search_brave.py --query "[product_type] FDA food safety standards labeling requirements [target_country]" --count 10 --freshness 336
-python tools/search_brave.py --query "[product_type] health claims allowed prohibited FTC FDA [target_country]" --count 10 --freshness 336
-python tools/search_brave.py --query "[origin_country] food import restrictions banned [target_country] [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] import regulations [target_country] federal agency requirements [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] safety standards labeling requirements [target_country] [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] marketing claims allowed prohibited regulatory agency [target_country]" --count 10 --freshness 336
+python tools/search_brave.py --query "[origin_country] import restrictions banned [target_country] [current_year]" --count 10 --freshness 336
 python tools/search_brave.py --query "[product_type] import certification requirements [target_country] organic halal food safety" --count 10 --freshness 336
 python tools/search_brave.py --query "[product_type] regulatory changes pending [target_country] [current_year]" --count 10 --freshness 336
 ```
@@ -70,14 +70,14 @@ python tools/search_brave.py --query "[product_type] regulatory changes pending 
 
 #### Domestic Path
 
-Use these 6 queries instead when `origin_country == target_country`. No import restrictions, country-of-origin flags, or customs/FDA import alerts apply — focus on domestic food safety law, state-level rules, and domestic certifications.
+Use these 6 queries instead when `origin_country == target_country`. No import restrictions, country-of-origin flags, or customs import alerts apply — focus on domestic safety and compliance law, state-level rules, and domestic certifications.
 
 ```
-python tools/search_brave.py --query "[product_type] FDA USDA domestic food safety regulations [target_country] [current_year]" --count 10 --freshness 336
-python tools/search_brave.py --query "[product_type] state-level regulations [target_country] food safety compliance [current_year]" --count 10 --freshness 336
-python tools/search_brave.py --query "[product_type] domestic labeling requirements FDA [target_country] nutrition facts country of origin" --count 10 --freshness 336
-python tools/search_brave.py --query "[product_type] domestic certifications [target_country] organic USDA halal kosher food safety [current_year]" --count 10 --freshness 336
-python tools/search_brave.py --query "[product_type] health claims allowed prohibited FTC FDA [target_country]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] domestic regulatory requirements [target_country] [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] state-level regulations [target_country] compliance [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] domestic labeling requirements regulatory agency [target_country] [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] domestic certifications [target_country] [industry] [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] marketing claims allowed prohibited regulatory agency [target_country]" --count 10 --freshness 336
 python tools/search_brave.py --query "[product_type] regulatory changes pending [target_country] [current_year]" --count 10 --freshness 336
 ```
 
@@ -88,28 +88,28 @@ Do not add extra delays — the tool handles it.
 
 > **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
 
-**Primary 1:** `[product_type] import regulations [target_country] FDA USDA requirements [current_year]`
+**Primary 1:** `[product_type] import regulations [target_country] federal agency requirements [current_year]`
 ```
 python tools/search_brave.py --query "[product_type] import rules [target_country] customs entry requirements" --count 10 --freshness 336
-python tools/search_brave.py --query "[industry] imported food products [target_country] federal requirements" --count 10 --freshness 336
+python tools/search_brave.py --query "[industry] imported products [target_country] federal requirements" --count 10 --freshness 336
 ```
 
-**Primary 2:** `[product_type] FDA food safety standards labeling requirements [target_country]`
+**Primary 2:** `[product_type] safety standards labeling requirements [target_country] [current_year]`
 ```
-python tools/search_brave.py --query "[product_type] FDA compliance labeling rules [current_year]" --count 10 --freshness 336
-python tools/search_brave.py --query "[industry] food labeling requirements [target_country] nutrition facts" --count 10 --freshness 336
+python tools/search_brave.py --query "[product_type] regulatory compliance labeling rules [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "[industry] labeling requirements [target_country]" --count 10 --freshness 336
 ```
 
-**Primary 3:** `[product_type] health claims allowed prohibited FTC FDA [target_country]`
+**Primary 3:** `[product_type] marketing claims allowed prohibited regulatory agency [target_country]`
 ```
 python tools/search_brave.py --query "[product_type] marketing claims regulatory guidance [target_country]" --count 10 --freshness 336
-python tools/search_brave.py --query "[industry] structure function claims FDA rules permitted" --count 10 --freshness 336
+python tools/search_brave.py --query "[industry] marketing claims regulatory rules permitted [target_country]" --count 10 --freshness 336
 ```
 
-**Primary 4:** `[origin_country] food import restrictions banned [target_country] [current_year]`
+**Primary 4:** `[origin_country] import restrictions banned [target_country] [current_year]`
 ```
-python tools/search_brave.py --query "[origin_country] FDA import alert food products [target_country]" --count 10 --freshness 336
-python tools/search_brave.py --query "[origin_country] trade sanctions food exports [target_country] restrictions" --count 10 --freshness 336
+python tools/search_brave.py --query "[origin_country] import alert [product_type] [target_country]" --count 10 --freshness 336
+python tools/search_brave.py --query "[origin_country] trade sanctions exports [target_country] restrictions" --count 10 --freshness 336
 ```
 
 **Primary 5:** `[product_type] import certification requirements [target_country] organic halal food safety`
@@ -121,7 +121,7 @@ python tools/search_brave.py --query "[industry] import compliance certification
 **Primary 6:** `[product_type] regulatory changes pending [target_country] [current_year]`
 ```
 python tools/search_brave.py --query "[product_type] new regulations proposed rule [target_country] upcoming" --count 10 --freshness 336
-python tools/search_brave.py --query "[industry] food policy changes [target_country] [current_year] regulatory update" --count 10 --freshness 336
+python tools/search_brave.py --query "[industry] policy changes [target_country] [current_year] regulatory update" --count 10 --freshness 336
 ```
 
 #### Agent-Generated Queries
@@ -159,8 +159,8 @@ this product type, and verify that health claims align with actual composition.
 
 **Perplexity fallback (use only if Brave regulatory data is thin):**
 ```
-python tools/search_perplexity.py --query "FDA import requirements [product_type] [origin_country] [current_year]"
-python tools/search_perplexity.py --query "[product_type] USDA certification requirements United States"
+python tools/search_perplexity.py --query "What are the federal import and safety requirements for [product_type] sourced from [origin_country] and sold in [target_country] in [current_year]?"
+python tools/search_perplexity.py --query "What agency certifications and approval process apply to [product_type] sold in [target_country] — which regulatory body governs this product category?"
 ```
 Use when: Brave returned fewer than 3 results with specific regulatory requirements.
 Perplexity returns synthesized regulatory summaries with cited sources.
@@ -226,29 +226,36 @@ python tools/fetch_rapex_data.py summary [product_category]
 Product category options: furniture, electronics, clothing_apparel, food, toys, cosmetics.
 Use to: understand EU safety alert patterns and regulatory scrutiny level for this product category in the EU market.
 
-### 1c. Search Quality Escalation (Required)
+### 1c. Multi-Engine Research Layer (Required)
 
-Before concluding your research you **must** make at least these two calls — every run,
-regardless of how much Brave returned. They surface content keyword search misses.
+Run all four tool types below on every run. Each serves a different purpose and together they surface content that Brave and official APIs alone cannot reach.
 
-**Required — one Exa search:**
-Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
-where exact terminology is uncertain. Rephrase your most important question conceptually.
+**Required — two Perplexity synthesis queries:**
+Perplexity returns a cited, AI-synthesised factual answer — not a list of links to parse. Use it for direct factual questions where Brave returns ten blog posts instead of a clear answer. Ask in plain English, as if briefing an analyst. Replace all bracketed placeholders with your actual input values.
 ```
-search_exa search "[your key research question reframed conceptually]" --type neural --count 5
-```
-
-**Required — one Tavily search:**
-Tavily returns full article text, not snippets. Use it for the most important quantitative
-claim you found via Brave — get the complete data behind the number.
-```
-search_tavily search "[specific question for the key stat you need full detail on]" --count 3
+python tools/search_perplexity.py --query "What are the complete federal regulatory requirements for importing and selling [product_type] from [origin_country] in [target_country] in [current_year], including required approvals, testing standards, and labeling rules?"
+python tools/search_perplexity.py --query "What is the step-by-step process and realistic timeline for a new [industry] company to obtain all required import permits and safety approvals to sell [product_type] in [target_country]?"
 ```
 
-**Optional — Jina to read a full URL:**
-If a result links to a page with data you need but the snippet is truncated:
+**Required — two Exa semantic searches:**
+Exa finds conceptually related content even when exact keywords are absent. Use `--type deep` for regulatory questions — official guidance and rule text are exactly what deep retrieval surfaces.
 ```
-fetch_jina_reader read "[url]"
+search_exa search "[regulatory and safety requirements for this product category imported into the target country]" --type deep --count 5
+search_exa search "[recent regulatory changes, enforcement actions, or compliance issues for this product type in the target country]" --type deep-lite --count 5 --category news
+```
+
+**Required — one Tavily deep research call:**
+Tavily fetches full article text and synthesises an answer across sources. Use the `research` command for the most important regulatory requirement you found — get the full rule text or official guidance, not a summary snippet.
+```
+search_tavily research "[specific question for the key regulatory requirement you need full context on]" --count 5
+```
+
+**Required — Jina batch read of top source URLs:**
+After all other searches are complete, identify the 3 most data-rich URLs from any source (Brave result, Exa result, Perplexity citation, official API output). Prioritise official government or regulatory body pages. Fetch their full content to extract detail that snippets cut off.
+```
+fetch_jina_reader read "[url1]"
+fetch_jina_reader read "[url2]"
+fetch_jina_reader read "[url3]"
 ```
 
 ### 2. Extract and Synthesise
@@ -273,8 +280,8 @@ If a rule or requirement has a source URL, note it — it will be saved separate
 Before proceeding to output formatting, explicitly check whether the origin country
 appears in any of the following:
 
-- US import alert lists (FDA Import Alerts)
-- USDA country-specific restrictions for this product type
+- US import alert lists (FDA Import Alerts for food/drug/device; CBP admissibility for all goods)
+- Agency-specific restrictions for this product type (e.g. USDA for food/agriculture, CPSC for consumer products, FCC for electronics)
 - OFAC sanctions lists or State Department trade restrictions
 - Any product-specific import ban for this origin country
 
@@ -339,7 +346,7 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     "banned_or_restricted": true,
     "restriction_details": "<describe any bans, alerts, or restrictions — null if none found>",
     "prior_notice_required": "<yes / no / unknown>",
-    "fda_facility_registration_required": "<yes / no / unknown>",
+    "federal_registration_required": "<yes / no / unknown — e.g. FDA facility registration for food/drug, FCC certification for electronics, N/A for domestic-only businesses>",
     "hs_code": "<harmonised system code for this product type or null>",
     "other_entry_requirements": "<free text or null>",
     "confidence": "high | medium | low"
@@ -371,7 +378,7 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     ],
     "confidence": "high | medium | low"
   },
-  "food_safety_standards": [
+  "product_safety_standards": [
     {
       "standard": "<e.g. HACCP, pasteurisation requirement>",
       "governing_body": "<e.g. FDA, USDA>",

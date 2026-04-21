@@ -63,8 +63,8 @@ Do not add extra delays — the tool handles it.
 
 **Query 1 — Influencers and content creators:**
 ```
-python tools/search_brave.py --query "[industry] health food influencers [target_country] top creators [current_year]" --count 10 --freshness 72
-python tools/search_brave.py --query "[target_demographic] YouTube Instagram creators [target_country] food wellness" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] influencers [target_country] top creators [current_year]" --count 10 --freshness 72
+python tools/search_brave.py --query "[target_demographic] YouTube Instagram creators [target_country] [industry]" --count 10 --freshness 72
 ```
 
 **Query 2 — Marketing channels:**
@@ -75,7 +75,7 @@ python tools/search_brave.py --query "[target_demographic] buying behaviour onli
 
 **Query 3 — Health certifications:**
 ```
-python tools/search_brave.py --query "food certifications [target_country] health-conscious consumers [industry]" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] certifications [target_country] [target_demographic] trust signals [current_year]" --count 10 --freshness 72
 python tools/search_brave.py --query "organic non-GMO certification value consumer trust [target_country] [industry]" --count 10 --freshness 72
 ```
 
@@ -113,11 +113,11 @@ python tools/fetch_ftc_data.py guidance endorsements
 ```
 Use to: establish the legal boundaries for marketing claims before drafting any recommended strategy. Health claims that exceed FTC safe harbour rules are a legal risk that must be flagged in `data_gaps`. Endorsement rules apply to all influencer and affiliate partnerships.
 
-**FTC food labelling compliance — run for food and beverage propositions:**
+**FTC labelling compliance — run for food, beverage, and health product propositions:**
 ```
 python tools/fetch_ftc_data.py guidance food_labelling
 ```
-Use to: determine what labelling language is permitted for marketing and packaging copy. Feeds `health_claims[].fda_compliant` assessments.
+Use to: determine what labelling language is permitted for marketing and packaging copy. Feeds `health_claims[].regulatory_claim_compliant` assessments. Skip for propositions where the product category has no FTC food/health claim restrictions (e.g. furniture, electronics).
 
 **GDELT consumer and market news — always run:**
 ```
@@ -126,29 +126,40 @@ python tools/fetch_gdelt_news.py search "[target_demographic] [industry] trend [
 ```
 Use to: surface very recent consumer sentiment, market trend coverage, and brand launches that Brave searches may have missed. Feeds `community_opportunities` and validates `marketing_channels` data.
 
-### 1c. Search Quality Escalation (Required)
+### 1c. Multi-Engine Research Layer (Required)
 
-Before concluding your research you **must** make at least these two calls — every run,
-regardless of how much Brave returned. They surface content keyword search misses.
+Run all four tool types below on every run. Each serves a different purpose and together they surface content that Brave and official APIs alone cannot reach.
 
-**Required — one Exa search:**
-Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
-where exact terminology is uncertain. Rephrase your most important question conceptually.
+**Required — two Perplexity synthesis queries:**
+Perplexity returns a cited, AI-synthesised factual answer — not a list of links to parse. Use it for direct factual questions where Brave returns ten blog posts instead of a clear answer. Ask in plain English, as if briefing an analyst. Replace all bracketed placeholders with your actual input values.
 ```
-search_exa search "[your key research question reframed conceptually]" --type neural --count 5
-```
-
-**Required — one Tavily search:**
-Tavily returns full article text, not snippets. Use it for the most important quantitative
-claim you found via Brave — get the complete data behind the number.
-```
-search_tavily search "[specific question for the key stat you need full detail on]" --count 3
+python tools/search_perplexity.py --query "What are the most effective marketing channels, customer acquisition strategies, and typical marketing spend benchmarks for [industry] products targeting [target_demographic] in [target_country] in [current_year]?"
+python tools/search_perplexity.py --query "What brand positioning, messaging angles, and marketing claims resonate most strongly with [target_demographic] buyers of [product_type] in [target_country], and what do leading [industry] brands spend on marketing as a percentage of revenue?"
 ```
 
-**Optional — Jina to read a full URL:**
-If a result links to a page with data you need but the snippet is truncated:
+**Required — two Exa semantic searches:**
+Exa finds conceptually related content even when exact keywords are absent. Use `--type deep` for marketing strategy questions. The `similar` command finds more brands marketing to the same demographic — always run it if you found a strong brand URL in any earlier search.
 ```
-fetch_jina_reader read "[url]"
+search_exa search "[marketing channels, customer acquisition strategies, and positioning approaches for brands selling this product to this target demographic]" --type deep --count 5
+search_exa similar [best_brand_url_found_in_brave_or_perplexity] --count 5
+```
+If no brand URL was found, replace the `similar` call with:
+```
+search_exa search "[influencer and content marketing strategies effective for this product category and target demographic]" --type deep-lite --count 5
+```
+
+**Required — one Tavily deep research call:**
+Tavily fetches full article text and synthesises an answer across sources. Use the `research` command for the most important marketing figure in this section — customer acquisition cost, influencer reach, or channel ROI data — where you need full source detail, not a snippet.
+```
+search_tavily research "[specific question for the key marketing stat you need full context on]" --count 5
+```
+
+**Required — Jina batch read of top source URLs:**
+After all other searches are complete, identify the 3 most data-rich URLs from any source (Brave result, Exa result, Perplexity citation, official API output). Prioritise influencer profile pages, brand campaign case studies, or marketing cost reports. Fetch their full content to extract detail that snippets cut off.
+```
+fetch_jina_reader read "[url1]"
+fetch_jina_reader read "[url2]"
+fetch_jina_reader read "[url3]"
 ```
 
 ### 2. Extract and Synthesise
@@ -191,7 +202,7 @@ If a figure has a source URL, note it — it will be saved separately as a citat
 |---|---|
 | `claim` | Specific health benefit claim (e.g. "supports gut health", "lower in lactose than cow milk") |
 | `scientific_support` | strong / moderate / weak — based on peer-reviewed studies found in results |
-| `fda_compliant` | yes / no / unclear — whether the claim can be made under FDA rules for this product category |
+| `regulatory_claim_compliant` | yes / no / unclear / N/A — whether the claim is compliant with the applicable regulatory body for this product category (e.g. FDA for food/drug, FTC for general advertising, CPSC for consumer products). Set to N/A if no specific claim restrictions apply to this industry. |
 
 **Competitor marketing strategies:**
 
@@ -206,7 +217,7 @@ groups where the product has natural fit. Note how to reach them and why the fit
 ### 3. Assess Confidence
 
 For each section, note whether the data is:
-- **High** — specific data with a credible source (industry report, verified influencer profile, peer-reviewed study, official FDA guidance)
+- **High** — specific data with a credible source (industry report, verified influencer profile, peer-reviewed study, official regulatory guidance)
 - **Medium** — directionally accurate but from a less authoritative source or slightly dated
 - **Low** — inferred, estimated, or sourced from a single unreliable result
 
@@ -288,7 +299,7 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     {
       "claim": "<specific health benefit statement>",
       "scientific_support": "strong | moderate | weak",
-      "fda_compliant": "yes | no | unclear"
+      "regulatory_claim_compliant": "yes | no | unclear"
     }
   ],
   "competitor_marketing_strategies": [
@@ -330,7 +341,7 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
 | Brave returns 0 results for a query | Log the query in `data_gaps`, continue with remaining queries |
 | No influencers can be identified for the exact product type | Search one level up (e.g. the broader industry or dietary category) and flag in `data_gaps` that results are indirect |
 | A health claim has weak scientific support | Include it in `health_claims` with `"scientific_support": "weak"` and flag in `data_gaps` with the specific risk — do not omit or suppress it |
-| An FDA compliance determination cannot be made | Set `fda_compliant` to `"unclear"` and flag in `data_gaps` — recommend the orchestrator route this to a legal or regulatory research step |
+| An FDA compliance determination cannot be made | Set `regulatory_claim_compliant` to `"unclear"` and flag in `data_gaps` — recommend the orchestrator route this to a legal or regulatory research step |
 | No competitor marketing data is found | Set `competitor_marketing_strategies` to an empty array, note in `data_gaps`, and infer from general industry patterns in `recommended_strategy` |
 | Conflicting data on audience size or CAC across sources | Use the most recent figure from the most credible source; note the conflict in `data_gaps` |
 | All 6 searches return thin results | Complete what you can, rely more heavily on general industry knowledge for `recommended_strategy`, and note in narrative that marketing data is limited for this product category |
@@ -346,6 +357,6 @@ Before saving output, verify:
 - [ ] `influencers` has at least 1 entry with `"confidence": "medium"` or higher — if not, explain in `data_gaps`
 - [ ] `marketing_channels` has at least 2 entries
 - [ ] `health_claims` is populated — if the product has known health claims, they must appear here with scientific support and FDA compliance assessed
-- [ ] Any health claim flagged `"scientific_support": "weak"` or `"fda_compliant": "unclear"` is also present in `data_gaps` with a plain-language risk note
+- [ ] Any health claim flagged `"scientific_support": "weak"` or `"regulatory_claim_compliant": "unclear"` is also present in `data_gaps` with a plain-language risk note
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only

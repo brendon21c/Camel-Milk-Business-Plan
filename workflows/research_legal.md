@@ -45,7 +45,7 @@ placeholders with values from your inputs. Run them sequentially.
 
 ```
 python tools/search_brave.py --query "business entity types importing [product_type] [target_country]" --count 10 --freshness 336
-python tools/search_brave.py --query "LLC vs corporation food import business [target_country] [current_year]" --count 10 --freshness 336
+python tools/search_brave.py --query "LLC vs corporation [industry] business [target_country] [current_year]" --count 10 --freshness 336
 python tools/search_brave.py --query "product liability insurance [industry] importer [target_country]" --count 10 --freshness 336
 python tools/search_brave.py --query "trademark registration [product_type] brand [target_country]" --count 10 --freshness 336
 python tools/search_brave.py --query "import compliance obligations [product_type] [target_country] customs broker" --count 10 --freshness 336
@@ -57,24 +57,24 @@ python tools/search_brave.py --query "[origin_country] [target_country] trade co
 > **Fallback rule:** If any primary query returns fewer than 3 results with substantive, usable information, run the corresponding fallback queries below before moving to the next topic.
 
 **Query 1 — Business entity types for importers**
-- `best business structure food importer [target_country] startup`
+- `best business structure [industry] [target_country] startup`
 - `how to set up import company [target_country] [product_type]`
 
 **Query 2 — LLC vs corporation comparison**
 - `LLC vs C-Corp importer tax liability [target_country]`
-- `choosing business entity type [target_country] small importer food`
+- `choosing business entity type [target_country] [industry]`
 
 **Query 3 — Product liability and cargo insurance**
-- `food importer insurance requirements [target_country] [current_year]`
+- `[industry] insurance requirements [target_country] [current_year]`
 - `[industry] product liability insurance cost coverage [target_country]`
 
 **Query 4 — Trademark and brand protection**
-- `[target_country] trademark filing process food brand [current_year]`
+- `[target_country] trademark filing process [industry] brand [current_year]`
 - `intellectual property protection importer [product_type] [target_country]`
 
 **Query 5 — Import compliance and customs obligations**
-- `importer of record requirements [target_country] food customs`
-- `customs broker food importer [target_country] ISF filing requirements`
+- `importer of record requirements [target_country] customs`
+- `customs broker [industry] [target_country] ISF filing requirements`
 
 **Query 6 — Trade compliance, sanctions, and restrictions**
 - `OFAC sanctions [origin_country] trade [current_year]`
@@ -123,29 +123,36 @@ python tools/fetch_ftc_data.py guidance endorsements
 ```
 Use to: establish FTC legal boundaries for how the product can be marketed. FTC violations are legal risks that belong in the legal section.
 
-### 1c. Search Quality Escalation (Required)
+### 1c. Multi-Engine Research Layer (Required)
 
-Before concluding your research you **must** make at least these two calls — every run,
-regardless of how much Brave returned. They surface content keyword search misses.
+Run all four tool types below on every run. Each serves a different purpose and together they surface content that Brave and official APIs alone cannot reach.
 
-**Required — one Exa search:**
-Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
-where exact terminology is uncertain. Rephrase your most important question conceptually.
+**Required — two Perplexity synthesis queries:**
+Perplexity returns a cited, AI-synthesised factual answer — not a list of links to parse. Use it for direct factual questions where Brave returns ten blog posts instead of a clear answer. Ask in plain English, as if briefing an analyst. Replace all bracketed placeholders with your actual input values.
 ```
-search_exa search "[your key research question reframed conceptually]" --type neural --count 5
-```
-
-**Required — one Tavily search:**
-Tavily returns full article text, not snippets. Use it for the most important quantitative
-claim you found via Brave — get the complete data behind the number.
-```
-search_tavily search "[specific question for the key stat you need full detail on]" --count 3
+python tools/search_perplexity.py --query "What business structure, licences, and legal registrations does a new [industry] company need to import and sell [product_type] in [target_country] in [current_year]?"
+python tools/search_perplexity.py --query "What are the trademark registration process, IP protection options, and key contract considerations for a [industry] business sourcing [product_type] from [origin_country] and selling in [target_country]?"
 ```
 
-**Optional — Jina to read a full URL:**
-If a result links to a page with data you need but the snippet is truncated:
+**Required — two Exa semantic searches:**
+Exa finds conceptually related content even when exact keywords are absent. Use `--type deep` for legal requirements — official guidance and legal analysis documents are exactly what deep retrieval surfaces.
 ```
-fetch_jina_reader read "[url]"
+search_exa search "[business registration, licensing, and legal compliance requirements for an import business in this industry in the target country]" --type deep --count 5
+search_exa search "[trademark registration, intellectual property protection, and supplier contract structure for a brand importing from a foreign country]" --type deep-lite --count 5
+```
+
+**Required — one Tavily deep research call:**
+Tavily fetches full article text and synthesises an answer across sources. Use the `research` command for the most important legal requirement in this section — business formation rules, a specific licence, or an IP protection process — where you need full detail, not a summary.
+```
+search_tavily research "[specific question for the key legal requirement you need full context on]" --count 5
+```
+
+**Required — Jina batch read of top source URLs:**
+After all other searches are complete, identify the 3 most data-rich URLs from any source (Brave result, Exa result, Perplexity citation, official API output). Prioritise official government, SBA, or bar association pages. Fetch their full content to extract detail that snippets cut off.
+```
+fetch_jina_reader read "[url1]"
+fetch_jina_reader read "[url2]"
+fetch_jina_reader read "[url3]"
 ```
 
 ### 2. Extract and Synthesise

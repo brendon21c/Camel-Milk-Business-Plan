@@ -52,7 +52,7 @@ python tools/search_brave.py --query "[product_type] processing equipment commer
 python tools/search_brave.py --query "[product_type] manufacturing equipment suppliers [industry]" --count 10 --freshness 72
 python tools/search_brave.py --query "[product_type] minimum viable production scale investment [current_year]" --count 10 --freshness 72
 python tools/search_brave.py --query "[product_type] production process steps technical requirements" --count 10 --freshness 72
-python tools/search_brave.py --query "[product_type] quality control equipment food safety certification [target_country]" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] quality control equipment [industry] certification [target_country]" --count 10 --freshness 72
 python tools/search_brave.py --query "[product_type] processing facility requirements energy water infrastructure" --count 10 --freshness 72
 ```
 
@@ -90,7 +90,7 @@ python tools/search_brave.py --query "[industry] manufacturing process flow tech
 **Primary 5:** `[product_type] quality control equipment food safety certification [target_country]`
 ```
 python tools/search_brave.py --query "[product_type] QC testing requirements [target_country] compliance" --count 10 --freshness 72
-python tools/search_brave.py --query "[industry] food safety inspection standards quality assurance equipment" --count 10 --freshness 72
+python tools/search_brave.py --query "[industry] quality inspection standards quality assurance equipment" --count 10 --freshness 72
 ```
 
 **Primary 6:** `[product_type] processing facility requirements energy water infrastructure`
@@ -134,29 +134,36 @@ python tools/fetch_fao_data.py production "[primary_input_commodity]" --country 
 ```
 Use to: verify authoritative data on raw material production volumes and availability in the origin country. Directly informs supply availability assessment.
 
-### 1c. Search Quality Escalation (Required)
+### 1c. Multi-Engine Research Layer (Required)
 
-Before concluding your research you **must** make at least these two calls — every run,
-regardless of how much Brave returned. They surface content keyword search misses.
+Run all four tool types below on every run. Each serves a different purpose and together they surface content that Brave and official APIs alone cannot reach.
 
-**Required — one Exa search:**
-Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
-where exact terminology is uncertain. Rephrase your most important question conceptually.
+**Required — two Perplexity synthesis queries:**
+Perplexity returns a cited, AI-synthesised factual answer — not a list of links to parse. Use it for direct factual questions where Brave returns ten blog posts instead of a clear answer. Ask in plain English, as if briefing an analyst. Replace all bracketed placeholders with your actual input values.
 ```
-search_exa search "[your key research question reframed conceptually]" --type neural --count 5
-```
-
-**Required — one Tavily search:**
-Tavily returns full article text, not snippets. Use it for the most important quantitative
-claim you found via Brave — get the complete data behind the number.
-```
-search_tavily search "[specific question for the key stat you need full detail on]" --count 3
+python tools/search_perplexity.py --query "What equipment, facility requirements, and total capital investment are typically required to produce [product_type] at commercial scale, and who are the main equipment suppliers globally in [current_year]?"
+python tools/search_perplexity.py --query "What are the key production quality control requirements, safety certifications, and manufacturing standards needed to produce [product_type] for sale in [target_country]?"
 ```
 
-**Optional — Jina to read a full URL:**
-If a result links to a page with data you need but the snippet is truncated:
+**Required — two Exa semantic searches:**
+Exa finds conceptually related content even when exact keywords are absent. Use `--type deep` for equipment and production process questions — technical documentation and trade publications are exactly what deep retrieval surfaces.
 ```
-fetch_jina_reader read "[url]"
+search_exa search "[manufacturing process, equipment requirements, and production facility specifications for this product type at commercial scale]" --type deep --count 5
+search_exa search "[quality control systems, food or product safety certifications, and production standards required to sell this product in the target country]" --type deep-lite --count 5
+```
+
+**Required — one Tavily deep research call:**
+Tavily fetches full article text and synthesises an answer across sources. Use the `research` command for the most important production figure in this section — equipment cost, facility spec, or capex estimate — where you need full source data, not a snippet.
+```
+search_tavily research "[specific question for the key production cost or equipment figure you need full context on]" --count 5
+```
+
+**Required — Jina batch read of top source URLs:**
+After all other searches are complete, identify the 3 most data-rich URLs from any source (Brave result, Exa result, Perplexity citation, official API output). Prioritise equipment manufacturer pages, industry association specs, or facility build guides. Fetch their full content to extract detail that snippets cut off.
+```
+fetch_jina_reader read "[url1]"
+fetch_jina_reader read "[url2]"
+fetch_jina_reader read "[url3]"
 ```
 
 ### 2. Extract and Synthesise

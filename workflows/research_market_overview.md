@@ -86,7 +86,7 @@ python tools/search_brave.py --query "[origin_country] [product_type] export vol
 
 **Query 5 — Retail price:**
 ```
-python tools/search_brave.py --query "[product_type] cost [target_country] Amazon Whole Foods" --count 10 --freshness 24
+python tools/search_brave.py --query "[product_type] retail price [target_country] online retail [current_year]" --count 10 --freshness 24
 python tools/search_brave.py --query "[product_type] price comparison [target_country] online" --count 10 --freshness 24
 ```
 
@@ -113,21 +113,34 @@ python tools/fetch_census_data.py acs5 --geography us:1 --year 2022
 Use to: validate the size of the target demographic (income levels, education, population).
 Extract: total population, median household income, education levels.
 
-**Census industry data — food manufacturing establishment count:**
+**Census industry data — establishment count and scale:**
+
+Select the NAICS code that matches this proposition's `industry` input, then run:
 ```
-python tools/fetch_census_data.py cbp --naics 311 --geography us:1
-python tools/fetch_census_data.py cbp --naics 31151 --geography us:1
+python tools/fetch_census_data.py cbp --naics [naics_code] --geography us:1
 ```
-NAICS 311 = food manufacturing; 31151 = dairy product manufacturing.
-Use to: understand the scale and concentration of the domestic food industry.
+
+| Industry | NAICS code |
+|---|---|
+| food / beverage | 311 |
+| furniture / heirloom / wood goods | 337 |
+| wood products / lumber | 321 |
+| apparel / textiles | 315 |
+| chemicals / materials / cosmetics | 325 |
+| electronics / tech hardware | 334 |
+| medical devices | 339 |
+| general manufacturing (other) | 332 |
+| energy / clean tech | 333 |
+
+Use to: understand the scale and concentration of this industry — establishment count, payroll, and employee totals by sector.
 
 **USASpending — federal contracts in this industry:**
 ```
 python tools/fetch_usaspending_data.py search --keyword "[product_type]" --award-type contracts --limit 10
-python tools/fetch_usaspending_data.py naics --code 311511 --fiscal-year 2023
+python tools/fetch_usaspending_data.py naics --code [naics_code] --fiscal-year 2023
 ```
 Use to: identify B2G demand, understand government procurement in this category.
-Note: Many specialty food products have $0 in government contracts — that is useful
+Note: Many consumer-facing products have $0 in government contracts — that is useful
 intelligence too (indicates purely consumer/retail market).
 
 **SEC EDGAR — find public competitors and their scale:**
@@ -192,29 +205,36 @@ fetch_un_comtrade bilateral [origin_iso3] [target_iso3] [hs_code]
 Use to: size the actual import market, identify which countries currently dominate supply, confirm the trade route exists in official data.
 **Important:** HS codes cover a full commodity class (all sub-types, all species, all grades). Always cross-reference with a web search to confirm what specifically comprises the reported volume before attributing it to the proposition's specific product.
 
-### 1c. Search Quality Escalation (Required)
+### 1c. Multi-Engine Research Layer (Required)
 
-Before concluding your research you **must** make at least these two calls — every run,
-regardless of how much Brave returned. They surface content keyword search misses.
+Run all four tool types below on every run. Each serves a different purpose and together they surface content that Brave and official APIs alone cannot reach.
 
-**Required — one Exa search:**
-Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
-where exact terminology is uncertain. Rephrase your most important question conceptually.
+**Required — two Perplexity synthesis queries:**
+Perplexity returns a cited, AI-synthesised factual answer — not a list of links to parse. Use it for direct factual questions where Brave returns ten blog posts instead of a clear answer. Ask in plain English, as if briefing an analyst. Replace all bracketed placeholders with your actual input values.
 ```
-search_exa search "[your key research question reframed conceptually]" --type neural --count 5
-```
-
-**Required — one Tavily search:**
-Tavily returns full article text, not snippets. Use it for the most important quantitative
-claim you found via Brave — get the complete data behind the number.
-```
-search_tavily search "[specific question for the key stat you need full detail on]" --count 3
+python tools/search_perplexity.py --query "What is the current total addressable market size, growth rate, and major consumer segments for [product_type] in [target_country] in [current_year]?"
+python tools/search_perplexity.py --query "What are the key purchase drivers, demographic profile, and buying behaviour of [target_demographic] consumers buying [product_type] in [target_country]?"
 ```
 
-**Optional — Jina to read a full URL:**
-If a result links to a page with data you need but the snippet is truncated:
+**Required — two Exa semantic searches:**
+Exa finds conceptually related content even when exact keywords are absent. Use `--type deep` for comprehensive results on your most important questions.
 ```
-fetch_jina_reader read "[url]"
+search_exa search "[market size, growth rate, and structure of this product category in the target country]" --type deep --count 5 --category "research paper"
+search_exa search "[consumer behaviour, purchase drivers, and demographic profile of buyers of this product type]" --type deep --count 5
+```
+
+**Required — one Tavily deep research call:**
+Tavily fetches full article text and synthesises an answer across sources. Use the `research` command for the single most important quantitative claim in this section — market size, CAGR, or import volume — where you need the complete data, not a snippet.
+```
+search_tavily research "[specific question for the key market size or growth stat you need full context on]" --count 5
+```
+
+**Required — Jina batch read of top source URLs:**
+After all other searches are complete, identify the 3 most data-rich URLs from any source (Brave result, Exa result, Perplexity citation, official API output). Fetch their full content to extract detail that snippets cut off.
+```
+fetch_jina_reader read "[url1]"
+fetch_jina_reader read "[url2]"
+fetch_jina_reader read "[url3]"
 ```
 
 ### 2. Extract and Synthesise

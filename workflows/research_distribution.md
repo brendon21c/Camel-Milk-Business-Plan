@@ -66,20 +66,20 @@ Do not add extra delays — the tool handles it.
 - `how to distribute [product_type] in [target_country] market entry`
 
 **Query 2 — Amazon FBA requirements and fees**
-- `Amazon FBA food product requirements [industry] seller guide`
+- `Amazon FBA [industry] product requirements seller guide`
 - `selling [industry] products on Amazon requirements fees [current_year]`
 
 **Query 3 — Specialty retail entry requirements and slotting fees**
-- `[industry] specialty grocery store entry requirements [target_country]`
-- `slotting fees food brands retail buyer requirements [target_country]`
+- `[industry] specialty retail store entry requirements [target_country]`
+- `slotting fees [industry] brands retail buyer requirements [target_country]`
 
 **Query 4 — Distributors and brokers**
-- `[industry] food distribution companies [target_country] contact`
+- `[industry] distribution companies [target_country] contact`
 - `wholesale [product_type] distributor broker [target_country]`
 
 **Query 5 — Import customs and logistics**
 - `importing [product_type] to [target_country] customs documentation`
-- `[origin_country] food export to [target_country] import duties process`
+- `[origin_country] export [product_type] to [target_country] import duties process`
 
 **Query 6 — Competitor distribution strategy**
 - `[industry] brand distribution model [target_country] case study`
@@ -113,29 +113,40 @@ python tools/fetch_gdelt_news.py search "[product_type] distribution channel [ta
 ```
 Use to: surface recent news about distribution channel shifts, new retail partnerships, or logistics disruptions relevant to this product category. Helps validate or challenge data from Brave searches.
 
-### 1c. Search Quality Escalation (Required)
+### 1c. Multi-Engine Research Layer (Required)
 
-Before concluding your research you **must** make at least these two calls — every run,
-regardless of how much Brave returned. They surface content keyword search misses.
+Run all four tool types below on every run. Each serves a different purpose and together they surface content that Brave and official APIs alone cannot reach.
 
-**Required — one Exa search:**
-Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
-where exact terminology is uncertain. Rephrase your most important question conceptually.
+**Required — two Perplexity synthesis queries:**
+Perplexity returns a cited, AI-synthesised factual answer — not a list of links to parse. Use it for direct factual questions where Brave returns ten blog posts instead of a clear answer. Ask in plain English, as if briefing an analyst. Replace all bracketed placeholders with your actual input values.
 ```
-search_exa search "[your key research question reframed conceptually]" --type neural --count 5
-```
-
-**Required — one Tavily search:**
-Tavily returns full article text, not snippets. Use it for the most important quantitative
-claim you found via Brave — get the complete data behind the number.
-```
-search_tavily search "[specific question for the key stat you need full detail on]" --count 3
+python tools/search_perplexity.py --query "What are the main distribution channels, retailer entry requirements, and typical wholesale and retail margins for [product_type] in [target_country] in [current_year]?"
+python tools/search_perplexity.py --query "How do successful [industry] brands reach [target_demographic] customers in [target_country] — what mix of online, direct-to-consumer, and retail distribution works best for [product_type]?"
 ```
 
-**Optional — Jina to read a full URL:**
-If a result links to a page with data you need but the snippet is truncated:
+**Required — two Exa semantic searches:**
+Exa finds conceptually related content even when exact keywords are absent. Use `--type deep` for channel structure questions. The `similar` command finds more distributors or retailers like a known example — always run it if you found a strong distributor or retailer URL in any earlier search.
 ```
-fetch_jina_reader read "[url]"
+search_exa search "[distribution channels, retailer entry requirements, and margin structure for this product type in the target country]" --type deep --count 5
+search_exa similar [best_distributor_or_retailer_url_found_in_brave_or_perplexity] --count 5
+```
+If no distributor URL was found, replace the `similar` call with:
+```
+search_exa search "[how brands reach this target demographic through retail, DTC, and online channels in the target country]" --type deep-lite --count 5
+```
+
+**Required — one Tavily deep research call:**
+Tavily fetches full article text and synthesises an answer across sources. Use the `research` command for the most important distribution figure in this section — margin benchmarks, retailer requirements, or channel cost data — where you need full source detail, not a snippet.
+```
+search_tavily research "[specific question for the key distribution stat you need full context on]" --count 5
+```
+
+**Required — Jina batch read of top source URLs:**
+After all other searches are complete, identify the 3 most data-rich URLs from any source (Brave result, Exa result, Perplexity citation, official API output). Prioritise retailer vendor pages, distributor websites, or trade association guides. Fetch their full content to extract detail that snippets cut off.
+```
+fetch_jina_reader read "[url1]"
+fetch_jina_reader read "[url2]"
+fetch_jina_reader read "[url3]"
 ```
 
 ### 2. Extract and Synthesise

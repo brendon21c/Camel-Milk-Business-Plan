@@ -75,14 +75,14 @@ python tools/search_brave.py --query "[product_type] retail pricing [target_coun
 
 **Query 3 — Distribution and retail:**
 ```
-python tools/search_brave.py --query "[product_type] sold at [target_country] grocery health store" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] sold at [target_country] retail stores" --count 10 --freshness 72
 python tools/search_brave.py --query "buy [product_type] online [target_country] retailer" --count 10 --freshness 72
 ```
 
 **Query 4 — Market positioning:**
 ```
 python tools/search_brave.py --query "[product_type] brand differentiation [target_country]" --count 10 --freshness 72
-python tools/search_brave.py --query "[product_type] [target_country] health claims marketing angle" --count 10 --freshness 72
+python tools/search_brave.py --query "[product_type] [target_country] marketing angle positioning [current_year]" --count 10 --freshness 72
 ```
 
 **Query 5 — New entrants / startups:**
@@ -130,29 +130,40 @@ python tools/fetch_sec_edgar.py search --query "[product_type] [industry]" --for
 ```
 Use to: identify publicly traded companies in this space. If found, look up CIK to get revenue scale — public competitor revenues provide the strongest financial benchmarks.
 
-### 1c. Search Quality Escalation (Required)
+### 1c. Multi-Engine Research Layer (Required)
 
-Before concluding your research you **must** make at least these two calls — every run,
-regardless of how much Brave returned. They surface content keyword search misses.
+Run all four tool types below on every run. Each serves a different purpose and together they surface content that Brave and official APIs alone cannot reach.
 
-**Required — one Exa search:**
-Exa uses semantic/neural search. Best for niche competitors, emerging angles, and topics
-where exact terminology is uncertain. Rephrase your most important question conceptually.
+**Required — two Perplexity synthesis queries:**
+Perplexity returns a cited, AI-synthesised factual answer — not a list of links to parse. Use it for direct factual questions where Brave returns ten blog posts instead of a clear answer. Ask in plain English, as if briefing an analyst. Replace all bracketed placeholders with your actual input values.
 ```
-search_exa search "[your key research question reframed conceptually]" --type neural --count 5
-```
-
-**Required — one Tavily search:**
-Tavily returns full article text, not snippets. Use it for the most important quantitative
-claim you found via Brave — get the complete data behind the number.
-```
-search_tavily search "[specific question for the key stat you need full detail on]" --count 3
+python tools/search_perplexity.py --query "Who are the leading brands selling [product_type] in [target_country] in [current_year], what are their retail price points, and how is each brand differentiated in the market?"
+python tools/search_perplexity.py --query "What gaps or underserved customer segments exist in the [product_type] category in [target_country] that current [industry] brands are failing to address?"
 ```
 
-**Optional — Jina to read a full URL:**
-If a result links to a page with data you need but the snippet is truncated:
+**Required — two Exa semantic searches:**
+Exa finds conceptually related content even when exact keywords are absent. Use `--type deep` for comprehensive results. The `similar` command finds more companies like a known competitor — always run it if you found a strong competitor URL in any earlier search.
 ```
-fetch_jina_reader read "[url]"
+search_exa search "[the competitive landscape for this product type in the target country — who are the players and how do they compete]" --type deep --count 5 --category company
+search_exa similar [best_competitor_url_found_in_brave_or_perplexity] --count 5
+```
+If no competitor URL was found, replace the `similar` call with:
+```
+search_exa search "[emerging or niche brands entering this product category in the target country]" --type deep-lite --count 5 --category company
+```
+
+**Required — one Tavily deep research call:**
+Tavily fetches full article text and synthesises an answer across sources. Use the `research` command for the single most important quantitative claim in this section — price data, market share, or sales figures — where you need the complete article, not a snippet.
+```
+search_tavily research "[specific question for the key competitive stat you need full context on]" --count 5
+```
+
+**Required — Jina batch read of top source URLs:**
+After all other searches are complete, identify the 3 most data-rich URLs from any source (Brave result, Exa result, Perplexity citation, official API output). Fetch their full content to extract detail that snippets cut off.
+```
+fetch_jina_reader read "[url1]"
+fetch_jina_reader read "[url2]"
+fetch_jina_reader read "[url3]"
 ```
 
 ### 2. Extract and Synthesise

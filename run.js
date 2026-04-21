@@ -200,12 +200,19 @@ const RESEARCH_TOOLS = [
   },
   {
     name:        'search_perplexity',
-    description: 'Fallback search using Perplexity Sonar. Returns a synthesized answer with citations instead of raw web results. Use ONLY when web_search returns fewer than 3 useful results for a query.',
+    description: (
+      'Proactive synthesis search using Perplexity Sonar. Returns an AI-synthesized factual answer with inline citations — not a list of links to parse. ' +
+      'Unlike Brave (which returns raw web results to interpret), Perplexity returns a direct answer to a direct question, the same way a knowledgeable analyst would. ' +
+      'Use for hard factual questions where Brave returns blog posts instead of clear answers: regulatory requirements, market size figures, ' +
+      'country risk assessments, margin benchmarks, legal registration processes, equipment costs. ' +
+      'Call proactively — do not wait for Brave to fail first. Use sonar-pro for questions requiring deeper reasoning or synthesis across complex domains.'
+    ),
     input_schema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Research question to answer' },
-        model: { type: 'string', enum: ['sonar', 'sonar-pro'], default: 'sonar' },
+        query: { type: 'string', description: 'Direct factual question — phrase it as an analyst briefing, not a keyword string' },
+        model: { type: 'string', enum: ['sonar', 'sonar-pro'], default: 'sonar',
+          description: 'sonar = standard; sonar-pro = deeper reasoning for complex multi-domain questions' },
       },
       required: ['query'],
     },
@@ -646,22 +653,31 @@ const RESEARCH_TOOLS = [
   {
     name: 'search_exa',
     description: (
-      'Semantic neural search that finds conceptually related content even when exact keywords are absent. ' +
-      'Brave is keyword-based — Exa understands meaning and surfaces relevant pages that keyword search misses. ' +
-      'Use alongside Brave for competitor discovery, market trends, and research angles keywords would not find. ' +
-      'The similar command finds pages semantically similar to a known good source — excellent for discovering competitors when you have one example. ' +
-      'neural type for conceptual discovery; keyword for exact terms; auto lets Exa decide.'
+      'Semantic search that finds conceptually related content even when exact keywords are absent. ' +
+      'Brave is keyword-based — Exa understands meaning and surfaces relevant pages keyword search misses. ' +
+      'Use alongside Brave, not instead of it. Returns full article text (up to 10,000 chars) per result. ' +
+      'Depth modes: instant/fast/auto for quick passes; deep-lite for niche topics; deep (5–60s) for comprehensive research questions; ' +
+      'deep-reasoning (10–60s) for complex questions where framing and context matter (country risk, market structure analysis). ' +
+      'Default is deep — always use it unless speed is critical. ' +
+      'Category filters narrow results to a content domain: company (brand/business pages), news (recent articles), ' +
+      'research paper (industry reports and academic content), financial report (earnings and financial filings). ' +
+      'The similar command finds pages semantically similar to a known URL — use to discover competitors, distributors, or brands when you have one good example.'
     ),
     input_schema: {
       type: 'object',
       properties: {
-        command: { type: 'string', enum: ['search', 'similar'], default: 'search',
-          description: 'search=query-based; similar=find pages like a given URL' },
-        query:  { type: 'string', description: 'Search query (search command)' },
-        url:    { type: 'string', description: 'Reference URL to find similar pages for (similar command)' },
-        count:  { type: 'integer', description: 'Number of results (max 10, default 5)' },
-        type:   { type: 'string', enum: ['neural', 'keyword', 'auto'], description: 'neural=conceptual, keyword=exact, auto=Exa decides (default: auto)' },
-        since:  { type: 'string', description: 'Only results published after this date (YYYY-MM-DD)' },
+        command:  { type: 'string', enum: ['search', 'similar'], default: 'search',
+          description: 'search=query-based semantic search; similar=find pages like a given URL' },
+        query:    { type: 'string', description: 'Research question phrased conceptually — Exa understands meaning, not just keywords (search command)' },
+        url:      { type: 'string', description: 'Reference URL to find similar pages for (similar command)' },
+        count:    { type: 'integer', description: 'Number of results (max 10, default 5)' },
+        type:     { type: 'string',
+          enum: ['instant', 'fast', 'auto', 'deep-lite', 'deep', 'deep-reasoning'],
+          description: 'Search depth. instant=~200ms; fast=~450ms; auto=~1s; deep-lite=2–10s; deep=5–60s (default, recommended for research); deep-reasoning=10–60s (best for complex analytical questions)' },
+        category: { type: 'string',
+          enum: ['company', 'news', 'research paper', 'financial report', 'personal site', 'people'],
+          description: 'Restrict results to a content domain. company=brand/business pages; news=recent articles; research paper=industry reports; financial report=financial filings' },
+        since:    { type: 'string', description: 'Only include results published after this date (YYYY-MM-DD)' },
       },
       required: [],
     },
@@ -1254,9 +1270,10 @@ function executeTool(toolName, input) {
       } else {
         if (!input.query) return { error: 'query is required for the search command' };
         const exaArgs = ['search', input.query];
-        if (input.count) exaArgs.push('--count', String(input.count));
-        if (input.type)  exaArgs.push('--type',  input.type);
-        if (input.since) exaArgs.push('--since', input.since);
+        if (input.count)    exaArgs.push('--count',    String(input.count));
+        if (input.type)     exaArgs.push('--type',     input.type);
+        if (input.since)    exaArgs.push('--since',    input.since);
+        if (input.category) exaArgs.push('--category', input.category);
         return execPython('tools/search_exa.py', exaArgs);
       }
     }
