@@ -965,7 +965,7 @@ def render_admin_notes(notes: str, styles) -> list:
     Only appears in regen runs where formatting_notes was injected into the content JSON.
     Placed on page 2 before the TOC so it's immediately visible on review.
     """
-    label = Paragraph('<b>Admin Review Notes</b>', styles['h3'])
+    label = Paragraph('<b>Admin Review Notes</b>', styles['subheading'])
     body  = Paragraph(notes, styles['body'])
 
     inner = Table(

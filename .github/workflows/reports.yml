@@ -98,7 +98,7 @@ jobs:
       # If a specific proposition_id was passed (e.g. from the admin panel Run Now button),
       # run only that proposition. Otherwise fall through to the scheduled per-proposition steps below.
       - name: Run report — targeted (admin panel trigger)
-        if: github.event.inputs.proposition_id != ''
+        if: github.event.inputs.proposition_id != '' && github.event.inputs.regen_pdf != 'true'
         run: |
           FORCE_FLAG=""
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
@@ -112,7 +112,7 @@ jobs:
       # The step name shows up in the GitHub Actions log and failure emails.
 
       - name: Run report — B & I Camel Milk
-        if: github.event_name == 'schedule' || github.event.inputs.proposition_id == ''
+        if: (github.event_name == 'schedule' || github.event.inputs.proposition_id == '') && github.event.inputs.regen_pdf != 'true'
         run: |
           FORCE_FLAG=""
           if [ "${{ github.event.inputs.force }}" = "true" ]; then

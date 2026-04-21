@@ -101,7 +101,7 @@ Recommendation: Start with Option A (already partially working via venture intel
 
 #### 5. Consultant Intelligence Brief (admin-only)
 
-**What it is:** A private, candid debrief generated from the same research data as the client report — sent only to Brendon after every successful run. Not polished. Not filtered for the client. Written like a smart colleague briefing you before a meeting.
+**What it is:** A private, candid debrief generated from the same research data as the client report — sent only to Brendon after every successful run. Not polished. Not filtered for the client. Written like a smart colleague giving you the real read on the analysis.
 
 **Why it matters:** Delivering a report is a data transfer. Consulting is knowing what the data means for *this client*, what they should really be worried about, and what questions to ask them. This brief is how you build that skill — every run gives you a private analytical layer to study and eventually internalize.
 
@@ -132,7 +132,7 @@ Recommendation: Start with Option A (already partially working via venture intel
 - Delivery: Resend email to `ADMIN_EMAIL` only with PDF attached, subject: `[Internal] Consultant Brief — {client name} — {month}`
 - Stored: uploaded to Supabase Storage alongside the client report (`{proposition_id}/{reportId}_consultant_brief.pdf`) so it's retrievable per run
 
-**Why PDF over email body:** This is a working document — something to open alongside the client report before a meeting, annotate, pull talking points from, and reference on a call. It should live as a file, not in an inbox.
+**Why PDF over email body:** This is a working document — something to open alongside the client report, annotate, and pull insights from when reviewing the analysis. It should live as a file, not in an inbox.
 
 **Wishlist:** Consolidate the two admin emails into one. Instead of receiving the client report copy and the consultant brief as separate emails, send a single admin email with both PDFs attached — the client report and the consultant brief together. One email to open, both documents ready to review side by side. Resend supports multiple attachments so this is straightforward when implementing.
 
@@ -418,6 +418,23 @@ CREATE TABLE support_ticket_replies (
 #### Sequencing
 
 Build after the current Regen PDF fix and V2 E2E test — this is a website enhancement, not a backend pipeline requirement. It becomes more pressing once real clients start signing contracts and submitting reports.
+
+---
+
+### Visual Redesign — Claude Design
+
+**What it is:** Use [Claude Design](https://claude.ai) (Anthropic Labs, launched April 2026) to generate a visual redesign of the public-facing website before launch. Claude Design reads a codebase and design files to apply the existing system, produces editable prototypes from plain-English prompts, and exports directly to HTML or Claude Code for integration.
+
+**Why defer to pre-launch:** The core product (pipeline, intake, admin panel) needs to be stable and tested first. A redesign this close to launch risks rework if the page structure changes. Do it once the feature set is locked.
+
+**How to run it:**
+1. Open Claude Design at claude.ai (requires Pro/Max/Team/Enterprise)
+2. Point it at the `mckeever-consulting-website/` codebase so it reads the existing design system
+3. Prompt for the redesign with goals (e.g. "more premium consulting firm feel, cleaner landing page, stronger CTA hierarchy")
+4. Export as HTML or Claude Code
+5. Integrate the output into the Next.js codebase via Claude Code
+
+**Sequencing:** Do this after V2 E2E test passes and billing support is in place — i.e., when the feature set is locked and the product is approaching a real public launch.
 
 ---
 

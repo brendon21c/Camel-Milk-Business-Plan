@@ -311,7 +311,7 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ### Sessions 18–19 — V1 close + V2 planning (2026-04-10 to 2026-04-11)
 - V1 finalised: Census JSON retry fix, quality review/repair loop, stronger proofread checks, `--hold` flag dropped
 - International research pipeline SOP written (`workflows/international_research.md`)
-- Market positioning locked: the consulting service (consultant brief + meeting) is the product, not the report generator
+- Market positioning updated: the report is the product. No consulting call or follow-up meeting is included or implied.
 
 ---
 
@@ -737,7 +737,7 @@ Already documented in ROADMAP_V2.md. Build order: YouTube → Reddit → Instagr
 | 10 | Brave throttling | 500ms delay + exponential backoff, max 3 retries |
 | 11 | Failure alerting | Email to Brendon only. Client never notified. Error logged to DB. `agent_outputs` preserved on failure (needed by resume for confidence re-computation); deleted after resume completes. |
 | 12 | Brand | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat. |
-| 13 | Pricing | Starter $100 (1 run) / Pro $250 (2 runs) / Retainer $150/month (unlimited) |
+| 13 | Pricing | Starter $150 (1 run) / Retainer $150/month (1 run/month included). Additional runs above the monthly inclusion are $150 each. **TODO: update website copy and intake language to reflect this — the retainer is not "unlimited".** |
 | 14 | Model escalation | Haiku → Sonnet on iteration exhaustion or JSON parse failure. Ceiling = Sonnet. `financials`, `packaging`, `marketing` skip Haiku entirely (`sonnetOnly: true`). |
 | 15 | Perplexity roles | (1) Fallback when Brave thin, (2) Venture intelligence brief, (3) Landscape briefing. |
 | 16 | Industry adaptability | Venture intelligence brief steers agents away from irrelevant gov tools. Structural routing deferred to V2. |
