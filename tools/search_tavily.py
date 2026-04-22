@@ -110,9 +110,12 @@ def main():
     s.add_argument("--depth", choices=["basic", "advanced"], default="basic")
 
     # research — advanced depth + synthesized answer, for deep dives
+    # --depth and --answer are accepted but ignored (research always runs advanced+answer)
     r = subparsers.add_parser("research", help="Deep research: advanced depth + synthesized answer")
     r.add_argument("query", help="Research question")
     r.add_argument("--count", type=int, default=5)
+    r.add_argument("--depth", choices=["basic", "advanced"], default="advanced", help="Ignored — research always uses advanced")
+    r.add_argument("--answer", action="store_true", help="Ignored — research always includes synthesized answer")
 
     args = parser.parse_args()
 

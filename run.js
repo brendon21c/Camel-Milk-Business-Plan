@@ -808,6 +808,26 @@ function execPython(scriptPath, args) {
 }
 
 /**
+ * Recursively truncates long string values in a tool result object.
+ * Prevents agents from overflowing the 200k token context window when tools
+ * like Exa deep search or Jina page reads return 50k+ chars of content.
+ * JSON structure is preserved — only individual string values are capped.
+ */
+const MAX_TOOL_FIELD_CHARS = 6000;
+function truncateToolResult(val) {
+  if (typeof val === 'string') {
+    return val.length > MAX_TOOL_FIELD_CHARS
+      ? val.slice(0, MAX_TOOL_FIELD_CHARS) + `...[truncated — ${val.length - MAX_TOOL_FIELD_CHARS} chars omitted]`
+      : val;
+  }
+  if (Array.isArray(val)) return val.map(truncateToolResult);
+  if (val && typeof val === 'object') {
+    return Object.fromEntries(Object.entries(val).map(([k, v]) => [k, truncateToolResult(v)]));
+  }
+  return val;
+}
+
+/**
  * Dispatches a tool call from Claude to the correct Python script.
  * Maps tool names to their Python implementations and argument shapes.
  *
@@ -1383,7 +1403,7 @@ async function callClaude({ model, system, userPrompt, tools = [], maxTokens = 8
         toolResults.push({
           type:        'tool_result',
           tool_use_id: block.id,
-          content:     JSON.stringify(result),
+          content:     JSON.stringify(truncateToolResult(result)),
         });
       }
 

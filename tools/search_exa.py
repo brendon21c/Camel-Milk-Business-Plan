@@ -64,7 +64,7 @@ def search(
     include_text=True,
     start_published_date=None,
     category=None,
-    max_chars=10000,
+    max_chars=5000,
 ):
     """
     Semantic search via Exa.
@@ -156,7 +156,7 @@ def search(
     return {"error": "Max retries exceeded", "records": [], "source": "Exa AI Semantic Search"}
 
 
-def find_similar(url, num_results=5, max_chars=10000):
+def find_similar(url, num_results=5, max_chars=5000):
     """
     Find pages semantically similar to a given URL.
     Useful for finding competitors, distributors, or brands when you know one good example.
@@ -234,14 +234,14 @@ def main():
         help="Restrict results to a content category: company, news, research paper, financial report, etc.",
     )
     s.add_argument("--since", help="Only include results published after this date (YYYY-MM-DD)")
-    s.add_argument("--max-chars", type=int, default=10000, help="Max characters of text per result (default 10000)")
+    s.add_argument("--max-chars", type=int, default=5000, help="Max characters of text per result (default 5000)")
     s.add_argument("--no-text", action="store_true", help="Skip full text (faster — highlights only)")
 
     # similar — find pages like a known URL
     sim = subparsers.add_parser("similar", help="Find pages semantically similar to a given URL")
     sim.add_argument("url", help="Reference URL to find similar pages for")
     sim.add_argument("--count", type=int, default=5)
-    sim.add_argument("--max-chars", type=int, default=10000)
+    sim.add_argument("--max-chars", type=int, default=5000)
 
     args = parser.parse_args()
 
