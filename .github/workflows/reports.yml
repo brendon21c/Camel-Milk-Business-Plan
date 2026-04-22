@@ -41,6 +41,10 @@ jobs:
   run-reports:
     name: Generate reports
     runs-on: ubuntu-latest
+    env:
+      # Opt into Node.js 24 for GitHub Actions infrastructure early.
+      # Required before June 2, 2026 when Node 20 is forced out.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
     steps:
       - name: Checkout repository
