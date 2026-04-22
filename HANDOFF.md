@@ -131,7 +131,8 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ## V2 Backend Work (remaining)
 
 1. **V2 E2E Test** ← next — furniture manufacturing, Minnesota → US. Validates generalized workflows, new intake fields, search quality layer in production, PDF title.
-2. **Consultant Intelligence Brief** — after E2E test passes. New `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Single admin email with both PDFs attached.
+2. **Local commercial rental rate searches** — NHD run flagged "Minnesota workshop rental rates estimated from national benchmarks rather than local data." No free API exists for commercial real estate rates (CoStar/REIS are enterprise-only). Fix: update `workflows/research_production.md` and `workflows/research_origin_ops.md` to explicitly instruct agents to search for actual local listings (LoopNet, Crexi, local CRE broker reports) in the proposition's city/state **before** falling back to national benchmarks. One-line prompt change per workflow — no new tool or script needed.
+3. **Consultant Intelligence Brief** — after E2E test passes. New `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Single admin email with both PDFs attached.
 3. **Remaining gov tool scripts** — build when needed for the next test proposition:
    - `tools/fetch_doe_data.py` — DOE EIA + NREL (energy/solar)
    - `tools/fetch_fda_device_data.py` — FDA 510(k) clearances + device recalls (medical)
