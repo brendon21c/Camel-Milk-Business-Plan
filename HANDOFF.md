@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-20 (Session 32 — NHD test run complete, four pipeline bugs fixed, intake form expanded, PDF title fixed, existing business analysis product vision added to roadmap.)
+**Last updated:** 2026-04-21 (Session 33 — All 10 research workflows fully generalized; search quality layer overhauled: Perplexity now mandatory 2 calls/agent, Exa upgraded to 6 depth modes with 2 calls/agent, Tavily in research mode, Jina batch required; run.js tool definitions corrected to match.)
 
 ---
 
@@ -33,7 +33,7 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ---
 
-## Current State (as of 2026-04-18)
+## Current State (as of 2026-04-21)
 
 ### Backend — `Camel-Milk-Business-Plan` ✅ V1 + Step 2.5 + caching + resume + fact-check complete
 
@@ -46,11 +46,11 @@ They share the same Supabase project. The website writes intake data; the backen
 - **Failed-run resume live:** `tryResumeFromContent()` runs before creating a new report record. Creates a fresh report record (new `created_at`) so the admin panel's polling detects it. Re-computes data confidence from the original failed run's `agent_outputs` (now preserved on failure). Patches the content JSON with the fresh score. Deletes the old content JSON from Storage after success so the next trigger runs fresh. Agent_outputs are cleaned up after the resume completes.
 - **Sources extraction fixed:** Replaced LLM-based sources compilation (call 15/15) with deterministic JS that iterates `agentOutputs` directly. No API cost, no missed URLs, no hallucinated sources.
 - **Census API key fallback:** `fetch_census_data.py` detects the "Invalid Key" HTML response (status 200) and retries without the key. Keyless access gives 500 req/day — enough for one report run.
-- **Search quality tools live:** Exa AI (`search_exa.py`), Tavily (`search_tavily.py`), and Jina Reader (`fetch_jina_reader.py`) all active with keys in `.env`. All 10 research workflows updated with Step 1c making Exa and Tavily mandatory on every run (not optional).
+- **Search quality tools live:** Exa AI (`search_exa.py`), Tavily (`search_tavily.py`), and Jina Reader (`fetch_jina_reader.py`) all active with keys in `.env`. All 10 research workflows updated with Step 1c multi-engine research layer: Perplexity 2 mandatory calls per agent (proactive synthesis, not fallback), Exa 2 calls per agent (6 depth modes — `instant`/`fast`/`auto`/`deep-lite`/`deep`/`deep-reasoning`, default `deep`; `similar` command for competitor/brand discovery; `category` filter exposed), Tavily `research` mode (full-text synthesis across sources), Jina 3-URL batch read (mandatory). `run.js` tool definitions corrected to expose all Exa depth modes, `category` parameter, and Perplexity proactive framing.
 - **UN Comtrade live:** `tools/fetch_un_comtrade.py` built and registered. Two commands: `bilateral` and `top_partners`. HS code caveat baked in everywhere.
 - **Fact-check agent live:** `runFactCheckAgent()` in `run.js`. Runs after quality gate + 2-min cooldown, before assembler. Uses Sonnet with `FACT_CHECK_TOOLS`. Non-fatal: failure yields a caution stub.
 - **PDF title fixed:** Cover page now uses `client.company_name` instead of `proposition.title`. Intake actions updated so new submissions store just the company name as the proposition title.
-- **Pending for V2:** Industry routing, workflow generalisation, consultant brief, furniture manufacturing E2E test
+- **Pending for V2:** Furniture manufacturing E2E test
 
 **Note:** Camel Milk proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
 
@@ -84,44 +84,7 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
-### Immediate — Fix Regen PDF (broken, do this first) ← next
-
-Three bugs discovered 2026-04-20. The Regen PDF button exists and triggers correctly but the feature doesn't actually work yet.
-
-**Bug 1 — Formatting notes ignored (most important)**
-`regenPdfFromStorage()` in `run.js` downloads the content JSON and rebuilds the PDF but never reads `report.formatting_notes` from the DB. Notes are stored but not passed to the PDF generator. Fix: after fetching the `report` row, read `report.formatting_notes` and pass it to `generate_report_pdf.py` (new `--notes` arg or injected as a top-level field in the content JSON). The PDF generator needs to display or act on the notes — likely as a visible "Admin Notes" callout on the cover or as instructions to the layout engine.
-
-**Bug 2 — No completion signal**
-Regen keeps the report status as `pending_review` throughout, so the admin panel has no way to detect it finished. The button shows "Rebuilding…" forever. Fix: either (a) send an admin email when regen completes (simplest), or (b) flip report to a transient status like `regenerating` at start and back to `pending_review` at end so the page can poll. Email is simpler — add a `sendRegenCompleteNotification()` call at the end of the upload path in `regenPdfFromStorage()`.
-
-**Bug 3 — Double-trigger not guarded**
-Clicking the button twice dispatches two GitHub Actions runs. The dispatch call returns quickly so `isLoading` resets before the user sees feedback. Fix: once `triggered = true`, disable the button permanently for that session (it already sets `triggered` to true — just ensure the JSX check prevents re-clicks. Currently the `triggered` state renders a text label instead of the button, so this may already be handled — verify).
-
-**To test after fixing:** Add a formatting note, click Regen PDF once, wait ~2–3 min, receive admin email, download new PDF and confirm the note influenced the output.
-
----
-
-### Remaining V2 work (in order)
-
-All migrations run (001–013). NHD test run complete. The remaining items before V2 is fully done:
-
-#### 1. Industry-aware gov data routing ← next
-
-Replace the flat `executeTool` switch statement with a routing layer that checks `industry_category` before calling gov API tools. Non-applicable tools should return a structured "not applicable" response so agents don't waste iterations.
-
-**Why this must come before the E2E test:** The furniture manufacturing run will call FDA and USDA tools by default (they're registered for all industries). Industry routing is what ensures the right tools (ITC, EPA, BLS) get called and the wrong ones are skipped. Without routing, the E2E test result is ambiguous.
-
-**Implementation:** Add an `INDUSTRY_TOOL_MAP` constant in `run.js` (or `db.js`) that maps `industry_category` → allowed tool names. In `executeTool()`, check whether the called tool is in the allowed set for the proposition's category. Return `{ status: "not_applicable", message: "..." }` for out-of-scope tools.
-
-#### 2. Workflow generalisation
-
-Audit the 10 research workflows and remove food-specific hardcoding:
-- `research_regulatory.md` Step 1b explicitly calls FDA and USDA — generalise to "call the gov tools relevant to this proposition's industry category"
-- `research_marketing.md` has FDA-specific framing — remove
-
-Option A (in use now): Venture intelligence brief steers agents away from irrelevant tools. Partially working — NHD run scored Moderate without FDA/USDA routing, so the brief helped. Test the furniture run under Option A first; upgrade to Option B (per-industry substitution blocks) if output quality is poor.
-
-#### 3. V2 E2E Test — Furniture Manufacturing ← milestone
+### V2 E2E Test — Furniture Manufacturing ← next milestone
 
 **Proposition:** Furniture manufacturing, Minnesota → US (domestic physical, `general_manufacturing`). US market only — validates industry routing is working.
 
@@ -145,7 +108,7 @@ Option A (in use now): Venture intelligence brief steers agents away from irrele
 4. Exa + Tavily mandatory calls confirmed in logs
 5. Fact-check agent fires — check logs for "Fact check complete"
 
-#### 4. Consultant Intelligence Brief
+### Consultant Intelligence Brief (post-E2E)
 
 After the E2E test passes. New workflow `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses existing `agent_outputs` — no new research API calls. Single admin email with both PDFs attached (client report + consultant brief). See ROADMAP_V2.md for full spec.
 
@@ -153,7 +116,7 @@ After the E2E test passes. New workflow `workflows/assemble_consultant_brief.md`
 
 ## Website — Future Work
 
-### Billing Support (build after Regen PDF fix + V2 E2E test)
+### Billing Support (build after V2 E2E test)
 
 Clients need to request invoices, request refunds, and ask billing questions. Admins need a single inbox to see and respond.
 
@@ -167,11 +130,9 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 
 ## V2 Backend Work (remaining)
 
-1. **Industry-aware gov data routing** ← next — replace the flat `executeTool` switch with routing based on `industry_category`. Non-applicable tools return a structured "not applicable" so agents don't waste iterations.
-2. **Workflow generalisation** — audit the 10 research workflows, remove food-specific hardcoding. Start with Option A (venture intelligence brief steers tool selection). Move to Option B (per-industry substitution blocks) only if Option A produces poor results.
-3. **V2 E2E Test** — furniture manufacturing, Minnesota → US. Validates industry routing, new intake fields, PDF title fix.
-4. **Consultant Intelligence Brief** — after E2E test passes. New `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Single admin email with both PDFs attached.
-5. **Remaining gov tool scripts** — build when needed for the next test proposition:
+1. **V2 E2E Test** ← next — furniture manufacturing, Minnesota → US. Validates generalized workflows, new intake fields, search quality layer in production, PDF title.
+2. **Consultant Intelligence Brief** — after E2E test passes. New `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Single admin email with both PDFs attached.
+3. **Remaining gov tool scripts** — build when needed for the next test proposition:
    - `tools/fetch_doe_data.py` — DOE EIA + NREL (energy/solar)
    - `tools/fetch_fda_device_data.py` — FDA 510(k) clearances + device recalls (medical)
    - `tools/fetch_bis_data.py` — BIS export control classifications (electronics)
@@ -190,6 +151,16 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ---
 
 ## Session Log
+
+### Session 33 — Workflow generalization complete, search quality layer overhauled (2026-04-21)
+
+- **All 10 research workflows fully generalized** — last food-specific references removed. `assemble_report.md` line 190 updated (section 10 note: "health claims" → "regulatory claim analysis"). All 10 workflow files audited; no proposition-specific language remains.
+- **Perplexity — proactive mandatory in all 10 workflows** — old Step 1c treated Perplexity as a fallback. Replaced with a full "Multi-Engine Research Layer" section (Step 1c) in every workflow. Each now requires 2 Perplexity calls using all intake variables in analyst-style questions. Perplexity returns synthesized answers with inline citations — not links to parse. Called proactively, not after Brave fails.
+- **Exa — upgraded to 6 depth modes, 2 calls per workflow** — `tools/search_exa.py` completely rewritten. Added 5 new depth modes (`instant`, `fast`, `deep-lite`, `deep`, `deep-reasoning`) with per-mode timeouts (20s–120s). Default changed from `auto` to `deep`. `category` parameter added (6 valid values). `maxCharacters` raised from 3,000 to 10,000. All 10 workflows updated to require 2 Exa calls: one `--type deep` primary search, one `similar` command (or second `deep-lite` where `similar` isn't applicable). Special modes: `deep-reasoning` for country risk in `research_origin_ops.md`, `financial report` category in `research_financials.md`, `company` category in `research_competitors.md`.
+- **Tavily — upgraded to `research` mode in all 10 workflows** — was using basic `search` subcommand. All workflows updated to use `research` subcommand (advanced depth + synthesized answer across sources).
+- **Jina — mandatory 3-URL batch read in all 10 workflows** — was optional and single-URL. All workflows updated to require reading the 3 most data-rich URLs from any prior search. Priority guidance added (prefer supplier pages, regulatory docs, brand case studies, trade association guides).
+- **`run.js` tool definitions corrected** — three critical gaps fixed: (1) `search_exa` type enum updated from `['neural', 'keyword', 'auto']` to all 6 depth modes — old enum caused schema validation failures silently, (2) `category` parameter added to `search_exa` execution code (was never passed to CLI despite being in the schema), (3) `search_perplexity` description rewritten from "Use ONLY when Brave returns fewer than 3 results" to proactive framing so agents call it eagerly.
+- **Roadmap updated** — Regen PDF bugs removed from "What Is Next" (fixed Session 32). Industry routing + workflow generalisation removed from remaining V2 work (resolved via Option A — venture intel brief + generalized workflows). E2E furniture test is now the only remaining V2 milestone before consultant brief.
 
 ### Session 32 — NHD test run, pipeline bug fixes, intake form expanded, PDF title fixed (2026-04-20)
 
@@ -461,7 +432,11 @@ Sonnet retry uses maxIter=20. If Sonnet also fails, agent is marked `failed`. Es
 
 | Tool | Script | When used |
 |---|---|---|
-| `web_search` | `search_brave.py` | All agents (primary source) |
+| `web_search` | `search_brave.py` | All agents — primary keyword search |
+| `search_perplexity` | `search_perplexity.py` | All agents — 2 mandatory proactive synthesis calls per workflow. Returns AI-synthesized answers with citations. Called before Brave fails, not as a fallback. |
+| `search_exa` | `search_exa.py` | All agents — 2 mandatory semantic/neural search calls per workflow. 6 depth modes (`instant`/`fast`/`auto`/`deep-lite`/`deep`/`deep-reasoning`), default `deep`. `similar` command for competitor/brand discovery. `category` filter available. |
+| `search_tavily` | `search_tavily.py` | All agents — 1 mandatory `research` mode call per workflow. Full article text + synthesized answer across sources. |
+| `fetch_jina_reader` | `fetch_jina_reader.py` | All agents — mandatory 3-URL batch read per workflow. Fetches full page content from the most data-rich URLs found in any prior search. |
 | `fetch_fda_data` | `fetch_fda_data.py` | Food/drug propositions |
 | `fetch_usda_data` | `fetch_usda_data.py` | Food/agriculture propositions |
 | `fetch_census_data` | `fetch_census_data.py` | All — demographics + industry sizing |
@@ -470,7 +445,6 @@ Sonnet retry uses maxIter=20. If Sonnet also fails, agent is marked `failed`. Es
 | `fetch_bls_data` | `fetch_bls_data.py` | Manufacturing — wage benchmarks + employment trends (BLS v2) |
 | `fetch_epa_data` | `fetch_epa_data.py` | Manufacturing/chemicals — ECHO compliance + TRI toxic releases |
 | `fetch_itc_data` | `fetch_itc_data.py` | Import/export — trade remedy cases + Census annual import stats |
-| `search_perplexity` | `search_perplexity.py` | Fallback when Brave is thin |
 
 ### Quality gate
 - Hard fail: any critical agent null (`market_overview`, `regulatory`, `financials`, `origin_ops`)
@@ -739,7 +713,7 @@ Already documented in ROADMAP_V2.md. Build order: YouTube → Reddit → Instagr
 | 12 | Brand | McKeever Consulting. Navy `#1C3557` + Gold `#C8A94A` + Silver `#8A9BB0`. Montserrat. |
 | 13 | Pricing | Starter $150 (1 run) / Retainer $150/month (1 run/month included). Additional runs above the monthly inclusion are $150 each. **TODO: update website copy and intake language to reflect this — the retainer is not "unlimited".** |
 | 14 | Model escalation | Haiku → Sonnet on iteration exhaustion or JSON parse failure. Ceiling = Sonnet. `financials`, `packaging`, `marketing` skip Haiku entirely (`sonnetOnly: true`). |
-| 15 | Perplexity roles | (1) Fallback when Brave thin, (2) Venture intelligence brief, (3) Landscape briefing. |
+| 15 | Perplexity roles | (1) Proactive mandatory synthesis — 2 calls per research agent workflow (not a fallback), (2) Venture intelligence brief (pre-run), (3) Landscape briefing (pre-run). Proactive design confirmed Session 33: Perplexity returns synthesized answers with citations, not links to parse. Called alongside Brave, not after it fails. |
 | 16 | Industry adaptability | Venture intelligence brief steers agents away from irrelevant gov tools. Structural routing deferred to V2. |
 | 17 | Client model | Organizations own propositions. Contacts (clients) belong to orgs. Per-proposition recipient lists via `proposition_recipients`. |
 | 18 | Org status gating | Only `active` orgs run reports. Flip to `inactive`/`cancelled` to pause without deleting data. |
@@ -765,6 +739,6 @@ See `ROADMAP_V2.md` for full detail.
 |---|---|---|
 | V1 | ✅ Complete | Physical import/export pipeline. E2E tested. |
 | Website | ✅ Complete | All pages built and live. Intake form expanded with 6 new fields. |
-| V2 | In progress | **Remaining:** industry routing → workflow generalisation → furniture E2E test → consultant brief |
+| V2 | In progress | **Remaining:** furniture manufacturing E2E test → consultant brief |
 | V3 | Future | SaaS, services, digital, franchise — new workflow sets, dynamic agent selection, social media research layer |
 | Existing Business Analysis | Future (after V3) | Same pipeline, new assembler framing. Audit + strategy report for operating businesses. |

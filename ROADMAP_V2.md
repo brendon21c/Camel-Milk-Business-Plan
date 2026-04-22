@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-20 (Northern Heritage Designs test run complete; four pipeline bugs fixed; existing business analysis product vision added)
+**Last updated:** 2026-04-21 (Session 33 — All 10 workflows fully generalized; search quality layer overhauled: Perplexity mandatory proactive, Exa 6 depth modes + 2 calls/workflow, Tavily research mode, Jina batch mandatory)
 
 ---
 
@@ -11,7 +11,7 @@
 |---|---|---|
 | V1 | Physical import/export — any product, food-biased gov data | ✅ Complete |
 | Website | Main page, intake form, admin panel | ✅ Complete |
-| V2 | Any physical product, any industry — adaptive research | In progress — NHD test run complete, bugs fixed |
+| V2 | Any physical product, any industry — adaptive research | In progress — workflows fully generalized; search quality layer overhauled; E2E furniture test is the remaining V2 milestone |
 | V3 | General business ventures — SaaS, services, digital, franchise | Future |
 | Existing Business Analysis | Audit + strategy report for operating businesses (after V3) | Future |
 
@@ -90,14 +90,11 @@ New migration: `006_add_industry_category.sql`
 ALTER TABLE propositions ADD COLUMN industry_category TEXT;
 ```
 
-#### 4. Workflow generalisation
+#### 4. Workflow generalisation ✅ Complete (Session 33)
 
-Audit the 10 research workflows and remove food-specific language. The regulatory workflow's Step 1b should reference the `industry_category` to pick the right tool calls, rather than hardcoding FDA/USDA.
+All 10 research workflows audited and fully generalized. Last food-specific reference (`assemble_report.md` — "influencer list + health claims") removed. Regulatory workflow Step 1b no longer hardcodes FDA/USDA. Marketing workflow FDA framing removed. All workflows now use `[product_type]`, `[industry]`, `[target_country]`, `[target_demographic]`, and `[current_year]` throughout — no proposition-specific language remains.
 
-Option A (simpler): Keep workflows generic, rely on venture intelligence brief to steer tool selection.  
-Option B (more robust): Add an `industry_category` substitution block at the top of each workflow that lists the applicable gov tools for this run.
-
-Recommendation: Start with Option A (already partially working via venture intelligence) and move to Option B if Option A produces poor results for non-food industries.
+Option A confirmed working via NHD test run (scored 80.5/100 Moderate viability without FDA/USDA routing). Venture intelligence brief + generalized workflows is sufficient for the E2E furniture test. Option B (per-industry substitution blocks in workflow headers) remains available if Option A proves insufficient for a specific industry.
 
 #### 5. Consultant Intelligence Brief (admin-only)
 
@@ -181,15 +178,16 @@ Recommendation: Start with Option A (already partially working via venture intel
 | `tools/normalize_international_data.py` | ~~DROPPED~~ | Agents normalize inline. |
 | `tools/fetch_opencorporates.py` | SKIPPED | $2,000/year for API access. Brave `site:opencorporates.com` covers the use case for free. |
 
-**Search quality tools — status (all active, Session 31):**
+**Search quality tools — status (all active, upgraded Session 33):**
 
 | Tool | Key | What it adds |
 |---|---|---|
-| `tools/search_exa.py` | `EXA_API_KEY` ✅ | Semantic/neural search — finds conceptually related content keywords miss. `similar` command finds competitor pages from one known URL. |
-| `tools/search_tavily.py` | `TAVILY_API_KEY` ✅ | Full article text, not snippets. Use when Brave returns thin results on a key question. |
-| `tools/fetch_jina_reader.py` | `JINA_API_KEY` ✅ | Reads any URL as clean markdown. Use when a specific page needs full content. |
+| `tools/search_perplexity.py` | `PERPLEXITY_API_KEY` ✅ | Proactive synthesis — 2 mandatory calls per workflow. Returns AI-synthesized answers with inline citations. Called for direct factual questions where Brave returns blog posts. Uses all intake variables (product, industry, country, demographic, year) for targeted results. |
+| `tools/search_exa.py` | `EXA_API_KEY` ✅ | Semantic/neural search — 2 mandatory calls per workflow. 6 depth modes: `instant` (~200ms), `fast` (~450ms), `auto` (~1s), `deep-lite` (2–10s), `deep` (5–60s, default), `deep-reasoning` (10–60s). `similar` command finds competitor/brand pages from a known URL. `category` filter: `company`, `news`, `research paper`, `financial report`, `personal site`, `people`. |
+| `tools/search_tavily.py` | `TAVILY_API_KEY` ✅ | Full-text synthesis — 1 mandatory `research` mode call per workflow (upgraded from basic `search`). Fetches full article text and synthesizes an answer across sources. |
+| `tools/fetch_jina_reader.py` | `JINA_API_KEY` ✅ | URL reader — mandatory 3-URL batch read per workflow (upgraded from optional single-URL). Fetches full clean markdown from the top data-rich URLs found in any prior search. |
 
-All 10 research workflows updated with Step 1c (Search Quality Escalation) — agents now know when and how to use these alongside Brave.
+All 10 research workflows updated with Step 1c "Multi-Engine Research Layer" — all four tools are mandatory on every run, not optional or conditional. Perplexity was previously a fallback; it is now the first synthesis layer called alongside Brave.
 
 **International economic data APIs (all free, no key):**
 
