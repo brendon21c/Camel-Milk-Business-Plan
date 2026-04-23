@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-21 (Session 33 — All 10 research workflows fully generalized; search quality layer overhauled: Perplexity now mandatory 2 calls/agent, Exa upgraded to 6 depth modes with 2 calls/agent, Tavily in research mode, Jina batch required; run.js tool definitions corrected to match.)
+**Last updated:** 2026-04-23 (Session 34 — V2 E2E test confirmed complete; consultant intelligence brief cancelled — not a feature or service we offer)
 
 ---
 
@@ -50,7 +50,7 @@ They share the same Supabase project. The website writes intake data; the backen
 - **UN Comtrade live:** `tools/fetch_un_comtrade.py` built and registered. Two commands: `bilateral` and `top_partners`. HS code caveat baked in everywhere.
 - **Fact-check agent live:** `runFactCheckAgent()` in `run.js`. Runs after quality gate + 2-min cooldown, before assembler. Uses Sonnet with `FACT_CHECK_TOOLS`. Non-fatal: failure yields a caution stub.
 - **PDF title fixed:** Cover page now uses `client.company_name` instead of `proposition.title`. Intake actions updated so new submissions store just the company name as the proposition title.
-- **Pending for V2:** Furniture manufacturing E2E test
+- **V2 E2E test complete (2026-04-23):** Furniture manufacturing, Minnesota → US. Intake → contract → Stripe → Run Now → report all validated.
 
 **Note:** Camel Milk proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
 
@@ -84,39 +84,15 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
-### V2 E2E Test — Furniture Manufacturing ← next milestone
+### V2 E2E Test — Furniture Manufacturing ✅ Complete (2026-04-23)
 
-**Proposition:** Furniture manufacturing, Minnesota → US (domestic physical, `general_manufacturing`). US market only — validates industry routing is working.
-
-**Gov tool scripts ready:**
-- `tools/fetch_itc_data.py` ✅ — Federal Register trade remedy cases + Census annual import stats
-- `tools/fetch_epa_data.py` ✅ — EPA ECHO compliance + Toxic Release Inventory
-- `tools/fetch_bls_data.py` ✅ — BLS manufacturing wage benchmarks + employment trends
-
-**Flow:**
-1. Submit via `/intake` — fresh client/org (tests the intake-to-run path end to end with new form fields)
-2. Activate the org (`tools/activate.js` or flip `status = 'active'` in Supabase)
-3. Add a context note (e.g. sourcing note about wood supply chain)
-4. Admin panel → **Run Now**
-5. Watch logs — confirm ITC/EPA/BLS are called, FDA/USDA are skipped or return "not_applicable"
-6. Report delivered — check PDF cover shows just the company name
-
-**What this run verifies:**
-1. Industry routing working — right gov APIs called, wrong ones skipped
-2. New intake form fields (company location, credentials, existing resources, etc.) flowing into `client_context` and appearing in agent prompts
-3. PDF title correct (company name only)
-4. Exa + Tavily mandatory calls confirmed in logs
-5. Fact-check agent fires — check logs for "Fact check complete"
-
-### Consultant Intelligence Brief (post-E2E)
-
-After the E2E test passes. New workflow `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses existing `agent_outputs` — no new research API calls. Single admin email with both PDFs attached (client report + consultant brief). See ROADMAP_V2.md for full spec.
+Confirmed: intake → contract → Stripe payment screen → Run Now → report generation all validated. Industry routing (ITC/EPA/BLS called, FDA/USDA skipped), new intake fields in agent prompts, PDF title, Exa/Tavily mandatory calls, and fact-check agent all confirmed working.
 
 ---
 
 ## Website — Future Work
 
-### Billing Support (build after V2 E2E test)
+### Billing Support (next)
 
 Clients need to request invoices, request refunds, and ask billing questions. Admins need a single inbox to see and respond.
 
@@ -130,10 +106,8 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 
 ## V2 Backend Work (remaining)
 
-1. **V2 E2E Test** ← next — furniture manufacturing, Minnesota → US. Validates generalized workflows, new intake fields, search quality layer in production, PDF title.
-2. **Local commercial rental rate searches** — NHD run flagged "Minnesota workshop rental rates estimated from national benchmarks rather than local data." No free API exists for commercial real estate rates (CoStar/REIS are enterprise-only). Fix: update `workflows/research_production.md` and `workflows/research_origin_ops.md` to explicitly instruct agents to search for actual local listings (LoopNet, Crexi, local CRE broker reports) in the proposition's city/state **before** falling back to national benchmarks. One-line prompt change per workflow — no new tool or script needed.
-3. **Consultant Intelligence Brief** — after E2E test passes. New `workflows/assemble_consultant_brief.md`, new `runConsultantBriefAgent()` in `run.js`, new `tools/generate_consultant_brief_pdf.py`. Uses same `agent_outputs` already in DB — no additional research API calls. Single admin email with both PDFs attached.
-3. **Remaining gov tool scripts** — build when needed for the next test proposition:
+1. **Local commercial rental rate searches** — NHD run flagged "Minnesota workshop rental rates estimated from national benchmarks rather than local data." No free API exists for commercial real estate rates (CoStar/REIS are enterprise-only). Fix: update `workflows/research_production.md` and `workflows/research_origin_ops.md` to explicitly instruct agents to search for actual local listings (LoopNet, Crexi, local CRE broker reports) in the proposition's city/state **before** falling back to national benchmarks. One-line prompt change per workflow — no new tool or script needed.
+2. **Remaining gov tool scripts** — build when needed for the next test proposition:
    - `tools/fetch_doe_data.py` — DOE EIA + NREL (energy/solar)
    - `tools/fetch_fda_device_data.py` — FDA 510(k) clearances + device recalls (medical)
    - `tools/fetch_bis_data.py` — BIS export control classifications (electronics)
@@ -152,6 +126,12 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ---
 
 ## Session Log
+
+### Session 34 — V2 E2E confirmed complete; consultant brief cancelled (2026-04-23)
+
+- **V2 E2E test confirmed** — Furniture manufacturing, Minnesota → US. Full happy path validated: intake form, org activation, contract creation, Stripe payment screen, Run Now trigger, report generation and delivery. All verification criteria met: ITC/EPA/BLS called, FDA/USDA skipped, Exa/Tavily mandatory calls present in logs, fact-check agent fired, PDF cover showing company name only.
+- **Consultant intelligence brief cancelled** — Not being built. Not a service we offer. Removed from HANDOFF, ROADMAP_V2, and all "What Is Next" sections.
+- **V2 status: complete.** Next phase is V3 (SaaS, services, digital, franchise) or website billing support, whichever is prioritized.
 
 ### Session 33 — Workflow generalization complete, search quality layer overhauled (2026-04-21)
 
@@ -740,6 +720,6 @@ See `ROADMAP_V2.md` for full detail.
 |---|---|---|
 | V1 | ✅ Complete | Physical import/export pipeline. E2E tested. |
 | Website | ✅ Complete | All pages built and live. Intake form expanded with 6 new fields. |
-| V2 | In progress | **Remaining:** furniture manufacturing E2E test → consultant brief |
+| V2 | ✅ Complete | E2E furniture test confirmed 2026-04-23. Consultant brief cancelled. |
 | V3 | Future | SaaS, services, digital, franchise — new workflow sets, dynamic agent selection, social media research layer |
 | Existing Business Analysis | Future (after V3) | Same pipeline, new assembler framing. Audit + strategy report for operating businesses. |
