@@ -168,6 +168,23 @@ All 10 research workflows updated with Step 1c "Multi-Engine Research Layer" —
 
 **Translation approach:** Agents translate non-English sources inline using Claude's native multilingual capability. No external translation API. Agents generate native-language Brave queries directly from `target_country` input. `international_research.md` documents this approach.
 
+---
+
+### Future — Multi-Market Parallel Research
+
+**Goal:** A client selling into multiple markets (e.g. US + EU, or global rollout) gets a side-by-side viability analysis per market, not a blended single-market report.
+
+**Why it's deferred:** The APIs are not the bottleneck — Eurostat, World Bank, IMF, OECD, UN Comtrade, WTO tariffs, and EU RAPEX are all available (most already built or registered). The gap is architectural: the current pipeline runs one sequential research pass against one `target_country`. Running multi-market research properly requires:
+
+1. **Parallel research pipelines** — run all 10 agents once per market (or per regulatory region). Two markets = two full agent runs.
+2. **Market comparison synthesizer** — a new assembler agent that reads results from both runs and writes a structured side-by-side comparison (regulatory burden, market size, distribution complexity, estimated cost-to-enter per market).
+3. **Report format change** — sections like Regulatory, Distribution, and Market Overview need a per-market sub-structure instead of a single narrative.
+4. **Intake form update** — allow clients to specify multiple target markets (already stubbed as `market_scope: 'international'` in the intake form — expand this to a multi-select when the backend is ready).
+
+**Current handling:** Clients who select "Planning to expand internationally" get a single-market report anchored to their primary market. International expansion intent is written into `client_context` so agents can note export considerations where relevant, but no structured multi-market analysis runs.
+
+**When to build:** After V3 is complete and the agent manifest system (dynamic agent selection per proposition type) is in place. Multi-market is essentially "run V2 twice and compare" — the infrastructure for dynamic agent sets makes parallelising straightforward.
+
 **Test proposition for validation:**
 
 | Proposition | Target language | Key non-English sources |
