@@ -47,6 +47,9 @@ const {
   deleteAgentOutputsByReportId,
   getPropositionRecipients,
   getPropositionContext,
+  getMcKeeverAdminEmails,
+  getCachedApiResponse,
+  setCachedApiResponse,
 } = require('./db');
 
 // ---------------------------------------------------------------------------
@@ -68,9 +71,8 @@ const supabase = createSupabaseClient(
   process.env.SUPABASE_SERVICE_KEY,
 );
 
-// Admin email receives failure alerts; client never sees failures
-const ADMIN_EMAIL = 'brennon.mckeever@gmail.com';
-const FROM_EMAIL  = 'McKeever Consulting <reports@mckeeverconsulting.org>';
+// Sender address for all outbound emails — set FROM_EMAIL in .env to override
+const FROM_EMAIL = process.env.FROM_EMAIL || 'McKeever Consulting <reports@mckeeverconsulting.org>';
 
 // Research agent names — must match workflow filenames (research_<name>.md)
 const RESEARCH_AGENTS = [
@@ -3082,7 +3084,7 @@ ${proofreaderView}`;
   // Recipients are NOT emailed here. Brendon reviews the report first, then clicks
   // "Send to Client" on the website to trigger delivery.
   const viabilityScoreObj = contentJson.viability_score || {};
-  await sendAdminReportCopy(context.recipients, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence);
+  await sendAdminReportCopy(context.recipients, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence, context.adminEmails);
   console.log(`    ✓ Admin review copy sent`);
 
   // ── Mark pending_review — admin approves before client delivery ──────────
@@ -3232,7 +3234,7 @@ async function sendReportEmail(recipient, proposition, pdfPath, reportMonth, via
  * @param {Object}      viabilityScore - Score object { overall, verdict, factors }.
  * @param {Object|null} confidence    - Confidence score object or null.
  */
-async function sendAdminReportCopy(recipients, proposition, pdfPath, reportMonth, viabilityScore, confidence) {
+async function sendAdminReportCopy(recipients, proposition, pdfPath, reportMonth, viabilityScore, confidence, adminEmails) {
   const pdfBuffer = fs.readFileSync(pdfPath);
   const pdfBase64 = pdfBuffer.toString('base64');
   const filename  = `${(proposition.title.split(' — ')[0].trim()).replace(/[^a-z0-9]+/gi, '_')}_${reportMonth.replace(' ', '_')}.pdf`;
@@ -3285,7 +3287,7 @@ async function sendAdminReportCopy(recipients, proposition, pdfPath, reportMonth
     },
     body: JSON.stringify({
       from:        FROM_EMAIL,
-      to:          [ADMIN_EMAIL],
+      to:          adminEmails,
       subject:     `[Admin Copy] Report delivered — ${proposition.title} ${reportMonth}`,
       html:        adminHtml,
       attachments: [{ filename, content: pdfBase64 }],
@@ -3310,7 +3312,7 @@ async function sendAdminReportCopy(recipients, proposition, pdfPath, reportMonth
  * @param {Object|null} report      - The report row (may be null if creation failed).
  * @param {Error}       err         - The error that caused the failure.
  */
-async function sendFailureAlert(proposition, report, err) {
+async function sendFailureAlert(proposition, report, err, adminEmails) {
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
       <div style="background:#1C3557;padding:24px 32px;">
@@ -3356,7 +3358,7 @@ async function sendFailureAlert(proposition, report, err) {
       },
       body: JSON.stringify({
         from:    FROM_EMAIL,
-        to:      [ADMIN_EMAIL],
+        to:      adminEmails,
         subject: `[FAILED] Report run — ${proposition.title}`,
         html,
       }),
@@ -3390,7 +3392,8 @@ async function runProposition(proposition, force) {
   console.log(`Type:        ${proposition.proposition_type}`);
   console.log(`Plan:        ${proposition.plan_tier}`);
 
-  let report = null;
+  let report      = null;
+  let adminEmails = []; // populated early; accessible in the catch block for failure alerts
 
   try {
     // 1. Fetch report recipients — falls back to primary contact if none configured
@@ -3403,11 +3406,23 @@ async function runProposition(proposition, force) {
     const client = recipients[0];
     console.log(`Recipients:  ${recipients.map(r => `${r.name} <${r.email}>`).join(', ')}`);
 
+    // 1b. Load admin emails from the organization_admins table (McKeever Consulting org).
+    // Falls back to ADMIN_EMAIL env var if the DB lookup fails or returns nothing.
+    // Declared outside the try block so the catch handler can use it for failure alerts.
+    try {
+      adminEmails = await getMcKeeverAdminEmails();
+    } catch (adminErr) {
+      console.warn(`  ⚠ Could not load admin emails from DB (non-fatal): ${adminErr.message.slice(0, 120)}`);
+    }
+    if (adminEmails.length === 0 && process.env.ADMIN_EMAIL) {
+      adminEmails = [process.env.ADMIN_EMAIL];
+    }
+
     // 2. Check for a prior failed run with content already in Storage — if found,
     //    skip all research agents and go straight to PDF + email. This recovers
     //    from post-assembly failures (PDF crash, upload error) without re-spending
     //    ~$8 in API costs and 40 minutes of research agent time.
-    const resumeContext = { recipients, proposition, client };
+    const resumeContext = { recipients, proposition, client, adminEmails };
     const resumeResult = await tryResumeFromContent(proposition, resumeContext);
     if (resumeResult) {
       // Advance the schedule so this proposition isn't picked up again immediately
@@ -3427,10 +3442,41 @@ async function runProposition(proposition, force) {
     await updateReportStatus(report.id, 'running');
     console.log('✓ Report status → running');
 
-    // 5. Run Perplexity pre-briefings — both are non-fatal; null means agents
-    //    fall back to their generic workflow SOPs. Run sequentially (single API).
-    const ventureIntelligence   = runVentureIntelligence(proposition);
-    const landscapeBriefing     = runCurrentLandscapeBriefing(proposition);
+    // 5. Run Perplexity pre-briefings with 24-hour Supabase caching.
+    // Cache key includes today's date so same-day retries skip the API call while
+    // the next day's run always gets a fresh briefing. Both are non-fatal — null
+    // means agents fall back to their generic workflow SOPs.
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    let ventureIntelligence = null;
+    let landscapeBriefing   = null;
+
+    try {
+      const viKey    = `perplexity:venture_intelligence:${proposition.id}:${today}`;
+      const viCached = await getCachedApiResponse(viKey);
+      if (viCached?.response_data?.answer) {
+        ventureIntelligence = viCached.response_data.answer;
+        console.log(`\n  ✓ Venture intelligence brief: cache hit (${ventureIntelligence.length} chars)`);
+      } else {
+        ventureIntelligence = runVentureIntelligence(proposition);
+        if (ventureIntelligence) await setCachedApiResponse(viKey, { answer: ventureIntelligence });
+      }
+    } catch (err) {
+      console.warn(`  ⚠ Venture intelligence brief failed (non-fatal): ${err.message.slice(0, 120)}`);
+    }
+
+    try {
+      const lbKey    = `perplexity:landscape_briefing:${proposition.id}:${today}`;
+      const lbCached = await getCachedApiResponse(lbKey);
+      if (lbCached?.response_data?.answer) {
+        landscapeBriefing = lbCached.response_data.answer;
+        console.log(`  ✓ Landscape briefing: cache hit (${landscapeBriefing.length} chars)`);
+      } else {
+        landscapeBriefing = runCurrentLandscapeBriefing(proposition);
+        if (landscapeBriefing) await setCachedApiResponse(lbKey, { answer: landscapeBriefing });
+      }
+    } catch (err) {
+      console.warn(`  ⚠ Landscape briefing failed (non-fatal): ${err.message.slice(0, 120)}`);
+    }
 
     // 4b. Fetch admin context notes from proposition_context table.
     // These are scope adjustments entered via the admin panel's Context Panel —
@@ -3454,6 +3500,7 @@ async function runProposition(proposition, force) {
       proposition,
       client,             // primary contact — used for assembler prompt and report content
       recipients,         // all contacts who receive the report email
+      adminEmails,        // McKeever admin recipients — loaded from organization_admins table
       runNumber:          report.run_number,
       previousReportId:   report.previous_report_id,
       ventureIntelligence,   // Perplexity: venture type, critical factors, relevant agencies
@@ -3556,7 +3603,7 @@ async function runProposition(proposition, force) {
       // They will be deleted by tryResumeFromContent after confidence is re-computed.
     }
 
-    await sendFailureAlert(proposition, report, err);
+    await sendFailureAlert(proposition, report, err, adminEmails);
     return { status: 'failed', title: proposition.title, reportId: report?.id, elapsedMin, error: err.message };
   }
 }
@@ -3681,7 +3728,7 @@ async function tryResumeFromContent(proposition, context) {
         await sendReportEmail(recipient, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence);
         console.log(`    ✓ Report emailed to ${recipient.email}`);
       }
-      await sendAdminReportCopy(context.recipients, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence);
+      await sendAdminReportCopy(context.recipients, proposition, pdfPath, reportMonth, viabilityScoreObj, confidence, context.adminEmails);
       console.log(`    ✓ Admin copy sent`);
 
     } catch (deliveryErr) {
@@ -3731,7 +3778,7 @@ async function tryResumeFromContent(proposition, context) {
  * @param {Object} proposition  - The proposition row.
  * @param {Object} report       - The report row.
  */
-async function sendRegenCompleteNotification(proposition, report) {
+async function sendRegenCompleteNotification(proposition, report, adminEmails) {
   const reportMonth = new Date(report.created_at).toISOString().slice(0, 7);
   const notesSnippet = report.formatting_notes
     ? `<p style="margin:16px 0 0;color:#555;font-size:13px;">
@@ -3773,7 +3820,7 @@ async function sendRegenCompleteNotification(proposition, report) {
     },
     body: JSON.stringify({
       from:    FROM_EMAIL,
-      to:      [ADMIN_EMAIL],
+      to:      adminEmails,
       subject: `[Regen Complete] ${proposition.title} — ${reportMonth}`,
       html,
     }),
@@ -3805,6 +3852,17 @@ async function regenPdfFromStorage(reportId, upload = false) {
 
   const proposition = await getPropositionById(report.proposition_id);
   if (!proposition) throw new Error(`Proposition ${report.proposition_id} not found`);
+
+  // Load admin emails from DB — falls back to ADMIN_EMAIL env var if lookup fails
+  let adminEmails = [];
+  try {
+    adminEmails = await getMcKeeverAdminEmails();
+  } catch (adminErr) {
+    console.warn(`  ⚠ Could not load admin emails from DB (non-fatal): ${adminErr.message.slice(0, 120)}`);
+  }
+  if (adminEmails.length === 0 && process.env.ADMIN_EMAIL) {
+    adminEmails = [process.env.ADMIN_EMAIL];
+  }
 
   // 2. Download the content JSON from Supabase Storage
   const contentStoragePath = `${proposition.id}/${reportId}_content.json`;
@@ -3911,8 +3969,8 @@ async function regenPdfFromStorage(reportId, upload = false) {
 
     // 10. Notify admin that regen is done — non-fatal
     try {
-      await sendRegenCompleteNotification(proposition, report);
-      console.log(`  ✓ Admin notification sent → ${ADMIN_EMAIL}`);
+      await sendRegenCompleteNotification(proposition, report, adminEmails);
+      console.log(`  ✓ Admin notification sent → ${adminEmails.join(', ')}`);
     } catch (emailErr) {
       console.error(`  ⚠ Admin notification failed (non-fatal): ${emailErr.message}`);
     }

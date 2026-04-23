@@ -84,6 +84,29 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
+### Code Quality — Remaining items from Session 35 audit (next session)
+
+A full code audit was run (Session 35) before V3 work started. Two items were completed this session. The following remain:
+
+1. **Fix `parseJSON()` — add array fallback + better fence extraction** (`run.js` ~line 1429)
+   - Root cause of the `Quality review failed` and `Proofread pass failed` non-fatal errors visible in every GitHub Actions log.
+   - Last-resort fallback `raw.match(/\{[\s\S]*\}/)` only matches `{}` objects — quality review and proofread both return `[]` arrays. When fence stripping is imperfect (Claude adds post-fence text), no fallback catches it.
+   - Fix: add `raw.match(/\[[\s\S]*\]/)` as a parallel fallback. Also replace the two-regex fence strip approach with a single capture: `raw.match(/```(?:json)?\s*([\s\S]*?)```/s)` which extracts content between fences correctly even when Claude adds trailing explanation.
+
+2. **Update GitHub Actions to Node 22** (`.github/workflows/reports.yml` line 56)
+   - `node-version: '20'` — Node 20 deprecated June 2, 2026. Update to `'22'` (LTS, drop-in compatible).
+
+3. **Per-agent resume on retry**
+   - When a run fails mid-way through the 10 research agents, the next run re-runs all agents from scratch even though agent outputs are already saved to Supabase per-agent.
+   - Fix: at run start, check if agent_outputs already exist for the proposition's most recent pending/failed report. If yes, load saved outputs and skip those agents. Only run agents that don't have a saved output.
+   - This is the single biggest cost-reduction fix for retries — potentially saves $3-6 per failed run.
+
+4. **GDELT and USPTO — return error-flagged responses instead of empty results**
+   - When GDELT times out or USPTO returns 503, tools currently return empty results. Agents can't distinguish "no data" from "tool failed" — so data gaps section doesn't flag these tool failures.
+   - Fix: return `{ "_tool_error": true, "reason": "SSL timeout" }` from these tools so agents can explicitly note "USPTO trademark check unavailable — verify manually."
+
+---
+
 ### V2 E2E Test — Furniture Manufacturing ✅ Complete (2026-04-23)
 
 Confirmed: intake → contract → Stripe payment screen → Run Now → report generation all validated. Industry routing (ITC/EPA/BLS called, FDA/USDA skipped), new intake fields in agent prompts, PDF title, Exa/Tavily mandatory calls, and fact-check agent all confirmed working.
@@ -126,6 +149,13 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ---
 
 ## Session Log
+
+### Session 35 — Pre-V3 code audit; Perplexity caching + admin emails from DB (2026-04-23)
+
+- **Full code audit completed** — reviewed run.js, db.js, all tools, CI workflow, and GitHub Actions log from the NHD furniture run. Findings categorized by severity. Four items completed this session; four deferred to next session (see "What Is Next" above).
+- **Perplexity briefing caching live** — `runVentureIntelligence` and `runCurrentLandscapeBriefing` results now cached in the `api_cache` Supabase table with date-based keys (`perplexity:{type}:{proposition_id}:YYYY-MM-DD`). Same-day retries (including failed-run re-triggers on GitHub Actions) skip the Perplexity API entirely and load from cache. Cache expires naturally at midnight — next day always gets a fresh briefing. Saves ~$1-2 per same-day retry run.
+- **Admin emails from DB** — removed hardcoded `const ADMIN_EMAIL = 'brennon.mckeever@gmail.com'` from `run.js`. All three admin email functions (`sendAdminReportCopy`, `sendFailureAlert`, `sendRegenCompleteNotification`) now receive `adminEmails[]` as a parameter. Loaded at run start from `organization_admins` table via new `getMcKeeverAdminEmails()` in `db.js`. Falls back to `process.env.ADMIN_EMAIL` if DB lookup fails or table is empty. `FROM_EMAIL` moved to `process.env.FROM_EMAIL` with fallback to the original value.
+- **Audit false positive confirmed** — `runVentureIntelligence` and `runCurrentLandscapeBriefing` are synchronous (use `execPython`/`execSync`), not async. The "missing await" flag from the audit agent was incorrect.
 
 ### Session 34 — V2 E2E confirmed complete; consultant brief cancelled (2026-04-23)
 

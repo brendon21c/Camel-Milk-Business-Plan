@@ -689,6 +689,37 @@ async function activateProposition(propositionId, data) {
 }
 
 // ---------------------------------------------------------------------------
+// Admin helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns all admin email addresses for the McKeever Consulting organisation.
+ * Looks up the org by name so no org ID needs to be hardcoded in the caller.
+ * Returns an empty array (not an error) when the org or admin table has no rows —
+ * callers should fall back to process.env.ADMIN_EMAIL in that case.
+ *
+ * @returns {Promise<string[]>} Array of admin email addresses, oldest first.
+ */
+async function getMcKeeverAdminEmails() {
+  const { data: orgRow } = await supabase
+    .from('organizations')
+    .select('id')
+    .eq('name', 'McKeever Consulting')
+    .maybeSingle();
+
+  if (!orgRow) return [];
+
+  const { data: adminRows, error } = await supabase
+    .from('organization_admins')
+    .select('email')
+    .eq('organization_id', orgRow.id)
+    .order('created_at', { ascending: true });
+
+  if (error) throw new Error(`getMcKeeverAdminEmails failed: ${error.message}`);
+  return (adminRows || []).map(r => r.email).filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -737,6 +768,9 @@ module.exports = {
 
   // Proposition context
   getPropositionContext,
+
+  // Admin helpers
+  getMcKeeverAdminEmails,
 
   // Cleanup
   deleteAgentOutputsByReportId,
