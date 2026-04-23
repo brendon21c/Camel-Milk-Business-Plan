@@ -107,6 +107,61 @@ A full code audit was run (Session 35) before V3 work started. Two items were co
 
 ---
 
+### Register All Remaining APIs Upfront (Session 36)
+
+Rather than registering APIs proposition-by-proposition, register for all planned APIs now to eliminate per-proposition friction. Some approvals (TikTok, G2) take time. Once keys are obtained, add them to `.env` and GitHub Actions secrets — no code changes needed until the tool script is built.
+
+**Free — register now:**
+
+| API | Variable | Where to register |
+|---|---|---|
+| G2 | `G2_API_KEY` | g2.com/api |
+| GitHub | `GITHUB_API_TOKEN` | github.com/settings/tokens |
+| Product Hunt | `PRODUCT_HUNT_API_KEY` | api.producthunt.com/v2/oauth/token |
+| OpenCorporates | `OPENCORPORATES_API_KEY` | opencorporates.com/api_accounts |
+| TikTok Research API | `TIKTOK_API_KEY` | Apply early — approval process is long |
+| Pinterest API v5 | `PINTEREST_API_KEY` | developers.pinterest.com |
+| NewsAPI | `NEWS_API_KEY` | newsapi.org — free dev tier (100 req/day) |
+
+**Paid — register when a proposition justifies the cost:**
+
+| API | Variable | Cost | Where to register |
+|---|---|---|---|
+| Crunchbase | `CRUNCHBASE_API_KEY` | $29/month minimum | data.crunchbase.com/docs |
+| SimilarWeb | `SIMILARWEB_API_KEY` | ~$125/month | similarweb.com/corp/developer |
+| MediaStack | `MEDIASTACK_API_KEY` | $9.99/month | mediastack.com |
+| X (Twitter) API v2 | `X_API_KEY` | $100/month basic | developer.twitter.com |
+
+**Blocked:**
+
+| API | Reason |
+|---|---|
+| Reddit API (PRAW) | Registration process tried and failed — access could not be obtained. Skip; use Perplexity + Brave for community sentiment instead. |
+
+---
+
+### V3 — Recommended Build Order (Session 36)
+
+Sequencing decided based on dependencies and reliability priorities. Don't start a new step until the previous one has an E2E-tested result.
+
+1. **Clear the 4 audit items above** — fix known reliability bugs before adding V3 scope. `parseJSON()` causes a non-fatal error on every single run today; per-agent resume saves $3–6 per retry. Fix the foundation first.
+
+2. **Build the AGENT_MANIFEST system** — architectural prerequisite for V3. Dynamic agent selection (which agents run for `saas_software` vs `physical_import_export`) must be in place before any V3 workflow sets are built. One change to `run.js`; all future venture types slot in cleanly after.
+
+3. **Extend intake form for V3 types** — `/intake` already has V3 proposition types stubbed. Fill in branch-specific fields per venture type (SaaS needs target segment and pricing model — not origin country and product weight). This gates real V3 client intake.
+
+4. **Build one V3 venture type end-to-end** — start with `service_business` (simplest: no supply chain, no import path, most likely early client type). Write the workflow set, run a full E2E test, validate the report. Then add the next venture type.
+
+5. **Add V3 data sources as propositions need them** — GitHub API and G2 are free; register them now (see above) and build tool scripts when the first V3 proposition needs them. Crunchbase ($29/mo) and SimilarWeb ($125/mo) only when a real paying proposition justifies the cost. Reddit API is blocked — use Perplexity + Brave for community sentiment instead.
+
+6. **Social media layer** — YouTube key already active. Add Instagram, TikTok, Pinterest as V3 marketing workflows need them. Reddit is blocked; skip it.
+
+7. **Billing support (website)** — independent work; can run in parallel with any step above. Becomes urgent before first real paying V3 clients accumulate and start asking for invoices.
+
+8. **Existing Business Analysis** — after V3 is stable with at least 2 venture types working end-to-end.
+
+---
+
 ### V2 E2E Test — Furniture Manufacturing ✅ Complete (2026-04-23)
 
 Confirmed: intake → contract → Stripe payment screen → Run Now → report generation all validated. Industry routing (ITC/EPA/BLS called, FDA/USDA skipped), new intake fields in agent prompts, PDF title, Exa/Tavily mandatory calls, and fact-check agent all confirmed working.
@@ -149,6 +204,12 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ---
 
 ## Session Log
+
+### Session 36 — V3 roadmap sequencing; API registration plan; Reddit blocked (2026-04-23)
+
+- **V3 build order decided** — 8-step sequence documented in "What Is Next": clear audit items → AGENT_MANIFEST system → intake form extension for V3 types → first V3 venture type E2E (`service_business`) → V3 data sources → social media layer → billing support → existing business analysis. Sequenced by dependency, not by enthusiasm.
+- **Register all APIs upfront** — new action item. Free APIs (G2, GitHub, Product Hunt, OpenCorporates, TikTok, Pinterest, NewsAPI) to be registered now to eliminate per-proposition friction. Paid APIs (Crunchbase, SimilarWeb, MediaStack, X) deferred until a real proposition justifies the cost.
+- **Reddit API confirmed blocked** — registration was attempted and could not be completed. All Reddit entries in the API master list updated with blocked status. Social media build order updated (YouTube → Instagram → TikTok → Pinterest → X). Fallback: Perplexity + Brave for community sentiment research.
 
 ### Session 35 — Pre-V3 code audit; Perplexity caching + admin emails from DB (2026-04-23)
 
@@ -667,19 +728,19 @@ These are needed when proposition type is `saas_software`, `digital_product`, or
 | **Google Play Developer API** | *(OAuth per client)* | Free for owned accounts | Client's own Android app stats. | Google Play developer account required |
 | **SBA Small Business Data** | *(no key)* | Fully free | Small business benchmarks, loan data, industry failure rates. Useful for services propositions. | No action needed — api.sba.gov |
 | **GitHub API** | `GITHUB_API_TOKEN` | 5k req/hour free | Repository activity, developer adoption, open-source ecosystem mapping. Useful for developer-tool SaaS. | github.com/settings/tokens |
-| **Reddit API (PRAW)** | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Free, 60 req/min | Community sentiment, micro-influencer discovery, niche trend signals. Health/food niches are highly active. | Register app at reddit.com/prefs/apps |
+| **Reddit API (PRAW)** | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Free, 60 req/min | Community sentiment, micro-influencer discovery, niche trend signals. Health/food niches are highly active. | ⛔ Blocked — registration process tried and failed. Use Perplexity + Brave for community sentiment instead. |
 | **Product Hunt API** | `PRODUCT_HUNT_API_KEY` | Free | Launch tracking, upvote velocity, product discovery trends. Useful for digital product competitive research. | Register at api.producthunt.com/v2/oauth/token |
 
 ---
 
 ### Social Media Intelligence (V3 — Marketing Agent)
 
-Already documented in ROADMAP_V2.md. Build order: YouTube → Reddit → Instagram → TikTok → Pinterest → X.
+Already documented in ROADMAP_V2.md. Build order: YouTube → Instagram → TikTok → Pinterest → X. (Reddit blocked — registration failed; use Perplexity + Brave for community sentiment instead.)
 
 | Platform | Variable | Status |
 |---|---|---|
 | YouTube Data API v3 | `YOUTUBE_API_KEY` | ✅ Key already active |
-| Reddit (PRAW) | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Build with V3 |
+| Reddit (PRAW) | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | ⛔ Blocked — registration failed. Use Perplexity + Brave instead. |
 | Instagram (Meta Graph) | *(OAuth per client)* | Build with V3 |
 | TikTok Research API | `TIKTOK_API_KEY` | Apply early — approval takes time |
 | Pinterest API v5 | `PINTEREST_API_KEY` | Build with V3 |
