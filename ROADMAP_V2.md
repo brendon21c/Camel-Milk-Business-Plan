@@ -342,6 +342,41 @@ Add a dedicated social media intelligence layer to the marketing agent — movin
 
 ## Website — Phase 2 (Future Enhancements)
 
+### Client Portal — Intake Form View & Edit
+
+Clients currently have no way to review or update their intake answers after submission. This adds a read/edit view to the client-facing experience.
+
+**Behaviour:**
+- Client can view all their intake form answers as originally submitted
+- Client can edit any field and resubmit
+- Resubmission **updates the existing proposition record** — it does not create a new contact, organization, or proposition row
+- A `updated_at` timestamp is written to the proposition record on every resubmission
+- Brendon sees a flag in the admin panel if a proposition was updated after the last report ran (signal to consider a rerun)
+
+**Access pattern:** Magic-link via the contract token (same mechanism as the billing support form) — no new auth needed. Linked from the report delivery email as "Update your intake answers."
+
+**Route:** `/portal/intake?token=<contract_token>`
+
+**DB change:** No new tables. Existing `propositions` columns are updated in-place. Add a `last_intake_updated_at TIMESTAMPTZ` column to track edits.
+
+**What it does NOT do:**
+- Does not trigger a new run automatically — that remains a manual or scheduled action
+- Does not create a new proposition or duplicate the contact record
+
+---
+
+### Admin Panel — Intake Form View
+
+Admins should be able to see exactly what a client answered on their intake form, directly from the client and proposition detail pages. Currently the data lives in the DB but is not surfaced in the admin UI.
+
+**Where to add it:**
+- `/admin/clients/[id]` — show intake form answers for each contact/proposition under that org
+- `/admin/propositions/[id]` — add an "Intake Answers" panel alongside the existing ContextPanel
+
+**Display format:** Read-only rendered summary of all intake fields with labels — same field names and order as the intake form. Not raw JSON. If the client has resubmitted (see Client Portal above), show both the original submission date and the last-updated date.
+
+---
+
 ### Billing Support — Client requests + Admin inbox
 
 Clients need a way to request invoices, request refunds, and ask billing questions without emailing directly. Admins need a single place to see and respond to all open requests.
@@ -398,6 +433,126 @@ CREATE TABLE support_ticket_replies (
 #### Sequencing
 
 Build after the current Regen PDF fix and V2 E2E test — this is a website enhancement, not a backend pipeline requirement. It becomes more pressing once real clients start signing contracts and submitting reports.
+
+---
+
+### Pricing & Terms — Open Items for Decision
+
+#### Rerun Pricing (Updated Intake)
+
+When a client updates their intake form and requests a new run, the cost to run is the same as the original (~$12 API cost + margin). The question is what to charge them.
+
+**Options to decide between:**
+
+| Option | Rationale for | Rationale against |
+|---|---|---|
+| Full price (same as first run) | Clean, consistent, no confusion. Same compute cost to us. | May discourage clients from keeping data current, which degrades report quality over time. |
+| Discounted rerun rate | Rewards clients for staying engaged and keeping data fresh. Creates upsell hook. | More pricing tiers = more explanation. Could be abused to get cheap refreshes. |
+| Free within X days of last run | Removes friction when a client catches an error shortly after submitting. | Requires tracking and logic. Opens edge cases. |
+| Included in monthly retainer | Simplest client experience — just update and it refreshes. | Margin pressure if clients update frequently. |
+
+**Open question:** Decide pricing tier and document the decision here before launch. Monthly retainer clients and one-time clients should probably have different rerun policies.
+
+---
+
+#### Monthly Plan — Language & Pricing Review
+
+The monthly retainer plan language and pricing need review before the site goes live. Flag for a dedicated session to lock in:
+
+- Pricing tiers (one-time vs. monthly vs. annual)
+- What "monthly" means in terms of deliverables (1 report per month? unlimited reruns?)
+- Rerun policy under the monthly plan
+- Cancellation terms
+- What happens to report access after cancellation
+
+Do not finalize copy on the `/intake` or pricing pages until this is decided.
+
+---
+
+### Refund Window & Delivery Window — Language Updates
+
+#### Refund Window
+
+Current language references a 72-hour refund window. This needs to be updated to **72 business hours** (i.e., excludes weekends and public holidays). A client who purchases on Friday afternoon should not lose their refund eligibility by Sunday night.
+
+**Where to update:**
+- Contract/terms copy
+- Report delivery email
+- Any pricing page or FAQ language that references the refund window
+
+**Definition to use:** "72 business hours from the time your first report is delivered, excluding weekends and public holidays."
+
+#### Report Delivery Window
+
+Current language likely states a flat hour/day count for when the first report will be delivered after intake. Update this to **business days only** — no commitment to deliver over weekends.
+
+**Suggested language:** "Your first report will be delivered within 2 business days of completing your intake form."
+
+Adjust the specific number once the actual pipeline run time is confirmed at scale, but the business-days framing should be locked in now.
+
+---
+
+### Automated Refund Window Tracking
+
+The system should log the refund eligibility window per report and automatically evaluate refund requests against it — rather than requiring manual date math each time.
+
+**How it works:**
+
+1. When a report is delivered (email sent), write a `refund_eligible_until` timestamp to the `reports` table
+   - Formula: delivery timestamp + 72 business hours (skip Saturday/Sunday, skip public holidays)
+   - Use a simple business-hours calculator function — no external library needed
+
+2. When a refund request comes in via the support ticket form (`type = 'refund_request'`):
+   - System checks `NOW()` against `refund_eligible_until` on the associated report
+   - If within window: ticket is flagged **Eligible** in the admin support inbox
+   - If outside window: ticket is flagged **Ineligible — window expired [date]** so Brendon can see at a glance without checking manually
+
+3. **No automatic processing.** The system does not issue refunds automatically — Brendon still approves and processes via Stripe. The automation is in the eligibility check and flag, not the payment action.
+
+**DB change:**
+```sql
+ALTER TABLE reports ADD COLUMN refund_eligible_until TIMESTAMPTZ;
+```
+
+**Business hours helper (Node.js, `lib/businessHours.js`):**
+- Takes a start timestamp and an hour count
+- Skips Saturday/Sunday
+- Skips a hardcoded list of US federal holidays (update annually or load from a config)
+- Returns the resulting deadline timestamp
+
+**Edge cases:**
+- If report delivery email failed (status `failed`), do not set `refund_eligible_until` — no delivery, no window started
+- If client requests a refund before their first report runs, flag as manual review (no report row to check against)
+
+---
+
+### Data Confidence as a Client Engagement Signal
+
+The data confidence score currently lives inside the report — it tells the client how reliable this run was. But the signal has additional value beyond the report itself: it can tell us what we're missing about the client, flag when a follow-up is worth having, and give us a principled reason to reach back out.
+
+**Three uses to explore:**
+
+#### 1. Intake Form Improvement
+
+After enough runs, look at which confidence signals are consistently low across propositions of the same type. If origin_ops confidence is low on every domestic proposition (because origin country is null), that's a structural intake gap — add a question. If source coverage is low on every food/beverage run, that's a data tool gap — improve coverage before selling more of those.
+
+Pattern: run `compute_data_confidence` data across completed reports, group by `proposition_type` and `industry_category`, surface which signals drag the score down most often. Those are your intake improvement targets.
+
+#### 2. Client Follow-Up Emails (Re-engagement)
+
+When a run comes back Low or Very Low confidence, and the primary cause is incomplete intake data (not a tool failure), that's a reason to reach back out. The client gave us thin input — we gave them a thin report — and they may not know why.
+
+A targeted follow-up email: "Your [Month] report came back with a Moderate confidence rating. The main gap was [specific section]. If you can share [specific detail], we can re-run with stronger data at no charge." This turns a low-confidence run into a client touch point rather than a silent disappointment.
+
+Do not send these automatically. For now, this is a flag in the admin panel: "Low confidence — follow-up candidate." Brendon decides whether to reach out.
+
+#### 3. Intake Form Quality Score (Pre-Run)
+
+Before a run starts, score the completeness of the intake answers. A proposition with `origin_country = null`, `primary_question = null`, and no `client_context` entries is going to produce a low-confidence run. Flag this to the admin before triggering.
+
+Possible display: "Intake completeness: 60% — consider reaching out to the client before running." This catches thin submissions before spending $12 in API costs on a report that will disappoint.
+
+**Implementation:** Defer until after V3. The patterns won't be visible until there are 10–20 completed runs across varied proposition types. Build the analysis then, not speculatively now.
 
 ---
 
@@ -482,6 +637,57 @@ For existing businesses, the intake form needs three additional questions:
 
 The assembler instructions shift the framing from "here is what you'd need to do to start" to "here is what the data shows about where you are and what to do next." The research data is the same.
 
+### Test Model — Brendon's Brother (Freelance Videographer, Minneapolis) ✅ CONFIRMED
+
+**Profile:** Freelance videographer and video editor, Minneapolis, MN. 20+ years in the field. **Committed as the test proposition for existing business analysis E2E validation. Will also be a real paying client after test is complete.**
+
+**Why this is a good test model:**
+- Real business, real history, real local market — not a synthetic proposition
+- Service business (no supply chain, no import path) — stress tests the non-physical pipeline
+- 20 years of operation means there's actual competitive context, pricing history, and market positioning to surface
+- Local geography (Minneapolis) tests the local/regional data layer that was added in Session 37
+- High bar: he knows his own business intimately. If the report surprises him or shows him something genuinely useful (opportunities, competitive gaps, areas for growth he hadn't considered, market positioning shifts), the existing business analysis product works. If it just describes the Minneapolis videography market in generic terms, it fails.
+
+**Goal for the intake form design:** Get enough specific detail from the intake form alone that the report can go beyond "here is the videography market in Minneapolis" and actually address his specific positioning, revenue model, client types, and competitive gaps — without needing a follow-up call or email to gather more data. The intake form for existing businesses needs to ask the right questions upfront. This test case will reveal which questions matter most and validate whether the industry-agnostic product can handle solo service freelancers (the hardest case for public data availability).
+
+**Blockers before running the test:**
+- The existing business analysis assembler workflow (`workflows/assemble_existing_business.md`) must be written
+- The intake form must have the existing-business branch built out with the right questions
+- At least one V3 venture type (`service_business`) must have a confirmed E2E test
+- Data confidence tool must be reviewed and confirmed working (Step 0 in HANDOFF)
+
+**Expected outcomes of this test:**
+- Validation that the report can surface novel, actionable insights about an operating business
+- Identification of which intake form questions produce high-confidence research output
+- Proof that the system works for solo service freelancers (hardest case — least public data, most niche market)
+- Real feedback from someone who knows the market deeply
+
+---
+
+### Identifying Additional Test Businesses
+
+Once the brother's videography business test is complete and the existing business analysis product is ready for beta, identify 2-3 additional test businesses across different industry categories and revenue models.
+
+**Target profile diversity:**
+- At least one B2B service (accounting firm, consulting, legal, recruiting)
+- At least one physical product or inventory-based business (retail, manufacturing, e-commerce)
+- At least one knowledge/digital product (SaaS, course/content business, agency)
+
+**Why varied profiles matter:**
+- Solo freelancer (videographer) proves the system works with minimal public data
+- Structured B2B (law firm) proves it works with regulatory depth and client-facing positioning
+- Inventory/product business proves it works with supply chain, unit economics, and physical logistics
+- Digital business proves non-physical, non-service ventures work (SaaS, products)
+
+**Discovery approach:**
+- Ask in community channels, networks, or past consulting relationships for businesses willing to participate
+- Prioritize owners/founders who know their space deeply (like the videographer) — they'll give honest feedback on whether the report was surprising and valuable
+- Document what each test revealed about the intake form, research depth, and industry-specific gaps
+
+**Sequencing:** Begin identifying candidates during the brother's test run so they're warm by the time you're ready to expand. Do not wait until the first test is complete to start reaching out.
+
+---
+
 ### Implementation plan (when ready)
 
 1. Add `business_stage TEXT DEFAULT 'idea'` to propositions table — new migration
@@ -503,6 +709,48 @@ Viability reports are for people with an idea. Existing business audits are for 
 
 ---
 
+## Future Discussion — Intake Enrichment Pipeline
+
+**The problem:** Some propositions need more client data than the intake form captures to produce a high-quality report. Right now there's no mechanism to identify this before a run, ask for it, or receive it — we either run with thin data or don't run at all.
+
+**What to discuss and design:**
+
+### Option A — Intake Completeness Grader (Pre-Run)
+
+A tool that scores a completed intake form before the run is triggered. Flags thin submissions and suggests what's missing.
+
+- Could live as a step in the admin panel: "Intake score: 55% — suggested follow-up questions: [list]"
+- Could also be surfaced to the client immediately after form submission: "Your form is complete. To improve your report quality, consider also telling us: [X, Y, Z]"
+- Non-blocking — Brendon decides whether to follow up before running
+
+### Option B — Automated Follow-Up Email Template
+
+When intake completeness is below a threshold (e.g. < 70%), trigger an email to the client with specific questions based on what's missing. Uses Resend, links back to the client portal where they can update and resubmit.
+
+- Questions should be targeted, not generic — "You didn't tell us your current annual revenue range, which affects our financial benchmarking. Can you add that?" rather than "Please fill out more of the form."
+- Email goes out automatically, or on Brendon's approval from the admin panel
+
+### Option C — Client Portal Follow-Up Questions
+
+Within the client portal, surface a "your report quality could improve" section with specific questions, pre-populated based on what's missing. Client answers inline and resubmits — triggers a rerun.
+
+### Option D — Post-Run Data Request (Low Confidence Trigger)
+
+After a run comes back Low or Very Low confidence, automatically (or on admin approval) send the client an email explaining what was weak and asking for the specific additional data that would close the gap.
+
+---
+
+**What needs to be decided before building any of this:**
+- Which option(s) make sense for the product model (self-service vs. high-touch)
+- Whether the follow-up should be automatic or admin-approved
+- How to score intake completeness — what counts as "complete" per proposition type
+- Whether a rerun triggered by a client data update is free, discounted, or full price (linked to the rerun pricing decision)
+- How this integrates with the client portal (already in the roadmap)
+
+**Sequencing:** Do not build until after V3 and the existing business analysis are in place. By then, patterns from real runs will reveal which intake gaps matter most — building this speculatively before that data exists will produce the wrong questions.
+
+---
+
 ## Decision log
 
 | Decision | Outcome | Rationale |
@@ -515,3 +763,4 @@ Viability reports are for people with an idea. Existing business audits are for 
 | Option A workflow generalisation | Start with brief-driven adaptation | Less work. Test first, move to per-industry substitution blocks (Option B) only if results are poor. |
 | Industry category field | Migration 009 | Clean DB signal for gov tool routing — better than inferring from product description. |
 | Gov tool scripts (ITC/EPA/BLS) | ✅ Built before E2E test (2026-04-15) | Free/no-key APIs. Built and tested before the furniture manufacturing test proposition to ensure routing works from day one. |
+| Existing business test model | ✅ Brother's videography business (2026-04-24) | Solo freelancer is the hardest case (least public data). If it works for a 20-year solo service business, the product is robust across venture types. Also a real client post-test. Will identify additional test businesses across different profiles during this run. |

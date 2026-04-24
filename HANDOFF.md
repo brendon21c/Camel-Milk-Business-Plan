@@ -90,6 +90,26 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
+### Step 0 — Data Confidence Tool Review
+
+**Priority: do this before any V3 work.** The data confidence score is displayed on the cover page of every report and referenced in the executive summary. It needs to be reliable.
+
+**What to review:**
+
+1. **Read `tools/compute_data_confidence.py` end to end.** Understand all four signals: field confidence ratings (45%), agent completion rate (25%), source citation coverage (20%), data gaps (10%). Verify the weighting math is correct and the score range is actually 0–100.
+
+2. **Confirm it runs on every report.** Trace the call in `run.js` — it should fire after the quality gate, before the assembler, on every run including resumes. If there's any code path where it can be skipped silently, close it.
+
+3. **Verify what "field confidence ratings" actually measures.** The 45% signal is the biggest weight. Confirm agents are actually emitting structured confidence fields in their JSON output, and that the tool is reading those fields correctly — not defaulting to a generic score when fields are missing.
+
+4. **Test the Low / Very Low path.** Confirm that when confidence is Low or Very Low, the callout box actually appears in the Executive Summary in the generated PDF. This is a quality bar requirement but was never smoke tested separately from full runs.
+
+5. **Improve if needed.** If the methodology has gaps (e.g. a hard-failed agent counts as "completed" for the completion signal, or the gap-count logic double-counts), fix them before V3. A flawed confidence score that says "High" on a weak run is worse than no confidence score.
+
+6. **Document the final methodology** in `workflows/assemble_report.md` Section 14 spec — so future changes to the tool don't silently break the report language.
+
+---
+
 ### Step 1 — Code Quality (4 audit items, still pending)
 
 These are reliability fixes that should be done before V3 work starts. `parseJSON()` causes a visible non-fatal error on every single run today.
