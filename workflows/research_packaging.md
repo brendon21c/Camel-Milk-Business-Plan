@@ -85,6 +85,12 @@ Do not add extra delays — the tool handles it.
 - `[industry] consumer packaging preferences survey [target_country]`
 - `[target_demographic] packaging sustainability preferences [industry]`
 
+**Required — one local/regional search:**
+Local packaging suppliers can offer lower MOQs and faster turnaround than national vendors — critical for early-stage runs. National supplier directories frequently miss regional options.
+```
+python tools/search_brave.py --query "[product_type] packaging supplier [company_location] MOQ pricing [current_year]" --count 10 --freshness 72
+```
+
 #### Agent-Generated Queries
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
@@ -128,6 +134,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "What are the mandatory labeling and packaging regulatory requirements for [product_type] sold in [target_country] in [current_year], including all required label elements, format rules, and applicable standards?"
 python tools/search_perplexity.py --query "What packaging formats, materials, and design approaches are most effective for [product_type] targeting [target_demographic] consumers in [target_country], and what do they cost at small to mid production volumes?"
+python tools/search_perplexity.py --query "What packaging and labeling mistakes have caused [product_type] to be rejected at customs, recalled by regulators, or refused by retailers in [target_country] — what are the most common compliance failures new importers make with packaging?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -149,6 +156,15 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Packaging News Intelligence
+
+**NewsAPI — always run:**
+Packaging regulation changes, sustainability mandates, and material cost trends. Especially important for food and consumer goods where labelling law changes frequently.
+```
+search_news everything --query "[product_type] packaging OR labelling OR label regulation" --sort-by publishedAt --page-size 10
+search_news headlines --query "[product_category] packaging" --category business
 ```
 
 ### 2. Extract and Synthesise

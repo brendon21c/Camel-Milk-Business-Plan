@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-23 (Session 34 — V2 E2E test confirmed complete; consultant intelligence brief cancelled — not a feature or service we offer)
+**Last updated:** 2026-04-24 (Session 37 — API registration complete; 4 new tool scripts; all 10 workflows upgraded; fact-check agent strengthened)
 
 ---
 
@@ -33,9 +33,9 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ---
 
-## Current State (as of 2026-04-21)
+## Current State (as of 2026-04-24)
 
-### Backend — `Camel-Milk-Business-Plan` ✅ V1 + Step 2.5 + caching + resume + fact-check complete
+### Backend — `Camel-Milk-Business-Plan` ✅ V2 complete + research layer expanded + fact-check upgraded
 
 - V1 pipeline fully working and tested
 - E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever
@@ -51,6 +51,12 @@ They share the same Supabase project. The website writes intake data; the backen
 - **Fact-check agent live:** `runFactCheckAgent()` in `run.js`. Runs after quality gate + 2-min cooldown, before assembler. Uses Sonnet with `FACT_CHECK_TOOLS`. Non-fatal: failure yields a caution stub.
 - **PDF title fixed:** Cover page now uses `client.company_name` instead of `proposition.title`. Intake actions updated so new submissions store just the company name as the proposition title.
 - **V2 E2E test complete (2026-04-23):** Furniture manufacturing, Minnesota → US. Intake → contract → Stripe → Run Now → report all validated.
+
+- **4 new tool scripts built and registered (Session 37):** `search_news.py` (NewsAPI), `fetch_financial_data.py` (Alpha Vantage + Finnhub + Massive), `search_youtube.py` (YouTube Data API v3), `search_product_hunt.py` (Product Hunt GraphQL). Total registered tools: **62**.
+- **All 10 research workflows upgraded (Session 37):** Every workflow now has Step 1d (platform & media intelligence), a 3rd Perplexity call focused on risk/failure patterns, and one local/regional Brave search. Addresses the NHD gap of "Minnesota rates estimated from national benchmarks."
+- **Fact-check agent upgraded (Session 37):** Perplexity and NewsAPI added to `FACT_CHECK_TOOLS`. `maxIter` 30 → 50, `maxTokens` 8000 → 16000. System prompt now includes explicit independence notice (agent is told it has NOT seen the venture brief or admin context). New Section 5: cross-agent consistency check. New `cross_agent_inconsistency` issue type in output. Smoke tested: 5/5 planted errors caught including a fake competitor, a non-existent regulation (CARB Phase 3), a $114B vs $3.2B cross-agent TAM contradiction, and a category-level data misrepresentation.
+- **API keys added:** `PRODUCT_HUNT_DEV_TOKEN`, `NEWS_API_KEY`, `ALPHA_VANTAGE_API_KEY`, `MASSIVE_API_KEY` (formerly Polygon.io — same endpoint), `FINNHUB_API_KEY`. See `API_REGISTRATION_PLAN.md` for full status.
+- **API registration findings:** G2 API restricted to vendors who list products on G2 — not usable for third-party research. TikTok Research API blocked for commercial use. OpenCorporates no longer free (£2,250/year minimum). All three moved to "blocked/deferred" in `API_REGISTRATION_PLAN.md`.
 
 **Note:** Camel Milk proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
 
@@ -84,81 +90,55 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
-### Code Quality — Remaining items from Session 35 audit (next session)
+### Step 1 — Code Quality (4 audit items, still pending)
 
-A full code audit was run (Session 35) before V3 work started. Two items were completed this session. The following remain:
+These are reliability fixes that should be done before V3 work starts. `parseJSON()` causes a visible non-fatal error on every single run today.
 
 1. **Fix `parseJSON()` — add array fallback + better fence extraction** (`run.js` ~line 1429)
    - Root cause of the `Quality review failed` and `Proofread pass failed` non-fatal errors visible in every GitHub Actions log.
-   - Last-resort fallback `raw.match(/\{[\s\S]*\}/)` only matches `{}` objects — quality review and proofread both return `[]` arrays. When fence stripping is imperfect (Claude adds post-fence text), no fallback catches it.
-   - Fix: add `raw.match(/\[[\s\S]*\]/)` as a parallel fallback. Also replace the two-regex fence strip approach with a single capture: `raw.match(/```(?:json)?\s*([\s\S]*?)```/s)` which extracts content between fences correctly even when Claude adds trailing explanation.
+   - Fix: add `raw.match(/\[[\s\S]*\]/)` as a parallel fallback. Replace the two-regex fence strip with a single capture: `raw.match(/```(?:json)?\s*([\s\S]*?)```/s)`.
 
 2. **Update GitHub Actions to Node 22** (`.github/workflows/reports.yml` line 56)
    - `node-version: '20'` — Node 20 deprecated June 2, 2026. Update to `'22'` (LTS, drop-in compatible).
 
 3. **Per-agent resume on retry**
-   - When a run fails mid-way through the 10 research agents, the next run re-runs all agents from scratch even though agent outputs are already saved to Supabase per-agent.
-   - Fix: at run start, check if agent_outputs already exist for the proposition's most recent pending/failed report. If yes, load saved outputs and skip those agents. Only run agents that don't have a saved output.
-   - This is the single biggest cost-reduction fix for retries — potentially saves $3-6 per failed run.
+   - When a run fails mid-way, the next run re-runs all agents from scratch even though outputs are saved per-agent in Supabase.
+   - Fix: at run start, check if `agent_outputs` already exist for the proposition's most recent pending/failed report. Skip agents that already have saved output.
+   - Single biggest cost-reduction fix for retries — saves $3–6 per failed run.
 
 4. **GDELT and USPTO — return error-flagged responses instead of empty results**
-   - When GDELT times out or USPTO returns 503, tools currently return empty results. Agents can't distinguish "no data" from "tool failed" — so data gaps section doesn't flag these tool failures.
-   - Fix: return `{ "_tool_error": true, "reason": "SSL timeout" }` from these tools so agents can explicitly note "USPTO trademark check unavailable — verify manually."
+   - Fix: return `{ "_tool_error": true, "reason": "SSL timeout" }` so agents can flag "USPTO trademark check unavailable — verify manually" instead of silently skipping.
 
 ---
 
-### Register All Remaining APIs Upfront (Session 36)
+### Step 2 — GitHub Actions Secrets
 
-Rather than registering APIs proposition-by-proposition, register for all planned APIs now to eliminate per-proposition friction. Some approvals (TikTok, G2) take time. Once keys are obtained, add them to `.env` and GitHub Actions secrets — no code changes needed until the tool script is built.
-
-**Free — register now:**
-
-| API | Variable | Where to register |
-|---|---|---|
-| G2 | `G2_API_KEY` | g2.com/api |
-| GitHub | `GITHUB_API_TOKEN` | github.com/settings/tokens |
-| Product Hunt | `PRODUCT_HUNT_API_KEY` | api.producthunt.com/v2/oauth/token |
-| OpenCorporates | `OPENCORPORATES_API_KEY` | opencorporates.com/api_accounts |
-| TikTok Research API | `TIKTOK_API_KEY` | Apply early — approval process is long |
-| Pinterest API v5 | `PINTEREST_API_KEY` | developers.pinterest.com |
-| NewsAPI | `NEWS_API_KEY` | newsapi.org — free dev tier (100 req/day) |
-
-**Paid — register when a proposition justifies the cost:**
-
-| API | Variable | Cost | Where to register |
-|---|---|---|---|
-| Crunchbase | `CRUNCHBASE_API_KEY` | $29/month minimum | data.crunchbase.com/docs |
-| SimilarWeb | `SIMILARWEB_API_KEY` | ~$125/month | similarweb.com/corp/developer |
-| MediaStack | `MEDIASTACK_API_KEY` | $9.99/month | mediastack.com |
-| X (Twitter) API v2 | `X_API_KEY` | $100/month basic | developer.twitter.com |
-
-**Blocked:**
-
-| API | Reason |
-|---|---|
-| Reddit API (PRAW) | Registration process tried and failed — access could not be obtained. Skip; use Perplexity + Brave for community sentiment instead. |
+New API keys in `.env` need to be added to GitHub repo secrets so scheduled runs can use them. Go to repo → Settings → Secrets and variables → Actions → add:
+- `NEWS_API_KEY`
+- `ALPHA_VANTAGE_API_KEY`
+- `MASSIVE_API_KEY`
+- `FINNHUB_API_KEY`
+- `PRODUCT_HUNT_DEV_TOKEN`
 
 ---
 
-### V3 — Recommended Build Order (Session 36)
+### Step 3 — V3 Build Order
 
-Sequencing decided based on dependencies and reliability priorities. Don't start a new step until the previous one has an E2E-tested result.
+Don't start a new step until the previous one has an E2E-tested result.
 
-1. **Clear the 4 audit items above** — fix known reliability bugs before adding V3 scope. `parseJSON()` causes a non-fatal error on every single run today; per-agent resume saves $3–6 per retry. Fix the foundation first.
+1. **Build the AGENT_MANIFEST system** — architectural prerequisite for V3. Dynamic agent selection (which agents run for `saas_software` vs `physical_import_export`) must be in place before any V3 workflow sets are built. One change to `run.js`; all future venture types slot in cleanly after.
 
-2. **Build the AGENT_MANIFEST system** — architectural prerequisite for V3. Dynamic agent selection (which agents run for `saas_software` vs `physical_import_export`) must be in place before any V3 workflow sets are built. One change to `run.js`; all future venture types slot in cleanly after.
+2. **Extend intake form for V3 types** — `/intake` already has V3 proposition types stubbed. Fill in branch-specific fields per venture type (SaaS needs target segment and pricing model — not origin country and product weight).
 
-3. **Extend intake form for V3 types** — `/intake` already has V3 proposition types stubbed. Fill in branch-specific fields per venture type (SaaS needs target segment and pricing model — not origin country and product weight). This gates real V3 client intake.
+3. **Build one V3 venture type end-to-end** — start with `service_business` (simplest: no supply chain, no import path, most likely early client type). Write the workflow set, run a full E2E test, validate the report.
 
-4. **Build one V3 venture type end-to-end** — start with `service_business` (simplest: no supply chain, no import path, most likely early client type). Write the workflow set, run a full E2E test, validate the report. Then add the next venture type.
+4. **Add V3 data sources as propositions need them** — Product Hunt and YouTube tool scripts already built. Crunchbase ($29/mo) and SimilarWeb ($125/mo) only when a real paying proposition justifies the cost.
 
-5. **Add V3 data sources as propositions need them** — GitHub API and G2 are free; register them now (see above) and build tool scripts when the first V3 proposition needs them. Crunchbase ($29/mo) and SimilarWeb ($125/mo) only when a real paying proposition justifies the cost. Reddit API is blocked — use Perplexity + Brave for community sentiment instead.
+5. **Social media layer** — YouTube tool script now built (`search_youtube.py`). Add Instagram, Pinterest as V3 marketing workflows need them. TikTok Research API blocked for commercial use — skip it.
 
-6. **Social media layer** — YouTube key already active. Add Instagram, TikTok, Pinterest as V3 marketing workflows need them. Reddit is blocked; skip it.
+6. **Billing support (website)** — independent work; can run in parallel with any step above. Becomes urgent before first real paying V3 clients accumulate.
 
-7. **Billing support (website)** — independent work; can run in parallel with any step above. Becomes urgent before first real paying V3 clients accumulate and start asking for invoices.
-
-8. **Existing Business Analysis** — after V3 is stable with at least 2 venture types working end-to-end.
+7. **Existing Business Analysis** — after V3 is stable with at least 2 venture types working end-to-end.
 
 ---
 
@@ -204,6 +184,17 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ---
 
 ## Session Log
+
+### Session 37 — API registration; tool expansion; workflow upgrades; fact-check strengthened (2026-04-24)
+
+- **API registration complete** — Registered and tested: Product Hunt (dev token), NewsAPI, Alpha Vantage, Massive (Polygon.io rebranded), Finnhub. All keys in `.env`. Smoke tested 6/6 keys working.
+- **API blockers discovered** — G2 restricted to vendors listing products on G2 (not usable for third-party research). TikTok Research API blocked for commercial use. OpenCorporates no longer free (£2,250/year minimum). All documented in `API_REGISTRATION_PLAN.md`.
+- **4 new tool scripts built and registered:** `search_news.py`, `fetch_financial_data.py` (Alpha Vantage + Finnhub + Massive combined), `search_youtube.py`, `search_product_hunt.py`. Total tools: 62.
+- **All 10 research workflows upgraded with Step 1d** — platform & media intelligence section added to every workflow. Competitors/marketing/financials/market_overview get YouTube, NewsAPI, financial data, and conditional Product Hunt. The 6 operational workflows (regulatory, production, packaging, distribution, origin_ops, legal) get NewsAPI targeted to their domain.
+- **All 10 research workflows upgraded with risk Perplexity call** — 3rd mandatory Perplexity call per agent asking specifically about failure patterns, common mistakes, and cash traps. Addresses the gap where agents find what works but miss what goes wrong.
+- **All 10 research workflows upgraded with local/regional Brave search** — 1 targeted query per agent using `[company_location]` to find local pricing, local competitors, local suppliers, state regulations. Directly addresses the NHD gap ("Minnesota rates estimated from national benchmarks").
+- **Fact-check agent upgraded** — Perplexity + NewsAPI added to `FACT_CHECK_TOOLS`. `maxIter` 30 → 50. `maxTokens` 8000 → 16000. Explicit independence notice in system prompt. New Section 5: cross-agent consistency check. New `cross_agent_inconsistency` issue type. Smoke tested 5/5 planted errors caught (fake competitor, non-existent CARB Phase 3, $114B vs $3.2B TAM contradiction, category-level data misrepresentation, local/national conflation).
+- **YouTube smoke tested** — `YOUTUBE_API_KEY` confirmed working. Found real camel milk channels (Camel Culture, Desert Farms) with subscriber counts and engagement rates in one call.
 
 ### Session 36 — V3 roadmap sequencing; API registration plan; Reddit blocked (2026-04-23)
 
@@ -458,6 +449,8 @@ HANDOFF.md          ← this file
 **Workflows (13 total):**
 10 research agents (`research_market_overview`, `research_competitors`, `research_regulatory`, `research_production`, `research_packaging`, `research_distribution`, `research_marketing`, `research_financials`, `research_origin_ops`, `research_legal`) + `assemble_report` + `setup_website_project` + `international_research`
 
+**Registered tools: 62** (58 original + 4 added Session 37: `search_news`, `fetch_financial_data`, `search_youtube`, `search_product_hunt`)
+
 ---
 
 ## run.js — How It Works
@@ -621,7 +614,17 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 | Jina Reader | `JINA_API_KEY` | ✅ Active — higher rate limits with key. Free without key too. |
 | UN Comtrade | `UN_COMTRADE_API_KEY` | ✅ Active — Free APIs tier (comtrade-v1). 500 req/hr. `tools/fetch_un_comtrade.py` built. |
 
-**Currently active (V1):**
+**Currently active (Session 37 additions):**
+
+| Key | Variable | Notes |
+|---|---|---|
+| NewsAPI | `NEWS_API_KEY` | ✅ Active — 100 req/day free dev tier. `tools/search_news.py` built. |
+| Alpha Vantage | `ALPHA_VANTAGE_API_KEY` | ✅ Active — free tier (5 req/min). Part of `tools/fetch_financial_data.py`. |
+| Massive (Polygon) | `MASSIVE_API_KEY` | ✅ Active — formerly Polygon.io, same endpoint. Part of `tools/fetch_financial_data.py`. |
+| Finnhub | `FINNHUB_API_KEY` | ✅ Active — free tier (60 req/min). Part of `tools/fetch_financial_data.py`. |
+| Product Hunt | `PRODUCT_HUNT_API_KEY`, `PRODUCT_HUNT_API_SECRET`, `PRODUCT_HUNT_DEV_TOKEN` | ✅ Active — dev token never expires. `tools/search_product_hunt.py` built. |
+
+**Currently active (V1/V2):**
 
 | Key | Variable |
 |---|---|
@@ -723,13 +726,13 @@ These are needed when proposition type is `saas_software`, `digital_product`, or
 |---|---|---|---|---|
 | **Crunchbase API** | `CRUNCHBASE_API_KEY` | None — $29/month minimum | Startup funding, valuations, investor data, competitive landscape. Best source for venture-stage competitive research. | Sign up at data.crunchbase.com/docs |
 | **SimilarWeb API** | `SIMILARWEB_API_KEY` | Limited free | Website traffic, engagement, digital market share. Essential for digital product competitive analysis. Paid tiers start ~$125/month. | Register at similarweb.com/corp/developer |
-| **G2 API** | `G2_API_KEY` | Free with app registration | Software reviews, competitive positioning, satisfaction scores. Best for SaaS competitive research. | Register at g2.com/api |
+| **G2 API** | `G2_API_KEY` | ⛔ Restricted to G2 vendors | API access restricted to companies that list their own products on G2. Cannot be used for third-party competitive research. Use Brave `site:g2.com` queries instead. | N/A — blocked |
 | **App Store Connect** | *(OAuth per client)* | Free for owned accounts | Client's own iOS app metrics — downloads, ratings, revenue. No third-party competitor data available via API. | Apple developer account required |
 | **Google Play Developer API** | *(OAuth per client)* | Free for owned accounts | Client's own Android app stats. | Google Play developer account required |
 | **SBA Small Business Data** | *(no key)* | Fully free | Small business benchmarks, loan data, industry failure rates. Useful for services propositions. | No action needed — api.sba.gov |
 | **GitHub API** | `GITHUB_API_TOKEN` | 5k req/hour free | Repository activity, developer adoption, open-source ecosystem mapping. Useful for developer-tool SaaS. | github.com/settings/tokens |
 | **Reddit API (PRAW)** | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Free, 60 req/min | Community sentiment, micro-influencer discovery, niche trend signals. Health/food niches are highly active. | ⛔ Blocked — registration process tried and failed. Use Perplexity + Brave for community sentiment instead. |
-| **Product Hunt API** | `PRODUCT_HUNT_API_KEY` | Free | Launch tracking, upvote velocity, product discovery trends. Useful for digital product competitive research. | Register at api.producthunt.com/v2/oauth/token |
+| **Product Hunt API** | `PRODUCT_HUNT_DEV_TOKEN` | ✅ Active — Free | Launch tracking, upvote velocity, product discovery trends. `tools/search_product_hunt.py` built. Use dev token (never expires), not OAuth. | Done |
 
 ---
 
@@ -739,10 +742,10 @@ Already documented in ROADMAP_V2.md. Build order: YouTube → Instagram → TikT
 
 | Platform | Variable | Status |
 |---|---|---|
-| YouTube Data API v3 | `YOUTUBE_API_KEY` | ✅ Key already active |
+| YouTube Data API v3 | `YOUTUBE_API_KEY` | ✅ Active — `tools/search_youtube.py` built. search_channels, channel_stats, search_videos, channel_videos commands. |
 | Reddit (PRAW) | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | ⛔ Blocked — registration failed. Use Perplexity + Brave instead. |
 | Instagram (Meta Graph) | *(OAuth per client)* | Build with V3 |
-| TikTok Research API | `TIKTOK_API_KEY` | Apply early — approval takes time |
+| TikTok Research API | `TIKTOK_API_KEY` | ⛔ Blocked — restricted to academic/non-profit only. Commercial use = permanent revocation. Use Perplexity + Brave for TikTok trend research. |
 | Pinterest API v5 | `PINTEREST_API_KEY` | Build with V3 |
 | X (Twitter) API v2 | `X_API_KEY` | Low priority — $100/month basic tier |
 

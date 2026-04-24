@@ -96,6 +96,12 @@ python tools/search_brave.py --query "why consumers buy [product_type] [target_c
 python tools/search_brave.py --query "[industry] growth drivers [target_country] [current_year]" --count 10 --freshness 24
 ```
 
+**Required — one local/regional search:**
+National market size figures mask regional demand variation. A product with strong national growth can be saturated locally or virtually absent. Check both angles.
+```
+python tools/search_brave.py --query "[product_type] demand market [company_location] [current_year]" --count 10 --freshness 72
+```
+
 #### Agent-Generated Queries
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
@@ -214,6 +220,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "What is the current total addressable market size, growth rate, and major consumer segments for [product_type] in [target_country] in [current_year]?"
 python tools/search_perplexity.py --query "What are the key purchase drivers, demographic profile, and buying behaviour of [target_demographic] consumers buying [product_type] in [target_country]?"
+python tools/search_perplexity.py --query "What market conditions, structural factors, or consumer behaviour shifts have caused [product_type] businesses to underperform or fail in [target_country] — what warning signs suggest this market opportunity may be harder or smaller than it appears?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -235,6 +242,29 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Platform & Media Intelligence
+
+**NewsAPI — always run:**
+Pull recent business headlines and archive search for the product category. Captures regulatory changes, market entries, and consumer trend stories from 80k+ sources.
+```
+search_news headlines --query "[product_type] market" --category business
+search_news everything --query "[product_category] industry trend" --sort-by relevancy --page-size 10
+```
+
+**Financial data — run if any public market leaders are known:**
+If the market has publicly traded leaders (e.g., Oatly for oat milk, Beyond Meat for alt-protein), pull their fundamentals to benchmark market size and sector health.
+```
+fetch_financial_data search --query "[market leader company name]"
+fetch_financial_data overview --ticker [TICKER]
+```
+
+**Product Hunt — only for digital/SaaS propositions:**
+Skip for physical goods and manufacturing. Run for software, app, or digital product markets to see how fast the category is growing on Product Hunt.
+```
+search_product_hunt trending --period today
+search_product_hunt category --topic "[relevant-topic-slug]" --limit 10
 ```
 
 ### 2. Extract and Synthesise

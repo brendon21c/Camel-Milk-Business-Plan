@@ -97,6 +97,12 @@ python tools/search_brave.py --query "[target_demographic] online communities fo
 python tools/search_brave.py --query "[industry] niche communities dietary movements [target_country] [current_year]" --count 10 --freshness 72
 ```
 
+**Required — one local/regional search:**
+Local marketing costs (event sponsorships, regional media, farmers market fees) are rarely covered by national benchmarks and can differ significantly by city.
+```
+python tools/search_brave.py --query "[product_type] marketing advertising [company_location] local cost [current_year]" --count 10 --freshness 72
+```
+
 #### Agent-Generated Queries
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
@@ -135,6 +141,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "What are the most effective marketing channels, customer acquisition strategies, and typical marketing spend benchmarks for [industry] products targeting [target_demographic] in [target_country] in [current_year]?"
 python tools/search_perplexity.py --query "What brand positioning, messaging angles, and marketing claims resonate most strongly with [target_demographic] buyers of [product_type] in [target_country], and what do leading [industry] brands spend on marketing as a percentage of revenue?"
+python tools/search_perplexity.py --query "What marketing approaches, messaging mistakes, and customer acquisition strategies have consistently failed for [industry] brands selling [product_type] to [target_demographic] in [target_country] — what causes new entrants to overspend on marketing without seeing results?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -160,6 +167,30 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Platform & Media Intelligence
+
+**YouTube — always run:**
+YouTube is the best free proxy for competitor content investment. Find the 2-3 strongest competitor channels, pull their stats, and check recent video engagement. High engagement rate (>8%) on a small channel signals a loyal niche audience — a sign the market is underserved, not oversaturated.
+```
+search_youtube search_channels --query "[product_type] [brand or niche] channel" --max-results 5
+search_youtube channel_stats --channel-id [top_channel_id]
+search_youtube channel_videos --channel-id [top_channel_id] --max-results 5
+search_youtube search_videos --query "how to [use or start product/business type]" --max-results 10
+```
+
+**NewsAPI — always run:**
+Search for campaign coverage and brand mentions. Captures press releases, PR coverage, and marketing trend articles.
+```
+search_news everything --query "[brand_name] OR [product_category] marketing campaign" --sort-by publishedAt --page-size 10
+search_news headlines --query "[product_type]" --category business
+```
+
+**Product Hunt — only for digital/SaaS propositions:**
+Upvote velocity on Product Hunt signals viral marketing potential. Skip for physical goods and services.
+```
+search_product_hunt search --query "[product category]" --limit 10
 ```
 
 ### 2. Extract and Synthesise

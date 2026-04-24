@@ -85,6 +85,12 @@ Do not add extra delays — the tool handles it.
 - `[industry] brand distribution model [target_country] case study`
 - `[product_type] market [target_country] how brands sell channels`
 
+**Required — one local/regional search:**
+Find local distributors and wholesalers near the client's operating location. National distribution directories often miss regional players that are more accessible for a new entrant.
+```
+python tools/search_brave.py --query "[product_type] distributors wholesalers [company_location] [current_year]" --count 10 --freshness 72
+```
+
 #### Agent-Generated Queries
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
@@ -122,6 +128,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "What are the main distribution channels, retailer entry requirements, and typical wholesale and retail margins for [product_type] in [target_country] in [current_year]?"
 python tools/search_perplexity.py --query "How do successful [industry] brands reach [target_demographic] customers in [target_country] — what mix of online, direct-to-consumer, and retail distribution works best for [product_type]?"
+python tools/search_perplexity.py --query "What distribution mistakes, retailer rejection reasons, and logistical failures have caused [product_type] brands to struggle in [target_country] — what do founders wish they had known about distribution before launching?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -147,6 +154,15 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Logistics & Distribution News
+
+**NewsAPI — always run:**
+Freight rate changes, port disruptions, cold chain news, and logistics cost trends. These directly affect distribution cost estimates and should be the most recent data available.
+```
+search_news everything --query "[product_type] OR [target_country] shipping OR freight OR logistics OR distribution" --sort-by publishedAt --page-size 10
+search_news headlines --query "supply chain logistics" --category business
 ```
 
 ### 2. Extract and Synthesise

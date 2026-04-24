@@ -124,6 +124,12 @@ python tools/search_brave.py --query "[product_type] new regulations proposed ru
 python tools/search_brave.py --query "[industry] policy changes [target_country] [current_year] regulatory update" --count 10 --freshness 336
 ```
 
+**Required — one local/regional search:**
+State and county health departments, agricultural boards, and food safety offices add requirements beyond federal rules. These are the most commonly missed compliance layer for new importers.
+```
+python tools/search_brave.py --query "[product_type] [company_location] state regulation permit health department [current_year]" --count 10 --freshness 72
+```
+
 #### Agent-Generated Queries
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
@@ -235,6 +241,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "What are the complete federal regulatory requirements for importing and selling [product_type] from [origin_country] in [target_country] in [current_year], including required approvals, testing standards, and labeling rules?"
 python tools/search_perplexity.py --query "What is the step-by-step process and realistic timeline for a new [industry] company to obtain all required import permits and safety approvals to sell [product_type] in [target_country]?"
+python tools/search_perplexity.py --query "What regulatory violations, import rejections, and compliance failures have most commonly affected [product_type] imports from [origin_country] into [target_country] — what enforcement actions have caught new importers off guard and what do experienced operators warn about?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -256,6 +263,15 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Regulatory News Intelligence
+
+**NewsAPI — always run:**
+Captures recent enforcement actions, policy updates, and import regulation changes that may not yet appear in official gov databases. Use `publishedAt` sort to find the most recent changes — regulatory landscapes shift fast.
+```
+search_news everything --query "[product_type] regulation OR recall OR enforcement OR ban" --sort-by publishedAt --page-size 10
+search_news headlines --query "[product_category] compliance" --category health
 ```
 
 ### 2. Extract and Synthesise

@@ -752,14 +752,122 @@ const RESEARCH_TOOLS = [
       required: ['command'],
     },
   },
+  {
+    name: 'search_news',
+    description: (
+      'Fetch news articles via NewsAPI. Free tier: 100 req/day. ' +
+      '"headlines" = top stories right now filtered by query and/or category (business, technology, health, science). ' +
+      '"everything" = full archive search by keyword + date range, sorted by relevancy or recency. ' +
+      'Use headlines for "what is being reported about this market today?" ' +
+      'Use everything for competitor press coverage, regulatory announcements, product launches in the past 30 days. ' +
+      'Covers 80,000+ sources globally. Combine with search_perplexity for synthesis of what the news means.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:   { type: 'string', enum: ['headlines', 'everything'],
+                     description: 'headlines = top stories now; everything = archive search by query + date range' },
+        query:     { type: 'string', description: 'Search query e.g. "FDA food recall", "camel milk import", "SaaS CRM market"' },
+        category:  { type: 'string', enum: ['business', 'technology', 'health', 'science', 'entertainment', 'sports'],
+                     description: 'News category filter (headlines command only)' },
+        country:   { type: 'string', default: 'us', description: 'Country code for headlines (default: us)' },
+        from_date: { type: 'string', description: 'Start date YYYY-MM-DD (everything only, max 30 days ago on free tier)' },
+        to_date:   { type: 'string', description: 'End date YYYY-MM-DD (everything only)' },
+        sort_by:   { type: 'string', enum: ['relevancy', 'popularity', 'publishedAt'], default: 'relevancy',
+                     description: 'Sort order for everything command (default: relevancy)' },
+        page_size: { type: 'integer', default: 10, description: 'Number of articles to return (default 10, max 100)' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'fetch_financial_data',
+    description: (
+      'Financial data tool combining Finnhub, Alpha Vantage, and Massive (Polygon). ' +
+      'Use ONLY for publicly traded companies — not for private companies or startups without a ticker. ' +
+      '"search" = find a ticker symbol by company name — always run this first if you only have a company name. ' +
+      '"quote" = current stock price and daily change (Finnhub — fast). ' +
+      '"overview" = company fundamentals: sector, market cap, employees, revenue, P/E ratio (Alpha Vantage). ' +
+      '"news" = recent press/earnings/M&A news for a company or market category (Finnhub). ' +
+      '"history" = historical daily price bars over a date range (Massive/Polygon). ' +
+      'Best for: sizing public competitors, benchmarking market cap, tracking competitor stock trajectory after a product launch or recall.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:   { type: 'string', enum: ['quote', 'overview', 'news', 'history', 'search'],
+                     description: 'quote=current price | overview=fundamentals | news=recent articles | history=price bars | search=find ticker by name' },
+        ticker:    { type: 'string', description: 'Stock ticker symbol e.g. AAPL, MSFT, BYND (required for quote/overview/history; optional for news)' },
+        query:     { type: 'string', description: 'Company name for search command e.g. "Beyond Meat", "Oatly"' },
+        category:  { type: 'string', enum: ['general', 'forex', 'crypto', 'merger'],
+                     description: 'News category when no ticker provided (news command only, default: general)' },
+        from_date: { type: 'string', description: 'Start date YYYY-MM-DD for news/history (default: 30 days ago)' },
+        to_date:   { type: 'string', description: 'End date YYYY-MM-DD for news/history (default: today)' },
+        limit:     { type: 'integer', default: 10, description: 'Max results (default 10)' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'search_youtube',
+    description: (
+      'YouTube Data API v3 for competitor channel and content strategy research. ' +
+      'Free: 10,000 units/day (search costs 100 units; stats lookups cost 1 unit). ' +
+      '"search_channels" = find YouTube channels by keyword — returns channel IDs, names, descriptions. ' +
+      '"channel_stats" = subscribers, total views, video count, country for a specific channel ID. ' +
+      '"search_videos" = find videos by keyword — returns titles, channels, publish dates. ' +
+      '"channel_videos" = most recent videos from a channel with views, likes, comments, and engagement rate. ' +
+      'Use search_channels first, then channel_stats to get hard metrics. ' +
+      'Engagement rate (likes+comments/views) measures audience quality — a small channel with 15% engagement outperforms a large one with 1%.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command:    { type: 'string', enum: ['search_channels', 'channel_stats', 'search_videos', 'channel_videos'],
+                      description: 'search_channels=find by keyword | channel_stats=metrics for a channel ID | search_videos=find videos | channel_videos=engagement for a channel' },
+        query:      { type: 'string', description: 'Search keyword (search_channels, search_videos)' },
+        channel_id: { type: 'string', description: 'YouTube channel ID (channel_stats, channel_videos) — get from search_channels results' },
+        max_results: { type: 'integer', default: 10, description: 'Max results to return (default 10)' },
+      },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'search_product_hunt',
+    description: (
+      'Product Hunt API for digital product launch tracking and competitive intelligence. ' +
+      'Primarily useful for V3 proposition types: SaaS, digital products, developer tools, mobile apps. ' +
+      '"search" = find products matching a keyword, sorted by upvotes — higher votes = stronger market traction signal. ' +
+      '"trending" = top products launched today or this week — use to spot emerging competitors. ' +
+      '"category" = top products in a specific topic slug (e.g. "developer-tools", "saas", "productivity", "marketing", "design-tools"). ' +
+      'Vote count signals product-market fit; comment count signals community engagement. ' +
+      'Not useful for physical goods, manufacturing, import/export, or service businesses — skip for those proposition types.'
+    ),
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', enum: ['search', 'trending', 'category'],
+                   description: 'search=find by keyword | trending=top products now | category=products in a topic slug' },
+        query:   { type: 'string', description: 'Search keyword for the search command e.g. "AI writing assistant", "CRM for freelancers"' },
+        period:  { type: 'string', enum: ['today', 'week'], default: 'today',
+                   description: 'Trending period (trending command only, default: today)' },
+        topic:   { type: 'string', description: 'Topic slug for category command e.g. "developer-tools", "saas", "productivity", "marketing"' },
+        limit:   { type: 'integer', default: 10, description: 'Max results to return (default 10)' },
+      },
+      required: ['command'],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
-// Fact-check agent tools — web verification only, no data-collection tools.
-// The fact-checker reads what research agents found and verifies it via search.
+// Fact-check agent tools — independent verification tools only.
+// Deliberately excludes data-collection APIs (Comtrade, Census, BLS, etc.) so
+// the fact-checker uses different sources than research agents, avoiding shared
+// blind spots. Includes Perplexity for fast statistical verification and
+// NewsAPI for recent regulatory/competitor claim verification.
 // ---------------------------------------------------------------------------
 const FACT_CHECK_TOOLS = RESEARCH_TOOLS.filter(t =>
-  ['web_search', 'search_tavily', 'search_exa', 'fetch_jina_reader'].includes(t.name)
+  ['web_search', 'search_perplexity', 'search_tavily', 'search_exa', 'fetch_jina_reader', 'search_news'].includes(t.name)
 );
 
 // ---------------------------------------------------------------------------
@@ -1309,6 +1417,46 @@ function executeTool(toolName, input) {
         if (!input.url) return { error: 'url is required for the read command' };
         return execPython('tools/fetch_jina_reader.py', ['read', input.url]);
       }
+    }
+
+    case 'search_news': {
+      const newsArgs = [input.command];
+      if (input.query)     newsArgs.push('--query',     input.query);
+      if (input.category)  newsArgs.push('--category',  input.category);
+      if (input.country)   newsArgs.push('--country',   input.country);
+      if (input.from_date) newsArgs.push('--from-date', input.from_date);
+      if (input.to_date)   newsArgs.push('--to-date',   input.to_date);
+      if (input.sort_by)   newsArgs.push('--sort-by',   input.sort_by);
+      if (input.page_size) newsArgs.push('--page-size', String(input.page_size));
+      return execPython('tools/search_news.py', newsArgs);
+    }
+
+    case 'fetch_financial_data': {
+      const finArgs = [input.command];
+      if (input.ticker)    finArgs.push('--ticker',    input.ticker);
+      if (input.query)     finArgs.push('--query',     input.query);
+      if (input.category)  finArgs.push('--category',  input.category);
+      if (input.from_date) finArgs.push('--from-date', input.from_date);
+      if (input.to_date)   finArgs.push('--to-date',   input.to_date);
+      if (input.limit)     finArgs.push('--limit',     String(input.limit));
+      return execPython('tools/fetch_financial_data.py', finArgs);
+    }
+
+    case 'search_youtube': {
+      const ytArgs = [input.command];
+      if (input.query)       ytArgs.push('--query',       input.query);
+      if (input.channel_id)  ytArgs.push('--channel-id',  input.channel_id);
+      if (input.max_results) ytArgs.push('--max-results', String(input.max_results));
+      return execPython('tools/search_youtube.py', ytArgs);
+    }
+
+    case 'search_product_hunt': {
+      const phArgs = [input.command];
+      if (input.query)  phArgs.push('--query',  input.query);
+      if (input.period) phArgs.push('--period', input.period);
+      if (input.topic)  phArgs.push('--topic',  input.topic);
+      if (input.limit)  phArgs.push('--limit',  String(input.limit));
+      return execPython('tools/search_product_hunt.py', phArgs);
     }
 
     default:
@@ -2489,7 +2637,11 @@ async function runFactCheckAgent(context, agentOutputs) {
 
   const systemPrompt = `You are the fact-check agent for McKeever Consulting's Business Viability Intelligence System.
 
-Your job is to verify that specific claims made by research agents are accurate and genuinely applicable to the proposition's specific product — not just to the broader commodity category, industry sector, or country.
+INDEPENDENCE NOTICE: You are operating completely independently from the research agents whose work you are verifying. You have NOT seen the venture intelligence brief, the landscape briefing, or the admin context notes that shaped the research agents' outputs. You have no shared context with them. This is intentional — your job is to approach each claim fresh, without the same assumptions or framing that could have led a research agent astray.
+
+Your job has two parts:
+1. Verify that specific claims made by individual research agents are accurate and genuinely applicable to the proposition's specific product — not just to the broader commodity category, industry sector, or country.
+2. Check for cross-agent consistency — flag where two agents report contradictory figures for the same metric (e.g. market_overview says $50M market but financials models $5M).
 
 The proposition being verified:
 - Title: ${proposition.title}
@@ -2498,12 +2650,17 @@ The proposition being verified:
 - Origin country: ${proposition.origin_country || 'not specified'}
 - Target country: ${proposition.target_country}
 
+TOOLS AVAILABLE:
+- web_search / search_exa / search_tavily / fetch_jina_reader — web verification
+- search_perplexity — best for quickly verifying specific statistics and market figures; ask direct factual questions
+- search_news — use for regulatory claims and competitor claims where recency matters (past 30 days)
+
 CRITICAL RULES:
 1. Your final response must be ONLY the JSON object defined in the workflow — no markdown fences, no preamble
-2. Use tools to verify claims — do not guess or rely on training knowledge for specific statistics
+2. Use tools to verify claims — do not rely on training knowledge for specific statistics
 3. If you cannot verify a claim after 2-3 targeted searches, mark it as unverifiable and move on
-4. Focus on quantitative claims, regulatory claims, and named competitors — not narrative analysis
-5. Do not re-run data tool queries (Comtrade, Census, etc.) — verify via web search only`;
+4. Focus on quantitative claims, regulatory claims, named competitors, and cross-agent contradictions
+5. Do not re-run data tool queries (Comtrade, Census, BLS, etc.) — verify via web search and Perplexity instead`;
 
   const userPrompt = `## FACT-CHECK WORKFLOW\n${factCheckWorkflow}\n\n## RESEARCH AGENT OUTPUTS TO VERIFY\n\n${agentSummaries}`;
 
@@ -2513,8 +2670,8 @@ CRITICAL RULES:
       system:     systemPrompt,
       userPrompt,
       tools:      FACT_CHECK_TOOLS,
-      maxTokens:  8000,
-      maxIter:    30,
+      maxTokens:  16000,
+      maxIter:    50,
     });
 
     const result = parseJSON(raw);

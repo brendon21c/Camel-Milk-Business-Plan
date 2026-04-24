@@ -46,6 +46,20 @@ Any claim that a specific named company operates in this market, has a specific 
 
 ---
 
+### 5. Cross-Agent Consistency
+
+Look for cases where two or more agents report contradictory figures for the same metric. These contradictions are invisible to the assembler unless flagged here.
+
+**Common patterns to check:**
+- Market size: does `market_overview` and `financials` use the same TAM figure?
+- Pricing: does `competitors` and `financials` agree on market price benchmarks?
+- Regulatory status: does `regulatory` and `legal` agree on what approvals are required?
+- Production cost: does `production` and `financials` use compatible cost assumptions?
+
+Flag every contradiction found as `cross_agent_inconsistency`. Include both figures and which one is more credible based on your verification.
+
+---
+
 ## What NOT to Verify
 
 - General narrative analysis and synthesis (subjective, unverifiable)
@@ -58,16 +72,23 @@ Any claim that a specific named company operates in this market, has a specific 
 
 ## Tool Use Approach
 
-For each claim to verify:
+You have access to 6 tools. Use them in this order of preference per claim:
 
-1. **Start with web_search** — targeted, specific query about the exact claim
-2. **Use search_tavily** when snippets are insufficient — get full article text
-3. **Use search_exa** when keyword search misses — semantic search for the concept
-4. **Use fetch_jina_reader** to read a specific page when a search returns a promising URL that needs full content
+1. **search_perplexity** — best first tool for specific statistics and market figures. Ask it direct factual questions: "What was the US import volume of camel milk powder in 2023?" It returns synthesised answers with citations — faster than parsing web snippets. Use for any claim involving a dollar figure, percentage, growth rate, or volume.
 
-Limit yourself to 2-3 search calls per claim. If you cannot verify after 2-3 targeted searches, mark it as unverifiable and move on — do not spend 10 searches on one claim.
+2. **web_search** — targeted keyword search for regulatory claims, company names, and product-specific facts that Perplexity may not have indexed recently.
 
-Aim to check approximately 3-5 key claims per agent output, prioritising quantitative claims and regulatory statements.
+3. **search_news** — use for regulatory claims and competitor claims where recency matters. NewsAPI covers 80,000+ sources and is better than web_search for "was this enforcement action real?" or "does this company still operate in this space?". Use the `everything` command with `--sort-by publishedAt`.
+
+4. **search_tavily** — when web_search returns only snippets and you need the full article text to confirm or deny a specific number.
+
+5. **search_exa** — when keyword search misses conceptually. Use for finding alternative sources that confirm or contradict a claim from a different angle.
+
+6. **fetch_jina_reader** — read a specific URL when a search returns a page that likely contains the authoritative source for a claim.
+
+**Limit: 2-3 tool calls per individual claim.** If you cannot verify after 2-3 searches, mark it as unverifiable and move on — do not spend 10 calls on one claim.
+
+**Coverage target: 3-5 key claims per agent output** for the individual claim checks (Steps 1-4). Then 1 cross-agent consistency pass across all agents (Step 5). Prioritise quantitative claims, regulatory statements, and named competitors.
 
 ---
 
@@ -114,3 +135,4 @@ Return ONLY a JSON object in this exact structure. No markdown fences, no preamb
 - `unsupported` — specific statistic with no verifiable source found
 - `contradicted` — search found evidence that directly contradicts the claim
 - `stale` — claim presents old data as current without appropriate qualification
+- `cross_agent_inconsistency` — two agents report contradictory figures for the same metric; include both values and which is more credible

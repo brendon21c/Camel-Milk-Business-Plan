@@ -99,6 +99,12 @@ python tools/search_brave.py --query "[product_type] factory setup requirements 
 python tools/search_brave.py --query "[industry] production facility specifications footprint infrastructure needs" --count 10 --freshness 72
 ```
 
+**Required — one local/regional search:**
+Commercial production space, workshop rental, and co-packing availability vary widely by city. National benchmarks miss the specific costs the client will actually face.
+```
+python tools/search_brave.py --query "[product_type] production facility warehouse commercial space [company_location] [current_year]" --count 10 --freshness 72
+```
+
 #### Agent-Generated Queries
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
@@ -143,6 +149,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "What equipment, facility requirements, and total capital investment are typically required to produce [product_type] at commercial scale, and who are the main equipment suppliers globally in [current_year]?"
 python tools/search_perplexity.py --query "What are the key production quality control requirements, safety certifications, and manufacturing standards needed to produce [product_type] for sale in [target_country]?"
+python tools/search_perplexity.py --query "What production problems, quality failures, and manufacturing cost overruns have caused [product_type] businesses to fail or struggle — what do experienced manufacturers warn new entrants about when setting up production for the first time?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -164,6 +171,15 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Supply Chain & Production News
+
+**NewsAPI — always run:**
+Recent supply chain disruptions, raw material price swings, and manufacturing cost trends. Captures commodity news, port delays, and supplier issues that directly affect production cost estimates.
+```
+search_news everything --query "[raw_material OR product_type] supply chain OR manufacturing cost OR shortage" --sort-by relevancy --page-size 10
+search_news headlines --query "[product_category] production" --category business
 ```
 
 ### 2. Extract and Synthesise

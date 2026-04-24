@@ -107,6 +107,12 @@ python tools/search_brave.py --query "[product_type] regional supply chain infra
 
 #### Agent-Generated Queries
 
+**Required — one origin country recent news search:**
+Geopolitical and economic conditions in the origin country change fast. This search catches recent developments that static gov data won't reflect.
+```
+python tools/search_brave.py --query "[origin_country] [product_type] supply export trade news [current_year]" --count 10 --freshness 336
+```
+
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
 
 **Rate limiting:** `search_brave.py` enforces a 500ms delay between calls automatically.
@@ -165,6 +171,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "What are the current export documentation requirements, logistics options, and key operational challenges for sourcing [product_type] from [origin_country] and shipping to [target_country] in [current_year]?"
 python tools/search_perplexity.py --query "What is the current political stability, currency risk, and supply chain reliability assessment for [origin_country] as a sourcing base for [industry] products in [current_year]?"
+python tools/search_perplexity.py --query "What supply chain disruptions, sourcing failures, and operational problems have caused [industry] importers to lose their [origin_country] supply base — what should a new importer prepare for that experienced operators wish they had known before starting?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -186,6 +193,15 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Origin Country News Intelligence
+
+**NewsAPI — always run:**
+Political, economic, and trade news from the origin country. Captures sanctions, trade agreements, currency events, and geopolitical risks that affect supply chain viability. Most critical for high-risk or politically volatile origin countries.
+```
+search_news everything --query "[origin_country] trade OR export OR tariff OR sanctions" --sort-by publishedAt --page-size 10
+search_news everything --query "[product_type] [origin_country] supply" --sort-by relevancy --page-size 5
 ```
 
 ### 2. Extract and Synthesise

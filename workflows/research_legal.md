@@ -80,6 +80,12 @@ python tools/search_brave.py --query "[origin_country] [target_country] trade co
 - `OFAC sanctions [origin_country] trade [current_year]`
 - `[origin_country] export controls banned goods [target_country] compliance`
 
+**Required — one local/regional search:**
+State and city-level permits, licences, and zoning requirements are not covered by federal regulatory databases. These can be blocking issues for a new business.
+```
+python tools/search_brave.py --query "[product_type] business licence permit [company_location] state requirements [current_year]" --count 10 --freshness 72
+```
+
 #### Agent-Generated Queries
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
@@ -132,6 +138,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "What business structure, licences, and legal registrations does a new [industry] company need to import and sell [product_type] in [target_country] in [current_year]?"
 python tools/search_perplexity.py --query "What are the trademark registration process, IP protection options, and key contract considerations for a [industry] business sourcing [product_type] from [origin_country] and selling in [target_country]?"
+python tools/search_perplexity.py --query "What legal disputes, regulatory enforcement actions, and compliance failures have most commonly affected [industry] businesses importing [product_type] into [target_country] — what legal mistakes do new entrants consistently make and what enforcement actions have caught founders off guard?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -153,6 +160,15 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Legal & Regulatory News
+
+**NewsAPI — always run:**
+Recent court decisions, legislative changes, and enforcement actions relevant to the product category. Legal landscapes change — a ruling from 6 months ago may have shifted the risk picture significantly.
+```
+search_news everything --query "[product_type] lawsuit OR litigation OR legal OR court OR legislation" --sort-by publishedAt --page-size 10
+search_news headlines --query "[product_category] law regulation" --category business
 ```
 
 ### 2. Extract and Synthesise

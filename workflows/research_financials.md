@@ -122,6 +122,12 @@ python tools/search_brave.py --query "[industry] profit margin benchmark [target
 python tools/search_brave.py --query "[industry] gross margin wholesale retail markup [target_country]" --count 10 --freshness 24
 ```
 
+**Required — one local/regional search:**
+Local operating costs (commercial rent, labour rates, utilities) vary significantly from national averages. This is the most common source of underestimated costs in financial projections.
+```
+python tools/search_brave.py --query "[industry] business operating costs rent wages [company_location] [current_year]" --count 10 --freshness 72
+```
+
 #### Agent-Generated Queries
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
@@ -223,6 +229,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "What are the typical gross margins, unit economics, and operating cost structure for a [industry] business selling [product_type] in [target_country] in [current_year]?"
 python tools/search_perplexity.py --query "What startup capital is typically required to launch a [industry] business selling [product_type] to [target_demographic] in [target_country], including inventory, licensing, marketing, and working capital needs?"
+python tools/search_perplexity.py --query "Where do [industry] businesses selling [product_type] in [target_country] most commonly run out of cash, underestimate costs, or fail to hit projected margins — what financial failure patterns should a new entrant specifically plan for?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -244,6 +251,23 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Financial Market Intelligence
+
+**Financial data — run if any publicly traded comparable companies exist:**
+Pull fundamentals for any publicly traded competitor or benchmark company in the same space. Market cap, revenue, and P/E ratio calibrate what investors think this industry is worth. If no ticker exists, skip this call.
+```
+fetch_financial_data search --query "[comparable company name]"
+fetch_financial_data overview --ticker [TICKER]
+fetch_financial_data history --ticker [TICKER] --from-date [1-year-ago] --to-date [today]
+```
+
+**NewsAPI — always run:**
+Recent financial news for the sector: analyst ratings, earnings surprises, M&A activity, or investor sentiment shifts. These inform the financial risk section.
+```
+search_news everything --query "[product_category] revenue funding investment" --sort-by relevancy --page-size 10
+search_news headlines --query "[product_type] financial" --category business
 ```
 
 ### 2. Extract and Synthesise

@@ -97,6 +97,12 @@ python tools/search_brave.py --query "[product_type] [target_country] Reddit rev
 python tools/search_brave.py --query "[product_type] [target_country] best brand comparison" --count 10 --freshness 72
 ```
 
+**Required — one local/regional search:**
+Find competitor density and local brand presence near the client's operating location. Local competition is often underrepresented in national searches.
+```
+python tools/search_brave.py --query "[product_type] brands [company_location] local competition [current_year]" --count 10 --freshness 72
+```
+
 #### Agent-Generated Queries
 
 After running all primary and triggered fallback queries, assess the overall quality of results. If any major research area still has thin or unreliable coverage, generate up to 3 additional search queries of your own based on the proposition context and what you know is missing. Log any agent-generated queries in the `data_gaps` field so the assembler knows which areas required deeper searching.
@@ -139,6 +145,7 @@ Perplexity returns a cited, AI-synthesised factual answer — not a list of link
 ```
 python tools/search_perplexity.py --query "Who are the leading brands selling [product_type] in [target_country] in [current_year], what are their retail price points, and how is each brand differentiated in the market?"
 python tools/search_perplexity.py --query "What gaps or underserved customer segments exist in the [product_type] category in [target_country] that current [industry] brands are failing to address?"
+python tools/search_perplexity.py --query "What have been the most common reasons new [product_type] brands fail to gain traction in [target_country] — which competitors have exited the market in the past 3 years and why, and what mistakes do new entrants consistently make?"
 ```
 
 **Required — two Exa semantic searches:**
@@ -164,6 +171,38 @@ After all other searches are complete, identify the 3 most data-rich URLs from a
 fetch_jina_reader read "[url1]"
 fetch_jina_reader read "[url2]"
 fetch_jina_reader read "[url3]"
+```
+
+### 1d. Platform & Media Intelligence
+
+**YouTube — always run for consumer-facing propositions:**
+Search for competitor channels and measure their content reach and engagement. High subscriber counts and frequent uploads signal a competitor is investing in brand-building. Engagement rate (likes+comments/views) matters more than raw subscribers.
+```
+search_youtube search_channels --query "[product_type] [brand or category] business" --max-results 5
+search_youtube channel_stats --channel-id [top_channel_id_from_above]
+search_youtube channel_videos --channel-id [top_channel_id_from_above] --max-results 5
+```
+
+**NewsAPI — always run:**
+Search for recent press coverage of named competitors or the broader product category. Limit to the past 30 days (free tier). Useful for spotting funding rounds, product launches, recalls, or regulatory actions.
+```
+search_news everything --query "[competitor_name] OR [product_category]" --sort-by relevancy --page-size 10
+search_news headlines --query "[product_type] market" --category business
+```
+
+**Financial data — run only if a named competitor is publicly traded:**
+If Brave or Perplexity identifies a publicly traded competitor (has a stock ticker), pull their fundamentals. Skip this call entirely for private companies.
+```
+fetch_financial_data search --query "[competitor company name]"
+fetch_financial_data overview --ticker [TICKER]
+fetch_financial_data news --ticker [TICKER] --limit 5
+```
+
+**Product Hunt — run only for digital product, SaaS, or app propositions:**
+Skip this call for physical goods, manufacturing, import/export, and service businesses.
+```
+search_product_hunt search --query "[product category or use case]" --limit 10
+search_product_hunt category --topic "[relevant-topic-slug]" --limit 10
 ```
 
 ### 2. Extract and Synthesise
