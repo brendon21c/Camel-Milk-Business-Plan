@@ -296,6 +296,13 @@ For each field, note whether the data is:
 
 If a field has Low confidence, flag it in `data_gaps` and explain why.
 
+After completing all field-level assessments, set the top-level `section_summary.confidence`:
+- **High** — majority of quantitative fields (market size, CAGR, pricing) are rated high; sourced from government data, major research firms, or directly verified retailer pages
+- **Medium** — key fields are mixed high/medium; overall picture is directionally reliable but some figures are estimates
+- **Low** — significant gaps in core figures, heavy reliance on inferred data, or fewer than 3 credible sources for market size or growth claims
+
+Be honest. A "High" rating when market size came from one trade blog defeats the purpose of the score.
+
 ### 4. Format Output
 
 Structure your findings as the JSON object defined in the Output Format section below.
@@ -381,6 +388,10 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     "<trend 2>"
   ],
   "narrative_summary": "<3–5 sentence plain-English summary of the market. Written for the report. No jargon.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: what drove this rating — e.g. 'Market size sourced from two independent government datasets' or 'CAGR estimated from a single trade blog with no methodology disclosed'>"
+  },
   "data_gaps": [
     "<any fields with low confidence or missing data>"
   ],
@@ -416,3 +427,4 @@ Before saving output, verify:
 - [ ] `demand_drivers` has at least 2 entries
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
+- [ ] `section_summary.confidence` is set (high, medium, or low) with a rationale that honestly reflects source quality — not aspirational

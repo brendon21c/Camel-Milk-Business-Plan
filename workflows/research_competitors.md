@@ -243,6 +243,11 @@ If a competitor profile has Low confidence, flag it in `data_gaps` and explain w
 If fewer than 2 competitors can be identified at any confidence level, flag this as a market gap
 and set `competitive_intensity` to `"low"`.
 
+After completing all per-competitor assessments, set the top-level `section_summary.confidence`:
+- **High** — at least 3 competitors verified with confirmed pricing and distribution from retailer or brand pages
+- **Medium** — main competitors identified but some pricing or channel detail inferred from secondary sources
+- **Low** — fewer than 2 confirmed competitors, or all profiles rely on indirect mentions without verification
+
 ### 4. Format Output
 
 Structure your findings as the JSON object defined in the Output Format section below.
@@ -318,6 +323,10 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
   ],
   "competitive_intensity": "low | medium | high",
   "narrative_summary": "<3–5 sentence plain-English summary of the competitive landscape. Written for the report. No jargon. Cover who dominates, how they compete, and where openings exist.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: e.g. 'Three competitors verified from live retailer pages with confirmed pricing' or 'Competitor data thin — only secondary mentions found, no direct product pages verified'>"
+  },
   "data_gaps": [
     "<any competitor profiles with low confidence, missing fields, or searches that returned no useful results>"
   ],
@@ -356,3 +365,4 @@ Before saving output, verify:
 - [ ] `competitive_intensity` is set and justified by the number and activity of competitors found
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
+- [ ] `section_summary.confidence` is set with a rationale — competitor data must be traceable to a specific source, not inferred

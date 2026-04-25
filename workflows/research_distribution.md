@@ -185,11 +185,16 @@ If a figure has a source URL, note it — it will be saved separately as a citat
 ### 3. Assess Confidence
 
 For each channel and each key field, note whether the data is:
-- **High** — specific figures or named requirements from an authoritative source (Amazon Seller Central, government customs database, major industry publication)
+- **High** — specific figures or named requirements from an authoritative source (Amazon Seller Central, government customs database, major industry publication, direct distributor contact)
 - **Medium** — directionally accurate but from a less authoritative source or slightly dated
 - **Low** — inferred, estimated, or sourced from a single unreliable result
 
 If a field has Low confidence, flag it in `data_gaps` and explain why.
+
+After completing all field-level assessments, set the top-level `section_summary.confidence`:
+- **High** — channel fees and entry requirements sourced from primary platform or distributor documentation; customs process confirmed from CBP or equivalent authority
+- **Medium** — channel requirements directionally correct but sourced from industry blogs rather than primary documentation; customs process from trade publication
+- **Low** — channel data largely inferred; no named distributors found; customs process not verified for this specific trade corridor
 
 ### 4. Format Output
 
@@ -263,8 +268,15 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     "<e.g. typical lead time from origin country to US warehouse: 4–6 weeks by sea>",
     "<e.g. 3PL warehousing recommended for DTC fulfilment at launch scale>"
   ],
-  "customs_and_import_process": "<Summary of import duties, required agency registrations (e.g. FDA Prior Notice), documentation needed (commercial invoice, certificate of origin, lab testing), and typical customs clearance timeline. 3–5 sentences.>",
+  "customs_and_import_process": {
+    "summary": "<Summary of import duties, required agency registrations (e.g. FDA Prior Notice), documentation needed (commercial invoice, certificate of origin, lab testing), and typical customs clearance timeline. 3–5 sentences.>",
+    "confidence": "high | medium | low"
+  },
   "narrative_summary": "<3–5 sentence plain-English summary of the distribution landscape for this product in the target market. Covers which channels are most accessible for a new entrant, what the key requirements are, and any significant logistics or customs considerations. Written for the report. No jargon.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: e.g. 'Channel fees confirmed from Amazon and distributor published rate cards; customs process verified from CBP.gov' or 'Distribution channel data estimated from comparable categories — no direct broker or distributor quotes obtained'>"
+  },
   "data_gaps": [
     "<any fields with low confidence or missing data>"
   ],
@@ -303,3 +315,4 @@ Before saving output, verify:
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
 - [ ] No proposition-specific details (product names, country names) are hard-coded in this file — all values come from inputs
+- [ ] `section_summary.confidence` is set with a rationale — channel fees and customs process must trace to primary sources

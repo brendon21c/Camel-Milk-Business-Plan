@@ -2284,7 +2284,11 @@ const ASSEMBLER_SECTION_INSTRUCTIONS = {
     `Write a maximum 1-page executive summary. Lead with the viability verdict and weighted score.
      Include a key_figures block showing the overall viability score and data confidence score.
      Write 3-5 key findings as a bullets block. List the top 3 risks and top 3 opportunities as bullets.
-     Reference the data confidence interpretation in the prose.`,
+     Reference the data confidence interpretation in the prose.
+     IMPORTANT: If the data confidence interpretation is "Low" or "Very Low", you MUST include a callout
+     block with label "Data Confidence Warning" immediately after the key_figures block. The callout must
+     name which specific report sections are most affected by data gaps and state plainly that the viability
+     verdict should be treated as directional rather than definitive until better data is obtained.`,
 
   market_overview:
     `Synthesise the market_overview agent output into a narrative section.

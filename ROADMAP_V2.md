@@ -211,48 +211,89 @@ This is a natural V2 test since the current camel milk proposition targets the U
 
 ## V3 — General Business Ventures
 
-**Goal:** Any business idea — SaaS, services, digital products, franchises, marketplaces — gets a tailored viability analysis with the right research dimensions for that venture type.
+**Goal:** Any business idea — SaaS, services, digital products, franchises, real estate, content creation, marketplaces — gets a rigorous viability analysis with research shaped to the specific proposition, not just its category.
 
-### Why V3 is a separate phase
+### Architectural foundation: universal agents
 
-Physical products share a common research spine: supply chain, regulatory import path, production, distribution, packaging. The 10-agent set maps cleanly onto this.
+All 10 research agents run for every proposition type. They are not product-specific roles — they ask 10 universal business questions that apply to every venture:
 
-Non-physical ventures need different dimensions:
-- **SaaS:** TAM/SAM/SOM, pricing benchmarks, churn/LTV/CAC, competitive feature matrix, integration ecosystem, developer tools landscape — no supply chain, no import regulatory path
-- **Services business:** Labour market, licensing/credentialing, client acquisition, capacity model, geographic territory — no product manufacturing
-- **Marketplace / platform:** Network effects, liquidity strategy, take-rate benchmarks, regulatory (payments, data, gig economy) — fundamentally different unit economics
-- **Franchise:** Brand strength, territory analysis, FDD review, unit-level P&L benchmarks, support quality — requires franchise-specific data sources
+| Agent | Universal question |
+|---|---|
+| `market_overview` | What is the market and is there real demand? |
+| `competitors` | Who is already doing this and how would you compete? |
+| `regulatory` | What are the rules and what compliance is required? |
+| `production` | What does it cost to make or deliver the thing? |
+| `packaging` | How is the offering structured and presented? |
+| `distribution` | How does it reach the customer? |
+| `marketing` | Who specifically will buy this and what reaches them? |
+| `financials` | Do the numbers work? |
+| `origin_ops` | Where do inputs, supply, or operational dependencies come from? |
+| `legal` | What are the legal exposures and structures required? |
+
+For a real estate portfolio: `production` = renovation costs, `origin_ops` = deal sourcing and property pipeline, `packaging` = deal structure and lease design. For a SaaS: `production` = build cost and infrastructure, `origin_ops` = talent and vendor dependencies, `packaging` = pricing model and tier design. The questions are universal; the vocabulary adapts.
+
+**AGENT_MANIFEST is not being built.** The routing-table approach (select which agents run per venture type) was superseded by this architecture. No agents are eliminated — they all contribute, reframed for the venture type.
 
 ### Key changes required for V3
 
-#### 1. New workflow sets per venture type
+#### 1. The `curiosity_agent` — first V3 prerequisite
 
-Each venture type needs its own set of research workflows. The agent names may change (e.g. `research_acquisition.md` instead of `research_origin_ops.md` for a SaaS).
+The most important addition to the pipeline. Runs after the two Perplexity pre-briefings, before the 10 research agents.
 
-| Proposition type | Core research dimensions |
-|---|---|
-| `saas_software` | Market sizing, competitive landscape, pricing, unit economics, technical feasibility, go-to-market, legal (IP/data) |
-| `service_business` | Market demand, labour/credentialing, competitive landscape, pricing, client acquisition, financials, legal |
-| `digital_product` | Market sizing, competitive landscape, monetisation model, distribution/platform, marketing, financials, legal |
-| `franchise` | Brand strength, territory analysis, FDD review, unit economics, support quality, legal |
-| `marketplace` | Liquidity strategy, network effects, take-rate, regulatory (payments/gig), competitive, financials |
+**What it does:** Reads the proposition and client intake, runs one Perplexity curiosity call ("what does standard research miss about this type of proposition?"), and produces a per-agent research agenda of specific, non-obvious questions that supplement standard research. It also identifies cross-agent connections — where two agents need to address complementary sides of the same underlying question — which the assembler uses to align findings.
 
-#### 2. Dynamic agent selection
+**Philosophy:** A smart colleague who says *"for this client specifically, also check X"* — not a manager who issues directives. Standard research is mandatory regardless. The curiosity agenda is additive.
 
-Not all 10 agents are relevant for every venture type. V3 introduces an agent manifest per proposition type:
+**Model:** Opus. One bounded call. Its output cascades through all 10 agents — reasoning quality here compounds.
 
-```javascript
-const AGENT_MANIFEST = {
-  physical_import_export: ['market_overview', 'competitors', 'regulatory', 'production',
-                           'packaging', 'distribution', 'marketing', 'financials', 'origin_ops', 'legal'],
-  saas_software:          ['market_overview', 'competitors', 'regulatory', 'pricing',
-                           'unit_economics', 'go_to_market', 'technical', 'financials', 'legal'],
-  service_business:       ['market_overview', 'competitors', 'regulatory', 'labour',
-                           'pricing', 'acquisition', 'financials', 'legal'],
-};
+**Pipeline position:**
+```
+Perplexity venture intel brief
+Perplexity landscape briefing
+curiosity_agent (Opus + 1 Perplexity curiosity call)   ← NEW
+10 research agents (each receives curiosity agenda as additive block)
+Fact-check agent (independent — does not see curiosity agenda)
+Assembler (receives full curiosity output for section alignment)
 ```
 
-`runResearchAgents()` reads the manifest for the proposition type and only runs the relevant agents.
+**Non-fatal:** If curiosity_agent fails, research agents proceed on standard workflows. No run blocked.
+
+**Workflow file:** `workflows/curiosity_agent.md` — written and complete.
+
+**Output schema summary:**
+- `proposition_read` — how the agent interpreted this specific proposition
+- `core_tension` — the single most important unknown that determines success or failure
+- `cross_agent_connections` — where 2+ agents need to address complementary sides of the same issue
+- `agent_agenda` — per-agent: `priority_questions`, `bear_case_question`, `watch_for`
+- `agenda_confidence` + `agenda_confidence_rationale`
+
+**Key design rules:**
+- Questions must be specific and searchable — not topic areas
+- `bear_case_question` required for every agent — adversarial framing enforced
+- All questions framed as investigations, never assertions
+- Only non-obvious questions — if standard research covers it anyway, it doesn't belong
+- Minimum 2 priority questions per agent
+
+**Admin panel review — design pending:**
+The curiosity agenda should be visible in the admin panel and optionally editable by Brendon before research agents fire. Three possible workflows (pre-step trigger, mid-run pause, or next-run review) each have different UX and pipeline implications. Needs a dedicated design decision before building. See HANDOFF.md for detail.
+
+#### 2. Make all 10 agents proposition-type aware
+
+Each research workflow needs explicit guidance on how to reframe its universal question for non-physical venture types. The venture intelligence brief does this partially today — agents adapt based on what Perplexity tells them. The workflows need to make this explicit so agents don't default to physical-product assumptions when the proposition is a service, SaaS, or content business.
+
+This is vocabulary adaptation, not agent replacement. `research_origin_ops.md` for a SaaS is: where does your talent come from, what are your infrastructure dependencies, what vendor lock-in risks exist? The question is the same; the research is different.
+
+#### 3. New workflow sets per venture type (additive)
+
+As each new venture type is tested E2E, the workflow files for agents that need significant adaptation get a venture-type-specific section. Not rewrites — additions. The physical product path remains the default; non-physical venture types get explicit handling blocks within each workflow.
+
+| Proposition type | Key adaptation areas |
+|---|---|
+| `service_business` | production = delivery cost/capacity; origin_ops = talent sourcing; packaging = service tiers and contracts |
+| `saas_software` | production = build cost and infrastructure; origin_ops = talent/vendor deps; distribution = go-to-market and acquisition |
+| `digital_product` | packaging = monetisation model; distribution = platform and app store strategy; origin_ops = content/IP pipeline |
+| `franchise` | production = unit buildout cost; origin_ops = franchisor relationship; legal = FDD review |
+| `real_estate` | production = renovation cost; origin_ops = deal sourcing and property pipeline; packaging = deal structure |
 
 #### 3. New data sources for non-physical ventures
 

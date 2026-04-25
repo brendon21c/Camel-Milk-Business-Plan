@@ -146,19 +146,36 @@ New API keys in `.env` need to be added to GitHub repo secrets so scheduled runs
 
 Don't start a new step until the previous one has an E2E-tested result.
 
-1. **Build the AGENT_MANIFEST system** — architectural prerequisite for V3. Dynamic agent selection (which agents run for `saas_software` vs `physical_import_export`) must be in place before any V3 workflow sets are built. One change to `run.js`; all future venture types slot in cleanly after.
+**Architectural note:** AGENT_MANIFEST (dynamic agent selection per venture type) is superseded. All 10 research agents run for every proposition — they ask universal business questions that apply to every venture type. The vocabulary and tools adapt per proposition type; the agent set does not change. See ROADMAP_V2.md V3 section for full rationale.
 
-2. **Extend intake form for V3 types** — `/intake` already has V3 proposition types stubbed. Fill in branch-specific fields per venture type (SaaS needs target segment and pricing model — not origin country and product weight).
+1. **Build the `curiosity_agent`** — first V3 prerequisite and the highest-leverage addition to the pipeline. Runs after the two Perplexity pre-briefings, before the 10 research agents. Uses Opus (one bounded call + one Perplexity curiosity call). Produces a per-agent research agenda of non-obvious, proposition-specific questions that supplement standard research. Non-fatal — if it fails, research agents proceed on standard workflows only. Workflow file: `workflows/curiosity_agent.md` (written). Needs: registration in `run.js`, injection into research agent prompts, admin panel visibility (**admin panel review workflow design pending — see note below**).
 
-3. **Build one V3 venture type end-to-end** — start with `service_business` (simplest: no supply chain, no import path, most likely early client type). Write the workflow set, run a full E2E test, validate the report.
+2. **Make all 10 agents proposition-type aware** — update each research workflow to handle non-physical venture types. The venture intelligence brief already does this partially; the workflows need explicit guidance on how to reframe their 10 universal questions for services, SaaS, digital products, and content businesses. No new agents — vocabulary and tool selection adapts, agent set stays the same.
 
-4. **Add V3 data sources as propositions need them** — Product Hunt and YouTube tool scripts already built. Crunchbase ($29/mo) and SimilarWeb ($125/mo) only when a real paying proposition justifies the cost.
+3. **Extend intake form for V3 types** — `/intake` already has V3 proposition types stubbed. Fill in branch-specific fields per venture type (SaaS needs target segment and pricing model — not origin country and product weight).
 
-5. **Social media layer** — YouTube tool script now built (`search_youtube.py`). Add Instagram, Pinterest as V3 marketing workflows need them. TikTok Research API blocked for commercial use — skip it.
+4. **Build one V3 venture type end-to-end** — start with `service_business` (simplest: no supply chain, no import path, most likely early client type). Run a full E2E test, validate the report quality across all 10 agents in the service context.
 
-6. **Billing support (website)** — independent work; can run in parallel with any step above. Becomes urgent before first real paying V3 clients accumulate.
+5. **Add V3 data sources as propositions need them** — Product Hunt and YouTube tool scripts already built. Crunchbase ($29/mo) and SimilarWeb ($125/mo) only when a real paying proposition justifies the cost.
 
-7. **Existing Business Analysis** — after V3 is stable with at least 2 venture types working end-to-end.
+6. **Social media layer** — YouTube tool script now built (`search_youtube.py`). Add Instagram, Pinterest as V3 marketing workflows need them. TikTok Research API blocked for commercial use — skip it.
+
+7. **Billing support (website)** — independent work; can run in parallel with any step above. Becomes urgent before first real paying V3 clients accumulate.
+
+8. **Existing Business Analysis** — after V3 is stable with at least 2 venture types working end-to-end. The 10 universal agents apply; assembler uses a different framing workflow. 2–4 additional research dimensions specific to operating businesses (strengths analysis, growth opportunity mapping, competitive gap analysis, benchmark underperformance) — likely 1–2 additional agents or assembler-level additions.
+
+---
+
+**Admin panel review of curiosity agenda — design pending**
+
+The curiosity_agent saves its agenda to `agent_outputs` and it should be visible in the admin panel on the proposition detail page before a run fires. Brendon should be able to read the agenda and optionally edit specific questions before research starts — this is the human backstop for unusual or high-stakes propositions.
+
+The workflow for how this integrates with run triggering needs to be designed before building:
+- Does the curiosity agenda generate as a separate pre-step the admin triggers, with the full run triggered separately after review?
+- Does the run pause after curiosity_agent and wait for admin approval before research agents fire?
+- Or does the full run always complete, with the agenda shown for review before the *next* run?
+
+Each option has different UX and pipeline implications. Needs a dedicated design decision before implementation.
 
 ---
 

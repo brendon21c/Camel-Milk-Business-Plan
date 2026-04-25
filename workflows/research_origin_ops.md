@@ -225,11 +225,16 @@ saved separately as a citation.
 ### 3. Assess Confidence
 
 For each field, note whether the data is:
-- **High** — specific detail with a credible source (government body, international trade authority, major logistics provider, established publication)
-- **Medium** — directionally accurate but from a less authoritative source or slightly dated
-- **Low** — inferred, estimated, or sourced from a single unreliable result
+- **High** — specific detail with a credible source (government body, World Bank, UN, State Department, major international logistics provider, established publication)
+- **Medium** — directionally accurate but from a less authoritative source or slightly dated (6–18 months old)
+- **Low** — inferred, estimated, or sourced from a single unreliable result; or country data so sparse that findings rely on regional comparisons
 
 If a field has Low confidence, flag it in `data_gaps` and explain why.
+
+After completing all field-level assessments, set the top-level `section_summary.confidence`:
+- **High** — supply availability confirmed from FAO or UN Comtrade data; freight routes and costs verified from logistics provider pages; country risk confirmed from World Bank or State Dept sources
+- **Medium** — supply availability directionally supported but not confirmed in official data; freight costs estimated from comparable corridors; country risk from trade press rather than primary sources
+- **Low** — origin country has limited public data; supply chain is largely unverified; country risk assessment relies on secondhand reports or is outdated
 
 ### 4. Flag High-Risk Conditions
 
@@ -313,13 +318,14 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
       "carriers": ["<carrier or freight forwarder name>"],
       "transit_time": "<e.g. 18–22 days or null>",
       "estimated_cost_per_kg": "<value with currency or null>",
-      "reliability": "high | medium | low"
+      "confidence": "high | medium | low"
     }
   ],
   "country_risk": {
     "political_stability": "low risk | medium risk | high risk",
     "currency_risk": "low | medium | high",
-    "business_environment_notes": "<plain-English summary of operating environment>"
+    "business_environment_notes": "<plain-English summary of operating environment>",
+    "confidence": "high | medium | low"
   },
   "trade_agreements": [
     {
@@ -334,6 +340,10 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
   ],
   "overall_supply_chain_risk": "low | medium | high",
   "narrative_summary": "<3–5 sentence plain-English summary of the origin country's operational landscape. If high-risk conditions exist, the first sentence must flag them explicitly. Written for the report. No jargon.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: e.g. 'Supply availability and country risk confirmed from World Bank and State Dept sources; freight routes verified from logistics provider pages' or 'Limited public data on origin country operations — most findings inferred from regional comparables or secondhand reports'>"
+  },
   "data_gaps": [
     "<any fields with low confidence, missing data, or unverifiable claims>"
   ],
@@ -376,3 +386,4 @@ Before saving output, verify:
 - [ ] `overall_supply_chain_risk` is set and reflects the combined weight of all risk fields
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
+- [ ] `section_summary.confidence` is set with a rationale — supply chain and country risk findings must cite specific sources, not be inferred

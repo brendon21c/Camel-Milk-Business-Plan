@@ -310,11 +310,16 @@ in `data_gaps` and flag the unit economics output as `confidence: "low"`.
 ### 4. Assess Confidence
 
 For each major field, note whether the data is:
-- **High** — specific figure from a credible source (government trade data, industry report, established trade publication)
-- **Medium** — directionally accurate but from a less authoritative source, slightly dated, or aggregated across a range
-- **Low** — inferred, estimated, or sourced from a single unreliable result
+- **High** — specific figure from a credible source (government trade data, SEC filing, BLS report, established industry publication with named methodology)
+- **Medium** — directionally accurate but from a less authoritative source, slightly dated, or aggregated across a range without product-specific breakdown
+- **Low** — inferred, estimated, sourced from a single unreliable result, or a category-wide figure applied to a specific product without confirmation
 
-If a field has Low confidence, flag it in `data_gaps` and explain why.
+If a field has Low confidence, flag it in `data_gaps` and explain why. Financial data is what clients use to make investment decisions — accuracy here is critical. When in doubt, rate lower and explain the gap rather than projecting false confidence.
+
+After completing all field-level assessments, set the top-level `section_summary.confidence`:
+- **High** — unit economics are built from verified cost inputs; margins benchmarked from SEC filings or industry reports; startup capital from comparable business case studies
+- **Medium** — most cost inputs found but some estimated; margin benchmark from secondary sources; startup capital is a reasoned estimate with documented assumptions
+- **Low** — key inputs (COGS, freight, tariff) are missing or inferred; unit economics cannot be reliably calculated; margin benchmark is a guess
 
 ### 5. Format Output
 
@@ -435,6 +440,10 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     "confidence": "high | medium | low"
   },
   "narrative_summary": "<3–5 sentence plain-English summary of the financial picture. Written for the report. No bullet points, no jargon. Cover landed cost, margin potential, and whether the estimated budget is likely to be sufficient if provided.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: e.g. 'Unit economics built from verified freight quotes, WTO tariff schedule, and SEC-sourced gross margin benchmarks' or 'Key cost inputs unavailable for this origin country — estimates based on comparable markets'>"
+  },
   "data_gaps": [
     "<any fields with low confidence or missing data>"
   ],
@@ -480,3 +489,4 @@ Before saving output, verify:
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] All monetary values are in USD (or explicitly noted otherwise)
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
+- [ ] `section_summary.confidence` is set with a rationale — financial data accuracy is critical; do not rate High unless cost inputs are directly sourced

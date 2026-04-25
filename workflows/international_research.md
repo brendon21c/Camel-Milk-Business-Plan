@@ -107,6 +107,17 @@ Translation notes:
 - Key findings from translated sources only: [brief bullet list]
 ```
 
+### Step 7 — Adjust Confidence Ratings for Translated Findings
+
+Translation introduces uncertainty that must be reflected in confidence ratings. When setting confidence on any field whose primary evidence came from a translated source, apply these rules:
+
+- **Downgrade one level from what the source quality would otherwise warrant.** A government regulation found on an Arabic ministry portal (normally High) becomes Medium because translation introduces interpretation risk on legal terminology. A trade publication in Portuguese (normally Medium) becomes Low.
+- **Exception — numeric data:** Prices, quantities, dates, and tariff percentages in translated sources do not require a downgrade. Numbers do not lose meaning in translation.
+- **Exception — English-language secondary confirmation:** If a translated finding is also confirmed by an English-language source of equal or greater authority, do not downgrade — use the confidence level the English source merits.
+- **TRANSLATION UNCERTAIN tag:** Any field marked `[TRANSLATION UNCERTAIN]` must be set to `"low"` confidence regardless of source authority. Uncertain translation of a government document is not a reliable data point.
+
+This rule ensures that a regulatory section built primarily on translated ministry sources is accurately scored as Medium rather than High — protecting the client from acting on a mistranslation.
+
 ---
 
 ## Source Discovery Tools

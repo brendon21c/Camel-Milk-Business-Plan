@@ -193,6 +193,11 @@ For each packaging option and cost figure, note whether the data is:
 
 If a field has Low confidence, flag it in `data_gaps` and explain why.
 
+After completing all field-level assessments, set the top-level `section_summary.confidence`:
+- **High** — costs from actual supplier pages or quotes; labeling requirements confirmed from official regulatory source; MOQs verified from manufacturer listings
+- **Medium** — costs estimated from comparable products; labeling requirements from trade publication rather than primary regulation text; MOQs not confirmed
+- **Low** — costs are guesses; labeling requirements inferred or outdated; no supplier data found
+
 ### 4. Format Output
 
 Structure your findings as the JSON object defined in the Output Format section below.
@@ -284,6 +289,10 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     "<trend 2>"
   ],
   "narrative_summary": "<3–5 sentence plain-English summary of packaging options, key regulatory requirements, realistic costs, and the recommended approach. Written for the report. No jargon.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: e.g. 'Costs sourced from packaging supplier quotes and MOQ data from manufacturer sites' or 'Cost estimates based on comparable product ranges — no direct supplier quotes obtained'>"
+  },
   "data_gaps": [
     "<any fields with low confidence or missing data>"
   ],
@@ -323,3 +332,4 @@ Before saving output, verify:
 - [ ] `cost_at_scale` has at least one non-null value
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
+- [ ] `section_summary.confidence` is set with a rationale — packaging cost and MOQ figures must be sourced, not estimated

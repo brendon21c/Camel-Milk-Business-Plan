@@ -248,13 +248,18 @@ groups where the product has natural fit. Note how to reach them and why the fit
 ### 3. Assess Confidence
 
 For each section, note whether the data is:
-- **High** — specific data with a credible source (industry report, verified influencer profile, peer-reviewed study, official regulatory guidance)
+- **High** — specific data with a credible source (industry report, verified influencer profile from their actual platform page, peer-reviewed study, official regulatory guidance)
 - **Medium** — directionally accurate but from a less authoritative source or slightly dated
 - **Low** — inferred, estimated, or sourced from a single unreliable result
 
-Flag any health claim with weak scientific support or unclear FDA compliance in `data_gaps`
+Flag any health claim with weak scientific support or unclear regulatory compliance in `data_gaps`
 with a plain-language explanation of the risk. Do not suppress these flags — they are important
 for the report reader.
+
+After completing all field-level assessments, set the top-level `section_summary.confidence`:
+- **High** — influencer audience sizes verified from platform pages; CAC estimates sourced from industry benchmark reports or ad platform published data; health claims cross-referenced against peer-reviewed literature
+- **Medium** — influencers identified but audience data from secondary lists rather than verified platform pages; CAC estimated from comparable categories; health claims from trade press or manufacturer claims
+- **Low** — influencer data largely unverifiable; marketing channel costs are guesses; health claim evidence thin or absent
 
 ### 4. Format Output
 
@@ -315,7 +320,8 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
       "channel": "<channel name>",
       "fit": "<why this channel suits the product and demographic>",
       "estimated_cac_usd": "<value or null>",
-      "notes": "<constraints, timing, or platform nuances>"
+      "notes": "<constraints, timing, or platform nuances>",
+      "confidence": "high | medium | low"
     }
   ],
   "health_certifications": [
@@ -323,14 +329,16 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
       "name": "<certification name>",
       "value_to_consumer": "<why buyers respond to this certification>",
       "cost_to_obtain": "<estimated cost or null>",
-      "mandatory_or_optional": "mandatory | optional"
+      "mandatory_or_optional": "mandatory | optional",
+      "confidence": "high | medium | low"
     }
   ],
   "health_claims": [
     {
       "claim": "<specific health benefit statement>",
       "scientific_support": "strong | moderate | weak",
-      "regulatory_claim_compliant": "yes | no | unclear"
+      "regulatory_claim_compliant": "yes | no | unclear | N/A",
+      "confidence": "high | medium | low"
     }
   ],
   "competitor_marketing_strategies": [
@@ -350,6 +358,10 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
   ],
   "recommended_strategy": "<2–3 sentence summary of the highest-leverage marketing approach for this product and demographic. Evidence-based. No jargon.>",
   "narrative_summary": "<3–5 sentence plain-English summary of the marketing landscape. Written for the report. No bullet points. No jargon.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: e.g. 'Influencer data verified from platform pages with live subscriber counts; health claims cross-referenced against peer-reviewed studies' or 'Influencer data sourced from secondary lists — audience sizes not directly verified from platform pages'>"
+  },
   "data_gaps": [
     "<any fields with low confidence, missing data, weak health claims, or unclear FDA compliance — with plain-language explanation of the risk>"
   ],
@@ -391,3 +403,4 @@ Before saving output, verify:
 - [ ] Any health claim flagged `"scientific_support": "weak"` or `"regulatory_claim_compliant": "unclear"` is also present in `data_gaps` with a plain-language risk note
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
+- [ ] `section_summary.confidence` is set with a rationale — influencer data and health claims must trace to verifiable sources

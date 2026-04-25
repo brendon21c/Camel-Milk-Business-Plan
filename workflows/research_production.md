@@ -201,11 +201,16 @@ If a figure has a source URL, note it — it will be saved separately as a citat
 ### 3. Assess Confidence
 
 For each field, note whether the data is:
-- **High** — specific figure with a credible source (equipment manufacturer, industry association, trade publication)
-- **Medium** — directionally accurate but from a less authoritative source or slightly dated
+- **High** — specific figure with a credible source (equipment manufacturer quote, industry association, established trade publication with named methodology)
+- **Medium** — directionally accurate but from a less authoritative source, slightly dated, or a range rather than a specific figure
 - **Low** — inferred, estimated, or sourced from a single unreliable result
 
 If a field has Low confidence, flag it in `data_gaps` and explain why.
+
+After completing all field-level assessments, set the top-level `section_summary.confidence`:
+- **High** — equipment costs sourced from manufacturer or distributor pages, production steps confirmed from industry sources, facility requirements backed by HACCP or trade body guidance
+- **Medium** — costs are estimated from comparable products or secondary sources; process steps are well-documented for the industry even if not for this specific product
+- **Low** — most cost figures are guesses, limited published data exists for this production type, or the origin country has no documented commercial production infrastructure
 
 ### 4. Format Output
 
@@ -300,6 +305,10 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     }
   ],
   "narrative_summary": "<3–5 sentence plain-English summary of what it takes to produce this product at commercial scale. Written for the report. No jargon. Should cover the most important equipment, rough cost to get started, and any notable technical hurdles.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: e.g. 'Equipment costs sourced from manufacturer pages and distributor quotes' or 'Cost estimates inferred from comparable product types — no specific supplier data found for this product'>"
+  },
   "data_gaps": [
     "<any fields with low confidence or missing data>"
   ],
@@ -339,3 +348,4 @@ Before saving output, verify:
 - [ ] `key_suppliers` has at least 2 entries
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
+- [ ] `section_summary.confidence` is set with a rationale — cost figures must trace to a source, not be invented

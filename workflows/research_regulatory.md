@@ -308,11 +308,16 @@ finding in this workflow — do not understate it.
 ### 4. Assess Confidence
 
 For each major field, note whether the data is:
-- **High** — specific rule or requirement cited from FDA, USDA, FTC, or equivalent government source
-- **Medium** — directionally accurate but from a trade publication, law firm summary, or slightly dated source
-- **Low** — inferred, estimated, or sourced from a single unreliable result
+- **High** — specific rule or requirement cited directly from FDA, USDA, FTC, CBP, or equivalent government source URL
+- **Medium** — directionally accurate but from a trade publication, law firm summary, or slightly dated (6–18 months) source
+- **Low** — inferred, estimated, sourced from a single unreliable result, or regulatory information is more than 18 months old
 
-If a field has Low confidence, flag it in `data_gaps` and explain why.
+If a field has Low confidence, flag it in `data_gaps` and explain why. Regulatory confidence must be treated conservatively — a client acting on wrong regulatory information faces legal and financial consequences.
+
+After completing all field-level assessments, set the top-level `section_summary.confidence`:
+- **High** — core requirements (import path, key certifications, labeling) confirmed from official government sources with current URLs
+- **Medium** — requirements identified but some sourced from trade press or law firm summaries rather than primary government pages
+- **Low** — regulatory path unclear, conflicting sources, primary government pages not found, or origin country status on any restricted list is unverified
 
 ### 5. Format Output
 
@@ -372,7 +377,8 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
       "name": "<certification name>",
       "issuing_body": "<e.g. FDA, USDA, third-party certifier>",
       "mandatory": true,
-      "notes": "<any conditions or caveats>"
+      "notes": "<any conditions or caveats>",
+      "confidence": "high | medium | low"
     }
   ],
   "labeling_requirements": [
@@ -380,7 +386,8 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
       "requirement": "<e.g. Nutrition Facts panel>",
       "governing_body": "<e.g. FDA>",
       "mandatory": true,
-      "notes": "<any conditions or caveats>"
+      "notes": "<any conditions or caveats>",
+      "confidence": "high | medium | low"
     }
   ],
   "health_claims": {
@@ -398,7 +405,8 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     {
       "standard": "<e.g. HACCP, pasteurisation requirement>",
       "governing_body": "<e.g. FDA, USDA>",
-      "notes": "<specific thresholds or conditions if known>"
+      "notes": "<specific thresholds or conditions if known>",
+      "confidence": "high | medium | low"
     }
   ],
   "regulatory_risks": [
@@ -412,11 +420,16 @@ For every URL you cite in your output, call `db.js → saveReportSource()` with:
     {
       "change": "<description of proposed or pending rule>",
       "expected_date": "<date or 'unknown'>",
-      "potential_impact": "<how this could affect the business>"
+      "potential_impact": "<how this could affect the business>",
+      "confidence": "high | medium | low"
     }
   ],
   "overall_regulatory_complexity": "low | medium | high",
   "narrative_summary": "<3–5 sentence plain-English summary of the regulatory landscape. Written for the report. No bullet points, no jargon. If the origin country is banned or restricted, this must be stated plainly in the first sentence.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: e.g. 'All core requirements confirmed from FDA.gov and CBP official pages' or 'Import path unverified — origin country regulatory status sourced from trade press only, not official agency pages'>"
+  },
   "data_gaps": [
     "<any fields with low confidence or missing data>"
   ],
@@ -458,3 +471,4 @@ Before saving output, verify:
 - [ ] `overall_regulatory_complexity` is set to one of: `low`, `medium`, `high`, or `unknown`
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
 - [ ] No field contains raw search result HTML or markdown — synthesised text only
+- [ ] `section_summary.confidence` is set — regulatory confidence must reflect actual government source verification, not inferred compliance

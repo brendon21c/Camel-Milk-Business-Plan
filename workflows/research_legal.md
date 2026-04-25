@@ -281,6 +281,10 @@ For every URL cited, call `db.js → saveReportSource()` with:
     "<obligation 2>"
   ],
   "narrative_summary": "<3–5 sentence plain-English summary. Written for the report. No jargon.>",
+  "section_summary": {
+    "confidence": "high | medium | low",
+    "confidence_rationale": "<1 sentence: e.g. 'Entity formation costs and timelines confirmed from state SOS filings; insurance ranges from industry broker data' or 'Sanctions status unverified — OFAC screening not directly confirmed from official sources'>"
+  },
   "data_gaps": [
     "<any fields with low confidence or missing data>"
   ],
@@ -316,3 +320,4 @@ Before saving output, verify:
 - [ ] `customs_compliance` is populated
 - [ ] `narrative_summary` is present and written in plain English
 - [ ] `sources` has at least 8 URLs — aim for 10+. Each search query should contribute at least 1 cited source
+- [ ] `section_summary.confidence` is set with a rationale — sanctions status and insurance costs must trace to sources, not be assumed
