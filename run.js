@@ -1582,14 +1582,25 @@ function parseJSON(raw) {
   // Try direct parse first (ideal case — no markdown wrapping)
   try { return JSON.parse(raw); } catch (_) { /* fall through */ }
 
-  // Strip markdown code fences and try again
-  const stripped = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
-  try { return JSON.parse(stripped); } catch (_) { /* fall through */ }
+  // Single-capture fence strip — handles ```json ... ``` and ``` ... ``` variants.
+  // The two-regex approach left residual backticks when the opening/closing fences
+  // had trailing content, causing parse failures on otherwise valid JSON.
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/s);
+  if (fenceMatch) {
+    try { return JSON.parse(fenceMatch[1].trim()); } catch (_) { /* fall through */ }
+  }
 
-  // Last resort: find the first { ... } block in the response
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (match) {
-    try { return JSON.parse(match[0]); } catch (_) { /* fall through */ }
+  // Find the first { ... } object block
+  const objMatch = raw.match(/\{[\s\S]*\}/);
+  if (objMatch) {
+    try { return JSON.parse(objMatch[0]); } catch (_) { /* fall through */ }
+  }
+
+  // Find the first [ ... ] array block — quality review and proofread return arrays,
+  // not objects, so the object match above misses them entirely.
+  const arrMatch = raw.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    try { return JSON.parse(arrMatch[0]); } catch (_) { /* fall through */ }
   }
 
   throw new Error(`Could not parse JSON from Claude response. First 300 chars: ${raw.slice(0, 300)}`);
@@ -2152,7 +2163,7 @@ Be specific and cite dates where possible. Avoid historical background — focus
  * @param {Object} context - Shared run context.
  * @returns {Promise<Object>} Map of agent_name → parsed output (null if failed).
  */
-async function runResearchAgents(context) {
+async function runResearchAgents(context, priorOutputs = {}) {
   console.log('\n  Running research agents (sequential)...');
 
   // Inter-agent delay — Anthropic enforces a 50,000 input-token-per-minute rate
@@ -2164,25 +2175,40 @@ async function runResearchAgents(context) {
 
   const outputs = {};
 
-  outputs.market_overview = await runMarketOverviewAgent(context);
-  await sleep(INTER_AGENT_DELAY_MS);
-  outputs.competitors      = await runCompetitorsAgent(context);
-  await sleep(INTER_AGENT_DELAY_MS);
-  outputs.regulatory       = await runRegulatoryAgent(context);
-  await sleep(INTER_AGENT_DELAY_MS);
-  outputs.production       = await runProductionAgent(context);
-  await sleep(INTER_AGENT_DELAY_MS);
-  outputs.packaging        = await runPackagingAgent(context);
-  await sleep(INTER_AGENT_DELAY_MS);
-  outputs.distribution     = await runDistributionAgent(context);
-  await sleep(INTER_AGENT_DELAY_MS);
-  outputs.marketing        = await runMarketingAgent(context);
-  await sleep(INTER_AGENT_DELAY_MS);
-  outputs.financials       = await runFinancialsAgent(context);
-  await sleep(INTER_AGENT_DELAY_MS);
-  outputs.origin_ops       = await runOriginOpsAgent(context);
-  await sleep(INTER_AGENT_DELAY_MS);
-  outputs.legal            = await runLegalAgent(context);
+  // Copy completed outputs from a prior failed run into this report's agent_outputs table
+  // and pre-populate the outputs map. Saves $3–6 per retry run by skipping re-runs.
+  for (const [key, outputData] of Object.entries(priorOutputs)) {
+    outputs[key] = outputData;
+    await saveAgentOutput({
+      report_id:   context.reportId,
+      agent_name:  `research_${key}`,
+      status:      'complete',
+      output_data: outputData,
+    });
+    console.log(`    ✓ ${key} — reused from prior run`);
+  }
+
+  const agentRunners = [
+    ['market_overview', runMarketOverviewAgent],
+    ['competitors',     runCompetitorsAgent],
+    ['regulatory',      runRegulatoryAgent],
+    ['production',      runProductionAgent],
+    ['packaging',       runPackagingAgent],
+    ['distribution',    runDistributionAgent],
+    ['marketing',       runMarketingAgent],
+    ['financials',      runFinancialsAgent],
+    ['origin_ops',      runOriginOpsAgent],
+    ['legal',           runLegalAgent],
+  ];
+
+  // needDelay prevents a 30s sleep before the very first agent that actually runs
+  let needDelay = false;
+  for (const [name, runner] of agentRunners) {
+    if (outputs[name] !== undefined) continue; // already loaded from prior run
+    if (needDelay) await sleep(INTER_AGENT_DELAY_MS);
+    outputs[name] = await runner(context);
+    needDelay = true;
+  }
 
   return outputs;
 }
@@ -2261,9 +2287,10 @@ function computeDataConfidence(reportId) {
     const score  = result.data_confidence_score;
     console.log(`  ✓ Data confidence: ${score}/100 — ${result.interpretation}`);
     return {
-      score:          score,
-      interpretation: result.interpretation,
-      description:    result.description,
+      score:           score,
+      interpretation:  result.interpretation,
+      description:     result.description,
+      signal_breakdown: result.signal_breakdown || null,
     };
   } catch (err) {
     console.warn(`  ⚠ Confidence tool failed (non-fatal): ${err.message.slice(0, 120)}`);
@@ -2340,14 +2367,26 @@ const ASSEMBLER_SECTION_INSTRUCTIONS = {
      Use a numbered bullets block.`,
 
   data_confidence:
-    `Write the Data Confidence section explaining the score in plain language.
-     (1) A key_figures block showing the score (e.g. 79/100) and interpretation label.
-     (2) A table with columns: Signal | Weight | What Drove It — covering all 4 signals:
-         Field Confidence Ratings (45%), Agent Completion (25%), Source Coverage (20%), Data Gaps (10%).
-     (3) A paragraph explaining in plain English what this score means in real-world terms.
-         Name specific sections with lower confidence. State whether the viability verdict
-         should be treated as definitive or directional.
-     (4) If any research agents failed, name the affected report sections explicitly.`,
+    `Write the Data Confidence section explaining the score transparently in plain language.
+     Use the DATA CONFIDENCE SCORE block in context — it contains the full signal_breakdown with per-signal
+     scores and details. Do not invent numbers; read them from the breakdown.
+
+     Required blocks in this order:
+     (1) A key_figures block: "Data Confidence Score" = "<score>/100 — <interpretation>"
+     (2) A table with columns: Signal | Weight | Score | What Drove It — one row per signal:
+         - Field Confidence Ratings: weight 45%, score from signal_breakdown.field_confidence.score,
+           summarise which agents had low/medium ratings
+         - Agent Completion: weight 25%, score from signal_breakdown.agent_completion.score,
+           name any agents that failed or were missing
+         - Source Coverage: weight 20%, score from signal_breakdown.source_coverage.score,
+           note average sources per agent and any agents below the 10-source target
+         - Data Gaps: weight 10%, score from signal_breakdown.data_gaps.score,
+           state the total gap count from signal_breakdown.data_gaps.details.total_gaps
+     (3) A paragraph (2–3 sentences) explaining what this score means in real-world terms.
+         Name the specific report sections most affected by data uncertainty. State plainly
+         whether the viability verdict should be treated as definitive or directional.
+     (4) If any agents failed or had critical_failures, add a callout block naming the affected
+         report sections and what data the client should verify independently.`,
 };
 
 /**
@@ -2887,10 +2926,16 @@ ${JSON.stringify(viabilityScore, null, 2)}
 
   const sections = [];
 
+  // Pre-build confidence context for the data_confidence section — pinned breakdown so the
+  // assembler writes accurate per-signal numbers rather than hallucinating them.
+  const confidenceContext = confidence?.signal_breakdown
+    ? `\n\n## DATA CONFIDENCE BREAKDOWN (use these exact numbers in the signal table)\n\`\`\`json\n${JSON.stringify(confidence, null, 2)}\n\`\`\``
+    : '';
+
   for (const spec of SECTION_SPECS) {
     console.log(`    [${spec.callNum}/15] Section ${spec.num}: ${spec.title}...`);
 
-    const sectionTask = `${viabilityContext}
+    const sectionTask = `${viabilityContext}${spec.id === 'data_confidence' ? confidenceContext : ''}
 
 ## YOUR TASK
 Write section ${spec.num}: ${spec.title}
@@ -3669,8 +3714,31 @@ async function runProposition(proposition, force) {
       adminContextNotes,     // Admin panel: scope adjustments grouped by category
     };
 
-    // 6. Run all 10 research sub-agents
-    const agentOutputs = await runResearchAgents(context);
+    // 6. Load prior completed agent outputs from the most recent failed run (if any).
+    // Avoids re-running agents that already succeeded, saving $3–6 per retry.
+    let priorCompletedOutputs = {};
+    const recentFailed = history.find(r => r.status === 'failed');
+    if (recentFailed) {
+      try {
+        const priorRows = await getAgentOutputsByReportId(recentFailed.id);
+        for (const row of priorRows) {
+          if (row.status === 'complete') {
+            const key = row.agent_name.replace('research_', '');
+            priorCompletedOutputs[key] = row.output_data;
+          }
+        }
+        const count = Object.keys(priorCompletedOutputs).length;
+        if (count > 0) {
+          console.log(`\n  Resuming ${count} completed agent(s) from prior run — skipping re-run`);
+        }
+      } catch (err) {
+        console.warn(`  ⚠ Could not load prior agent outputs (non-fatal): ${err.message.slice(0, 80)}`);
+        priorCompletedOutputs = {};
+      }
+    }
+
+    // 6b. Run all 10 research sub-agents (skips any already loaded above)
+    const agentOutputs = await runResearchAgents(context, priorCompletedOutputs);
 
     // 6. Quality gate — validates outputs before assembly.
     // Returns list of soft-failed (non-critical) agents so we can retry them.

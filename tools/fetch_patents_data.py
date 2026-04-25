@@ -72,8 +72,9 @@ def cmd_patents(args):
 
     data = pv_get(payload)
     if not data:
-        return {"source": "PatentsView (USPTO)", "records": [],
-                "error": "PatentsView API unavailable. Try again or search at patentsview.org."}
+        return {"_tool_error": True,
+                "reason": "PatentsView API unavailable — verify manually at patentsview.org",
+                "records": [], "source": "PatentsView (USPTO)"}
 
     patents = data.get("patents", [])
     total = data.get("total_patent_count", len(patents))
@@ -117,15 +118,10 @@ def cmd_trademarks(args):
     data = tm_get(params)
 
     if not data:
-        # Fallback: try the USPTO TSDR bulk data endpoint
         return {
-            "source": "USPTO Trademark Electronic Search System",
-            "query": args.query,
-            "records": [],
-            "note": (
-                "USPTO Trademark API unavailable. "
-                "Search at tmsearch.uspto.gov/search/search-information for trademark status."
-            ),
+            "_tool_error": True,
+            "reason": "USPTO Trademark API unavailable — verify manually at tmsearch.uspto.gov",
+            "records": [], "source": "USPTO Trademark Database",
         }
 
     docs = data.get("body", {}).get("docs", [])
@@ -179,9 +175,16 @@ def cmd_landscape(args):
     tm_data = tm_get({"searchText": term, "rows": 10})
 
     patent_count = patent_data.get("total_patent_count", 0) if patent_data else 0
-    patents = patent_data.get("patents", []) if patent_data else []
-    tm_count = tm_data.get("body", {}).get("numFound", 0) if tm_data else 0
-    trademarks = tm_data.get("body", {}).get("docs", []) if tm_data else []
+    patents      = patent_data.get("patents", []) if patent_data else []
+    tm_count     = tm_data.get("body", {}).get("numFound", 0) if tm_data else 0
+    trademarks   = tm_data.get("body", {}).get("docs", []) if tm_data else []
+
+    # Surface tool failures explicitly so agents note unavailability rather than assuming no IP exists
+    api_errors = []
+    if not patent_data:
+        api_errors.append("PatentsView unavailable — patent count may be incomplete")
+    if not tm_data:
+        api_errors.append("USPTO Trademark API unavailable — trademark check should be done manually at tmsearch.uspto.gov")
 
     # Find top assignees (companies with most patents)
     assignee_counts = {}
@@ -192,7 +195,7 @@ def cmd_landscape(args):
                 assignee_counts[org] = assignee_counts.get(org, 0) + 1
     top_assignees = sorted(assignee_counts.items(), key=lambda x: x[1], reverse=True)[:5]
 
-    return {
+    result = {
         "source": "PatentsView + USPTO Trademarks (free, no key required)",
         "term": term,
         "ip_landscape": {
@@ -221,6 +224,10 @@ def cmd_landscape(args):
             "Trademark conflicts: check 'live' trademarks — expired/cancelled marks can often be used."
         ),
     }
+    if api_errors:
+        result["_tool_error"] = True
+        result["reason"] = "; ".join(api_errors)
+    return result
 
 
 def main():

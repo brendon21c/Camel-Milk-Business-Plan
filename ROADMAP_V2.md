@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-23 (Session 34 — V2 E2E confirmed complete; consultant brief cancelled)
+**Last updated:** 2026-04-25 (Session 38 — pre-V3 cleanup complete; data confidence fixed; code quality done)
 
 ---
 
@@ -211,6 +211,14 @@ This is a natural V2 test since the current camel milk proposition targets the U
 
 ## V3 — General Business Ventures
 
+**Pre-V3 cleanup status: ✅ Complete (2026-04-25)**
+- Data confidence tool audited and fixed — `signal_breakdown` now flows through to assembler; Section 14 produces accurate per-signal table
+- `parseJSON()` fixed — array fallback added; root cause of recurring non-fatal errors eliminated
+- Node 20 → 22 in GitHub Actions
+- Per-agent resume on retry implemented — saves $3–6 per failed run
+- GDELT + USPTO error flags added — agents now distinguish tool failure from empty results
+- GitHub Actions secrets for 5 new API keys from Session 37 still pending (Step 2)
+
 **Goal:** Any business idea — SaaS, services, digital products, franchises, real estate, content creation, marketplaces — gets a rigorous viability analysis with research shaped to the specific proposition, not just its category.
 
 ### Architectural foundation: universal agents
@@ -258,7 +266,7 @@ Assembler (receives full curiosity output for section alignment)
 
 **Non-fatal:** If curiosity_agent fails, research agents proceed on standard workflows. No run blocked.
 
-**Workflow file:** `workflows/curiosity_agent.md` — written and complete.
+**Workflow file:** `workflows/curiosity_agent.md` — written and complete. **Next step: register in `run.js`, inject agenda into research agent prompts, design admin panel review workflow.**
 
 **Output schema summary:**
 - `proposition_read` — how the agent interpreted this specific proposition

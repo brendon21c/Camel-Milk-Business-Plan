@@ -143,13 +143,19 @@ This produces a `data_confidence` object with:
   completion rate (25%), source citation coverage (20%), and flagged data gaps (10%).
 - **Interpretation:** High (85–100), Moderate (65–84), Low (40–64), Very Low (0–39).
 
-Store the full output and use the top-level fields in the report:
+Store the full output. The assembler receives the complete object including `signal_breakdown`:
 
 ```json
 {
   "data_confidence_score": <0-100>,
   "interpretation": "High | Moderate | Low | Very Low",
-  "description": "<one sentence explanation>"
+  "description": "<one sentence explanation>",
+  "signal_breakdown": {
+    "field_confidence":  { "score": <0-100>, "weight": "45%", "details": { "<agent>": { "fields": N, "avg_score": 0.0–1.0 } } },
+    "agent_completion":  { "score": <0-100>, "weight": "25%", "details": { "completed": [], "failed": [], "critical_failures": [] } },
+    "source_coverage":   { "score": <0-100>, "weight": "20%", "details": { "<agent>": { "sources": N, "score": 0.0–1.0 } } },
+    "data_gaps":         { "score": <0-100>, "weight": "10%", "details": { "total_gaps": N, "by_agent": { "<agent>": N } } }
+  }
 }
 ```
 
@@ -197,21 +203,22 @@ Flag risks clearly. Cite figures. Every claim should be traceable to a source.
 
 **Section 14 — Data Confidence spec:**
 
-This section makes the confidence score transparent and meaningful to the client. Include:
+This section makes the confidence score transparent and meaningful to the client. The assembler prompt for this section receives a pinned `DATA CONFIDENCE BREAKDOWN` block with the full `signal_breakdown` object — use those exact numbers, do not invent them.
 
-1. **Score and label** — state the score (e.g. 79/100) and interpretation (High / Moderate / Low / Very Low)
-2. **Signal breakdown table** — one row per signal showing its weight, its score for this run, and a one-line explanation of what drove it:
+Required blocks in order:
+
+1. **`key_figures` block** — `"Data Confidence Score": "<score>/100 — <interpretation>"`
+2. **`table` block** — columns: Signal | Weight | Score | What Drove It — one row per signal:
 
 | Signal | Weight | Score | What drove it |
 |---|---|---|---|
-| Field Confidence Ratings | 45% | XX/100 | e.g. "Most fields rated high; medium ratings on Somalia supplier data" |
-| Agent Completion | 25% | XX/100 | e.g. "All 10 agents completed" or "Marketing agent failed, reducing score" |
-| Source Coverage | 20% | XX/100 | e.g. "Average 8 sources per agent; 2 agents below the 10-source target" |
-| Data Gaps | 10% | XX/100 | e.g. "12 data gaps flagged across all agents" |
+| Field Confidence Ratings | 45% | XX/100 | Read from `signal_breakdown.field_confidence` — summarise which agents had low/medium avg_score |
+| Agent Completion | 25% | XX/100 | Read from `signal_breakdown.agent_completion` — name any failed or missing agents |
+| Source Coverage | 20% | XX/100 | Read from `signal_breakdown.source_coverage` — note avg sources and agents below target |
+| Data Gaps | 10% | XX/100 | Read from `signal_breakdown.data_gaps.details.total_gaps` — state the count |
 
-3. **Plain-English interpretation** — 2–3 sentences explaining what this score means in real-world terms. Name the specific sections most affected by uncertainty. Explain whether the viability verdict should be treated as definitive or directional.
-
-4. **Affected sections** — if any agents failed or produced predominantly low/medium confidence fields, name the specific report sections the client should read with more caution.
+3. **`paragraph` block** — 2–3 sentences in plain English: what this score means for this specific report, which sections are most affected by uncertainty, and whether the viability verdict is definitive or directional.
+4. **`callout` block** (conditional) — if `agent_completion.details.failed` is non-empty OR any agent has `avg_score < 0.4`, add a callout naming affected report sections and what the client should verify independently. Omit if all agents completed with good confidence.
 
 ### 5. Generate PDF
 

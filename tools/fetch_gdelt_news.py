@@ -97,9 +97,8 @@ def cmd_search(args):
     try:
         data = gdelt_get("doc/doc", params)
     except Exception as e:
-        return {"error": f"GDELT search failed: {e}", "records": [],
-                "source": "GDELT Project",
-                "query_used": query}
+        return {"_tool_error": True, "reason": f"GDELT search failed: {e}",
+                "records": [], "source": "GDELT Project", "query_used": query}
 
     articles = data.get("articles", [])
 
@@ -143,8 +142,8 @@ def cmd_timeline(args):
     try:
         data = gdelt_get("doc/doc", params)
     except Exception as e:
-        return {"error": f"GDELT timeline failed: {e}", "records": [],
-                "source": "GDELT Project", "query_used": query}
+        return {"_tool_error": True, "reason": f"GDELT timeline failed: {e}",
+                "records": [], "source": "GDELT Project", "query_used": query}
 
     timeline = data.get("timeline", [])
     if not timeline:

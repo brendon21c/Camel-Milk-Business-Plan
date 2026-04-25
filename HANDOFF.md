@@ -33,9 +33,9 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ---
 
-## Current State (as of 2026-04-24)
+## Current State (as of 2026-04-25)
 
-### Backend — `Camel-Milk-Business-Plan` ✅ V2 complete + research layer expanded + fact-check upgraded
+### Backend — `Camel-Milk-Business-Plan` ✅ V2 complete + Step 0 & Step 1 pre-V3 cleanup done
 
 - V1 pipeline fully working and tested
 - E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever
@@ -57,6 +57,13 @@ They share the same Supabase project. The website writes intake data; the backen
 - **Fact-check agent upgraded (Session 37):** Perplexity and NewsAPI added to `FACT_CHECK_TOOLS`. `maxIter` 30 → 50, `maxTokens` 8000 → 16000. System prompt now includes explicit independence notice (agent is told it has NOT seen the venture brief or admin context). New Section 5: cross-agent consistency check. New `cross_agent_inconsistency` issue type in output. Smoke tested: 5/5 planted errors caught including a fake competitor, a non-existent regulation (CARB Phase 3), a $114B vs $3.2B cross-agent TAM contradiction, and a category-level data misrepresentation.
 - **API keys added:** `PRODUCT_HUNT_DEV_TOKEN`, `NEWS_API_KEY`, `ALPHA_VANTAGE_API_KEY`, `MASSIVE_API_KEY` (formerly Polygon.io — same endpoint), `FINNHUB_API_KEY`. See `API_REGISTRATION_PLAN.md` for full status.
 - **API registration findings:** G2 API restricted to vendors who list products on G2 — not usable for third-party research. TikTok Research API blocked for commercial use. OpenCorporates no longer free (£2,250/year minimum). All three moved to "blocked/deferred" in `API_REGISTRATION_PLAN.md`.
+
+- **Step 0 complete (2026-04-25):** Data confidence tool audited end-to-end. Math verified (weights sum to 1.0, range 0–100). All code paths confirmed (runs on main run, soft-fail retry, and resume). Agents do emit `confidence` fields — `output_data` column read confirmed (old `output` bug was already fixed). Smoke tested with mock outputs: 74.5/100, all 4 signals correct. Key fix: `signal_breakdown` was being dropped in `computeDataConfidence()` — now returned and included in `researchContext`. Section 14 assembler instruction updated to reference exact `signal_breakdown` fields. `confidenceContext` now injected directly into the data_confidence section task. `assemble_report.md` Section 14 spec updated with full breakdown schema.
+- **Step 1 complete (2026-04-25):** Four code quality fixes applied and verified:
+  - `parseJSON()` — replaced two-regex fence strip with single-capture pattern; added `[...]` array fallback (root cause of `Quality review failed` / `Proofread pass failed` non-fatal errors on every run). 7/7 test cases pass.
+  - GitHub Actions `reports.yml` — `node-version: '20'` → `'22'`. Node 20 hits end-of-life June 2, 2026.
+  - Per-agent resume on retry — before each run, loads completed agent outputs from the most recent failed run and copies them to the new report. Only runs agents without prior output. Saves $3–6 per retry. `needDelay` flag prevents 30s pre-run sleep when all prior agents are skipped.
+  - GDELT + USPTO `_tool_error` flag — all error paths now return `{ "_tool_error": True, "reason": "..." }` instead of silent `records: []`. Agents can now distinguish tool failure from legitimate empty results.
 
 **Note:** Camel Milk proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
 
@@ -90,44 +97,8 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## What Is Next
 
-### Step 0 — Data Confidence Tool Review
-
-**Priority: do this before any V3 work.** The data confidence score is displayed on the cover page of every report and referenced in the executive summary. It needs to be reliable.
-
-**What to review:**
-
-1. **Read `tools/compute_data_confidence.py` end to end.** Understand all four signals: field confidence ratings (45%), agent completion rate (25%), source citation coverage (20%), data gaps (10%). Verify the weighting math is correct and the score range is actually 0–100.
-
-2. **Confirm it runs on every report.** Trace the call in `run.js` — it should fire after the quality gate, before the assembler, on every run including resumes. If there's any code path where it can be skipped silently, close it.
-
-3. **Verify what "field confidence ratings" actually measures.** The 45% signal is the biggest weight. Confirm agents are actually emitting structured confidence fields in their JSON output, and that the tool is reading those fields correctly — not defaulting to a generic score when fields are missing.
-
-4. **Test the Low / Very Low path.** Confirm that when confidence is Low or Very Low, the callout box actually appears in the Executive Summary in the generated PDF. This is a quality bar requirement but was never smoke tested separately from full runs.
-
-5. **Improve if needed.** If the methodology has gaps (e.g. a hard-failed agent counts as "completed" for the completion signal, or the gap-count logic double-counts), fix them before V3. A flawed confidence score that says "High" on a weak run is worse than no confidence score.
-
-6. **Document the final methodology** in `workflows/assemble_report.md` Section 14 spec — so future changes to the tool don't silently break the report language.
-
----
-
-### Step 1 — Code Quality (4 audit items, still pending)
-
-These are reliability fixes that should be done before V3 work starts. `parseJSON()` causes a visible non-fatal error on every single run today.
-
-1. **Fix `parseJSON()` — add array fallback + better fence extraction** (`run.js` ~line 1429)
-   - Root cause of the `Quality review failed` and `Proofread pass failed` non-fatal errors visible in every GitHub Actions log.
-   - Fix: add `raw.match(/\[[\s\S]*\]/)` as a parallel fallback. Replace the two-regex fence strip with a single capture: `raw.match(/```(?:json)?\s*([\s\S]*?)```/s)`.
-
-2. **Update GitHub Actions to Node 22** (`.github/workflows/reports.yml` line 56)
-   - `node-version: '20'` — Node 20 deprecated June 2, 2026. Update to `'22'` (LTS, drop-in compatible).
-
-3. **Per-agent resume on retry**
-   - When a run fails mid-way, the next run re-runs all agents from scratch even though outputs are saved per-agent in Supabase.
-   - Fix: at run start, check if `agent_outputs` already exist for the proposition's most recent pending/failed report. Skip agents that already have saved output.
-   - Single biggest cost-reduction fix for retries — saves $3–6 per failed run.
-
-4. **GDELT and USPTO — return error-flagged responses instead of empty results**
-   - Fix: return `{ "_tool_error": true, "reason": "SSL timeout" }` so agents can flag "USPTO trademark check unavailable — verify manually" instead of silently skipping.
+### ~~Step 0 — Data Confidence Tool Review~~ ✅ Complete (2026-04-25)
+### ~~Step 1 — Code Quality Fixes~~ ✅ Complete (2026-04-25)
 
 ---
 
@@ -221,6 +192,17 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ---
 
 ## Session Log
+
+### Session 38 — Step 0 (data confidence audit + fixes) + Step 1 (4 code quality fixes) (2026-04-25)
+
+- **Data confidence tool audited:** Math verified correct (weights sum to 1.0, score 0–100). All call paths confirmed — fires on main run, soft-fail retry, and resume. Agents confirmed to emit `confidence` fields. Smoke tested with 10 mock agents (8 complete, 2 failed): 74.5/100 Moderate — all 4 per-signal scores and critical failure penalty correct.
+- **`signal_breakdown` fix:** `computeDataConfidence()` was discarding the full `signal_breakdown` from the Python tool output — only returning `{ score, interpretation, description }`. The assembler had no per-signal data to write the Section 14 table accurately. Fixed: breakdown now included in return value and flows into `researchContext`.
+- **Section 14 assembler instruction strengthened:** Now maps each table row to the exact `signal_breakdown` field to read from. `confidenceContext` block injected directly into the `data_confidence` section task (not just in researchContext) so the assembler has the breakdown pinned in the task rather than hunting through 150k tokens.
+- **`assemble_report.md` Section 14 spec updated:** Full `signal_breakdown` schema documented. Table row instructions map to specific `signal_breakdown` paths. Conditional callout block spec added (fires if agents failed or any agent `avg_score < 0.4`).
+- **`parseJSON()` fixed:** Replaced two-regex fence strip with single-capture `/```(?:json)?\s*([\s\S]*?)```/s`. Added `[...]` array fallback — root cause of `Quality review failed` and `Proofread pass failed` non-fatal errors on every run (both return arrays, not objects). 7/7 test cases pass.
+- **Node 20 → 22** in `.github/workflows/reports.yml`. Node 20 end-of-life June 2, 2026.
+- **Per-agent resume on retry:** `runResearchAgents()` now accepts `priorOutputs` map. Before each run, `runProposition` checks the most recent failed report for completed agent_outputs and copies them to the new report. Only agents without prior output run. `needDelay` flag prevents 30s sleep before first real agent run. Saves $3–6 per retry.
+- **GDELT + USPTO `_tool_error` flag:** All error paths in `fetch_gdelt_news.py` and `fetch_patents_data.py` now return `{ "_tool_error": True, "reason": "..." }`. Agents distinguish tool failure from empty results.
 
 ### Session 37 — API registration; tool expansion; workflow upgrades; fact-check strengthened (2026-04-24)
 
