@@ -582,7 +582,8 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 | `reports` | One row per run — `status`, `run_number`, `previous_report_id` |
 | `agent_outputs` | Temporary research data — deleted post-run (or at failure) |
 | `report_sources` | Source URLs cited in reports |
-| `api_cache` | ⚠️ **Unused scaffolding — review and repurpose.** `getCachedApiResponse` / `setCachedApiResponse` are defined and exported in `db.js` but never called. Brave Search uses a separate `search_cache` table. Anthropic prompt caching is handled server-side by Anthropic (no DB needed). Potential use: cache Perplexity briefings between runs on the same proposition so repeated runs don't re-spend those credits. |
+| `api_cache` | Perplexity briefing cache. `getCachedApiResponse` / `setCachedApiResponse` called in `runProposition()` to cache venture intelligence + landscape briefing results with date-based keys (`perplexity:{type}:{proposition_id}:YYYY-MM-DD`). Same-day retries skip the Perplexity API entirely. 7-day TTL enforced by `cleanup.js`. |
+| `search_cache` | Brave Search result cache. Written and read by `search_brave.py`. Keyed by query string; per-call freshness TTL enforced at read time (default 24h). 7-day hard TTL enforced by `cleanup.js` (was never swept before — fixed 2026-04-25). |
 | `proposition_context` | Admin-added enrichment per proposition. Column: `content` (TEXT). Categories: `sourcing`, `market`, `regulatory`, `financial`, `competitor`, `other`. RLS enabled — service key only. Backend reads this at run start and injects into agent prompts. |
 
 **New fields added in migration 010:**

@@ -536,26 +536,32 @@ async function getCachedApiResponse(cacheKey) {
     .from('api_cache')
     .select('*')
     .eq('cache_key', cacheKey)
-    .maybeSingle(); // returns null instead of error when no row found
+    .gt('expires_at', new Date().toISOString()) // only return non-expired entries
+    .maybeSingle();
 
   if (error) throw new Error(`getCachedApiResponse failed for key "${cacheKey}": ${error.message}`);
-  return row; // null on miss, row object on hit
+  return row; // null on miss or expired, row object on hit
 }
 
 /**
  * Inserts or updates a cached API response.
  * Uses upsert so the same cache key can be refreshed without a separate
- * delete step. The `cache_key` column must have a unique constraint in
- * the database for upsert to resolve conflicts correctly.
- * @param {string} cacheKey - Unique identifier for this cache entry.
- * @param {*} responseData - The data to cache (will be stored as JSON).
+ * delete step. `api_source` is derived from the key prefix (e.g. "perplexity").
+ * @param {string} cacheKey    - Unique identifier for this cache entry.
+ * @param {*}      responseData - The data to cache (stored as JSONB).
+ * @param {number} [ttlHours=168] - Cache TTL in hours (default 7 days).
  * @returns {Object} The upserted row.
  */
-async function setCachedApiResponse(cacheKey, responseData) {
+async function setCachedApiResponse(cacheKey, responseData, ttlHours = 168) {
+  // Derive api_source from the first segment of the colon-delimited key
+  // e.g. "perplexity:venture_intelligence:uuid:2026-04-25" → "perplexity"
+  const apiSource  = cacheKey.split(':')[0] || 'unknown';
+  const expiresAt  = new Date(Date.now() + ttlHours * 60 * 60 * 1000).toISOString();
+
   const { data: row, error } = await supabase
     .from('api_cache')
     .upsert(
-      { cache_key: cacheKey, response_data: responseData, cached_at: new Date().toISOString() },
+      { cache_key: cacheKey, api_source: apiSource, response_data: responseData, expires_at: expiresAt },
       { onConflict: 'cache_key' }
     )
     .select()
@@ -772,6 +778,52 @@ module.exports = {
   // Admin helpers
   getMcKeeverAdminEmails,
 
+  // Curiosity agenda
+  saveCuriosityAgenda,
+  getCuriosityAgenda,
+
   // Cleanup
   deleteAgentOutputsByReportId,
 };
+
+// ---------------------------------------------------------------------------
+// Curiosity agenda
+// ---------------------------------------------------------------------------
+
+/**
+ * Save the curiosity agent's agenda to the proposition record.
+ * Called after runCuriosityPreStep completes, or when the admin saves edits.
+ * @param {string} propositionId
+ * @param {Object} agenda - Parsed JSON from the curiosity agent
+ */
+async function saveCuriosityAgenda(propositionId, agenda) {
+  const { error } = await supabase
+    .from('propositions')
+    .update({
+      curiosity_agenda:       agenda,
+      curiosity_generated_at: new Date().toISOString(),
+    })
+    .eq('id', propositionId);
+
+  if (error) throw new Error(`saveCuriosityAgenda failed: ${error.message}`);
+}
+
+/**
+ * Read the curiosity agenda and its generation timestamp from a proposition.
+ * Returns null agenda if not yet generated.
+ * @param {string} propositionId
+ * @returns {{ agenda: Object|null, generatedAt: string|null }}
+ */
+async function getCuriosityAgenda(propositionId) {
+  const { data, error } = await supabase
+    .from('propositions')
+    .select('curiosity_agenda, curiosity_generated_at')
+    .eq('id', propositionId)
+    .single();
+
+  if (error) throw new Error(`getCuriosityAgenda failed: ${error.message}`);
+  return {
+    agenda:      data?.curiosity_agenda       ?? null,
+    generatedAt: data?.curiosity_generated_at ?? null,
+  };
+}

@@ -50,6 +50,8 @@ const {
   getMcKeeverAdminEmails,
   getCachedApiResponse,
   setCachedApiResponse,
+  saveCuriosityAgenda,
+  getCuriosityAgenda,
 } = require('./db');
 
 // ---------------------------------------------------------------------------
@@ -870,6 +872,177 @@ const FACT_CHECK_TOOLS = RESEARCH_TOOLS.filter(t =>
   ['web_search', 'search_perplexity', 'search_tavily', 'search_exa', 'fetch_jina_reader', 'search_news'].includes(t.name)
 );
 
+// Curiosity agent only gets Perplexity — one meta-curiosity call to bootstrap the agenda.
+// No data tools. This agent reasons about what to investigate; it does not investigate.
+const CURIOSITY_TOOLS = RESEARCH_TOOLS.filter(t => t.name === 'search_perplexity');
+
+// ---------------------------------------------------------------------------
+// Curiosity agent
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs the curiosity agent using Claude Opus.
+ *
+ * Reads curiosity_agent.md, makes one Perplexity meta-curiosity call, and
+ * produces a per-agent research agenda specific to this proposition. Opus is
+ * required — its output cascades through all 10 research agents.
+ *
+ * @param {Object} context - Proposition, client, briefings, admin context notes.
+ * @returns {Promise<Object>} Parsed curiosity agenda JSON.
+ */
+async function runCuriosityAgent(context) {
+  const workflow = loadWorkflow('curiosity_agent.md');
+
+  // Build the input object the workflow expects — includes admin context notes
+  // so the curiosity agent can incorporate any scope adjustments already added
+  const input = {
+    proposition_id: context.proposition.id,
+    proposition: {
+      title:              context.proposition.title,
+      product_type:       context.proposition.product_type,
+      industry:           context.proposition.industry || null,
+      origin_country:     context.proposition.origin_country  || null,
+      target_country:     context.proposition.target_country  || null,
+      target_demographic: context.proposition.target_demographic || null,
+      proposition_type:   context.proposition.proposition_type,
+    },
+    client: {
+      name:           context.client?.name          || null,
+      company_name:   context.client?.company_name  || null,
+      client_context: context.proposition.client_context || null,
+    },
+    venture_intelligence:  context.ventureIntelligence || null,
+    landscape_briefing:    context.landscapeBriefing   || null,
+    // Admin context notes (sourcing, market, regulatory, financial, competitor, other)
+    // These are the same scope notes that get injected into research agent prompts.
+    // The curiosity agent uses them to avoid generating agenda items already addressed
+    // by admin notes, and to identify what the notes leave unexplored.
+    admin_context_notes: context.adminContextNotes || {},
+  };
+
+  const systemPrompt = `You are the curiosity agent for McKeever Consulting's Business Viability Intelligence System.
+
+Your job is to read this proposition carefully and produce a focused, specific research agenda for each of the 10 research agents that will follow you. Your agenda adds to their standard research — it does not replace it.
+
+CRITICAL RULES:
+1. You have exactly ONE tool: search_perplexity. Use it ONCE for the curiosity bootstrapping call (Step 3 in the workflow).
+2. Read the full workflow instructions before calling any tool.
+3. Your FINAL response must be ONLY the JSON object from the workflow Output Format section.
+4. Do not wrap the JSON in markdown code fences. No text before or after the JSON.
+5. Every agent in agent_agenda MUST have priority_questions (minimum 2), bear_case_question, and watch_for.
+6. Questions must be specific and searchable — not generic topic areas.
+7. Do not include questions that standard research would find anyway.
+8. If admin_context_notes are present, factor them into your agenda — avoid duplicating what the notes already address, and surface what they leave unexplored.`;
+
+  const userPrompt = `Execute the curiosity agent workflow and produce the JSON research agenda.
+
+## WORKFLOW INSTRUCTIONS
+${workflow}
+
+## PROPOSITION INPUT
+\`\`\`json
+${JSON.stringify(input, null, 2)}
+\`\`\`
+
+Run the workflow steps in order. Use search_perplexity exactly once for Step 3.
+Respond with ONLY the JSON object from the Output Format section.`;
+
+  const raw = await callClaude({
+    model:      'claude-opus-4-7',
+    system:     systemPrompt,
+    userPrompt,
+    tools:      CURIOSITY_TOOLS,
+    maxTokens:  8000,
+    maxIter:    10, // Bounded — one tool call then a single JSON output
+  });
+
+  return parseJSON(raw);
+}
+
+/**
+ * Runs the curiosity pre-step for a proposition: fetches briefings, runs the
+ * curiosity agent, and saves the agenda to propositions.curiosity_agenda.
+ *
+ * Called by main() when --step curiosity is passed from the admin panel.
+ * The admin reviews and optionally edits the agenda before triggering a full run.
+ *
+ * @param {Object} proposition - Proposition row from DB.
+ */
+async function runCuriosityPreStep(proposition) {
+  const stepStart = Date.now();
+  console.log(`\n${'─'.repeat(60)}`);
+  console.log(`Curiosity pre-step: ${proposition.title}`);
+  console.log(`ID: ${proposition.id}`);
+
+  const today = new Date().toISOString().slice(0, 10);
+  let ventureIntelligence = null;
+  let landscapeBriefing   = null;
+
+  // Run the same Perplexity briefings as a full run — results cached if already run today.
+  try {
+    const viKey    = `perplexity:venture_intelligence:${proposition.id}:${today}`;
+    const viCached = await getCachedApiResponse(viKey);
+    if (viCached?.response_data?.answer) {
+      ventureIntelligence = viCached.response_data.answer;
+      console.log(`\n  ✓ Venture intelligence brief: cache hit (${ventureIntelligence.length} chars)`);
+    } else {
+      ventureIntelligence = runVentureIntelligence(proposition);
+      if (ventureIntelligence) await setCachedApiResponse(viKey, { answer: ventureIntelligence });
+    }
+  } catch (err) {
+    console.warn(`  ⚠ Venture intelligence brief failed (non-fatal): ${err.message.slice(0, 120)}`);
+  }
+
+  try {
+    const lbKey    = `perplexity:landscape_briefing:${proposition.id}:${today}`;
+    const lbCached = await getCachedApiResponse(lbKey);
+    if (lbCached?.response_data?.answer) {
+      landscapeBriefing = lbCached.response_data.answer;
+      console.log(`  ✓ Landscape briefing: cache hit (${landscapeBriefing.length} chars)`);
+    } else {
+      landscapeBriefing = runCurrentLandscapeBriefing(proposition);
+      if (landscapeBriefing) await setCachedApiResponse(lbKey, { answer: landscapeBriefing });
+    }
+  } catch (err) {
+    console.warn(`  ⚠ Landscape briefing failed (non-fatal): ${err.message.slice(0, 120)}`);
+  }
+
+  // Load admin context notes — these are scope adjustments already entered via
+  // the Context Panel and should inform the curiosity agenda
+  let adminContextNotes = {};
+  try {
+    adminContextNotes = await getPropositionContext(proposition.id);
+    const totalNotes = Object.values(adminContextNotes).reduce((sum, arr) => sum + arr.length, 0);
+    if (totalNotes > 0) {
+      console.log(`  ✓ Admin context notes loaded: ${totalNotes} note(s)`);
+    }
+  } catch (err) {
+    console.warn(`  ⚠ Could not load admin context notes (non-fatal): ${err.message.slice(0, 120)}`);
+  }
+
+  // Load primary client for context
+  let client = null;
+  try {
+    const recipients = await getPropositionRecipients(proposition.id);
+    client = recipients[0] ?? (await getClientById(proposition.client_id));
+  } catch (err) {
+    console.warn(`  ⚠ Could not load client (non-fatal): ${err.message.slice(0, 80)}`);
+  }
+
+  const context = { proposition, client, ventureIntelligence, landscapeBriefing, adminContextNotes };
+
+  console.log('\n  Running curiosity agent (Opus)...');
+  const agenda = await runCuriosityAgent(context);
+
+  await saveCuriosityAgenda(proposition.id, agenda);
+
+  const elapsedMin = ((Date.now() - stepStart) / 60_000).toFixed(1);
+  console.log(`\n✓ Curiosity agenda saved | Elapsed: ${elapsedMin} min`);
+  console.log(`  Core tension:  ${(agenda.core_tension || '(none)').slice(0, 120)}`);
+  console.log(`  Agents:        ${Object.keys(agenda.agent_agenda || {}).length}/10`);
+  console.log(`  Confidence:    ${agenda.agenda_confidence || 'unknown'}`);
+}
+
 // ---------------------------------------------------------------------------
 // Python tool execution
 // ---------------------------------------------------------------------------
@@ -1631,7 +1804,7 @@ function loadWorkflow(filename) {
  */
 function parseArgs() {
   const args   = process.argv.slice(2);
-  const result = { propositionId: undefined, force: false, regenPdf: false, reportId: undefined, upload: false };
+  const result = { propositionId: undefined, force: false, regenPdf: false, reportId: undefined, upload: false, step: 'full' };
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--proposition-id' && args[i + 1]) {
@@ -1644,6 +1817,8 @@ function parseArgs() {
       result.reportId = args[++i];
     } else if (args[i] === '--upload') {
       result.upload = true;
+    } else if (args[i] === '--step' && args[i + 1]) {
+      result.step = args[++i]; // 'curiosity' or 'full'
     }
   }
 
@@ -1864,6 +2039,20 @@ CRITICAL RULES:
         .join('\n') + '\n'
     : '';
 
+  // Inject the curiosity agenda for this specific agent — generated by the curiosity
+  // pre-step and optionally edited by the admin before the full run is triggered.
+  // These are additive questions; standard research is mandatory regardless.
+  const agendaForThisAgent = context.curiosityAgenda?.agent_agenda?.[agentName];
+  const curiosityBlock = agendaForThisAgent
+    ? `\n## CURIOSITY AGENDA\nThe following questions were generated specifically for this proposition. ` +
+      `Investigate them in addition to your standard workflow — standard research is mandatory regardless.\n\n` +
+      `**Priority questions:**\n` +
+      (agendaForThisAgent.priority_questions || []).map(q => `- ${q}`).join('\n') + '\n\n' +
+      `**Bear-case question (what finding from your domain would most challenge viability?):**\n` +
+      `- ${agendaForThisAgent.bear_case_question || ''}\n\n` +
+      `**Watch for:**\n- ${agendaForThisAgent.watch_for || ''}\n`
+    : '';
+
   const userPrompt = `Execute this research workflow and produce the JSON output.
 
 ## WORKFLOW INSTRUCTIONS
@@ -1873,7 +2062,7 @@ ${workflow}
 \`\`\`json
 ${JSON.stringify(propositionContext, null, 2)}
 \`\`\`
-${ventureBlock}${landscapeBlock}${clientContextBlock}${contextNotesBlock}
+${ventureBlock}${landscapeBlock}${clientContextBlock}${contextNotesBlock}${curiosityBlock}
 Follow all steps in the workflow. Use the tools to run the required searches and data pulls.
 Synthesize the results and respond with ONLY the JSON object from the Output Format section.`;
 
@@ -3712,12 +3901,28 @@ async function runProposition(proposition, force) {
       ventureIntelligence,   // Perplexity: venture type, critical factors, relevant agencies
       landscapeBriefing,     // Perplexity: current market events, regulatory changes, news
       adminContextNotes,     // Admin panel: scope adjustments grouped by category
+      curiosityAgenda: null, // populated below if a pre-step agenda exists
     };
+
+    // 5b. Load curiosity agenda if the pre-step has been run for this proposition.
+    // Injected into each research agent's prompt as a CURIOSITY AGENDA additive block.
+    // Non-fatal — agents proceed on standard workflows if none exists.
+    try {
+      const { agenda } = await getCuriosityAgenda(proposition.id);
+      if (agenda) {
+        context.curiosityAgenda = agenda;
+        const agentCount = Object.keys(agenda.agent_agenda || {}).length;
+        console.log(`✓ Curiosity agenda loaded (${agentCount}/10 agents, confidence: ${agenda.agenda_confidence || 'unknown'})`);
+      }
+    } catch (err) {
+      console.warn(`  ⚠ Could not load curiosity agenda (non-fatal): ${err.message.slice(0, 80)}`);
+    }
 
     // 6. Load prior completed agent outputs from the most recent failed run (if any).
     // Avoids re-running agents that already succeeded, saving $3–6 per retry.
     let priorCompletedOutputs = {};
-    const recentFailed = history.find(r => r.status === 'failed');
+    const reportHistory = await getReportsByPropositionId(proposition.id);
+    const recentFailed = reportHistory.find(r => r.status === 'failed');
     if (recentFailed) {
       try {
         const priorRows = await getAgentOutputsByReportId(recentFailed.id);
@@ -4257,6 +4462,19 @@ async function main() {
   // --upload flag: overwrite PDF in Supabase Storage and keep report as pending_review
   if (args.regenPdf) {
     await regenPdfFromStorage(args.reportId, args.upload);
+    return;
+  }
+
+  // --step curiosity: run only the curiosity pre-step for a specific proposition.
+  // Fetches Perplexity briefings, runs Opus curiosity agent, saves agenda to DB.
+  // Admin reviews the agenda in the panel, then triggers the full run separately.
+  if (args.step === 'curiosity') {
+    if (!args.propositionId) {
+      console.error('Error: --step curiosity requires --proposition-id <uuid>');
+      process.exit(1);
+    }
+    const proposition = await getPropositionById(args.propositionId);
+    await runCuriosityPreStep(proposition);
     return;
   }
 

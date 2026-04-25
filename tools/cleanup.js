@@ -240,9 +240,10 @@ async function pruneFailedReports(dryRun) {
 // ---------------------------------------------------------------------------
 
 /**
- * Deletes api_cache entries older than CACHE_TTL_DAYS.
- * The cache stores Brave Search results to avoid redundant API calls.
- * Stale entries waste storage and may return outdated data.
+ * Deletes expired entries from both cache tables:
+ *   - api_cache       — Perplexity briefing cache (7-day TTL)
+ *   - search_cache    — Brave Search result cache (7-day TTL; per-call freshness
+ *                       is already enforced at 24h, so anything older is stale)
  *
  * @param {boolean} dryRun
  */
@@ -250,25 +251,45 @@ async function sweepCache(dryRun) {
   const cutoff = daysAgo(CACHE_TTL_DAYS);
   console.log(`\nCache sweep — entries older than ${new Date(cutoff).toDateString()} (${CACHE_TTL_DAYS} days)`);
 
+  const now = new Date().toISOString();
+
   if (dryRun) {
-    // Count without deleting
-    const { count, error } = await supabase
+    // api_cache uses expires_at natively — count rows past their expiry
+    const { count: apiCount, error: apiErr } = await supabase
       .from('api_cache')
+      .select('*', { count: 'exact', head: true })
+      .lt('expires_at', now);
+
+    // search_cache uses cached_at + per-call TTL — sweep rows older than CACHE_TTL_DAYS
+    const { count: searchCount, error: searchErr } = await supabase
+      .from('search_cache')
       .select('*', { count: 'exact', head: true })
       .lt('cached_at', cutoff);
 
-    if (error) console.warn(`  ⚠ Could not count cache entries: ${error.message}`);
-    else console.log(`  [dry-run] Would delete ${count ?? '?'} expired cache entries`);
+    if (apiErr)    console.warn(`  ⚠ Could not count api_cache entries: ${apiErr.message}`);
+    else console.log(`  [dry-run] Would delete ${apiCount ?? '?'} expired api_cache entries`);
+    if (searchErr) console.warn(`  ⚠ Could not count search_cache entries: ${searchErr.message}`);
+    else console.log(`  [dry-run] Would delete ${searchCount ?? '?'} expired search_cache entries`);
     return;
   }
 
-  const { error, count } = await supabase
+  // api_cache: delete where expires_at is in the past (native expiry semantics)
+  const { error: apiError, count: apiCount } = await supabase
     .from('api_cache')
+    .delete({ count: 'exact' })
+    .lt('expires_at', now);
+
+  if (apiError) console.warn(`  ⚠ api_cache sweep failed: ${apiError.message}`);
+  else console.log(`  ✓ Deleted ${apiCount ?? '?'} expired api_cache entries`);
+
+  // search_cache: delete by age (no expires_at column — use cached_at + TTL)
+  const { error: searchError, count: searchCount } = await supabase
+    .from('search_cache')
     .delete({ count: 'exact' })
     .lt('cached_at', cutoff);
 
-  if (error) console.warn(`  ⚠ Cache sweep failed: ${error.message}`);
-  else console.log(`  ✓ Deleted ${count ?? '?'} expired cache entries`);
+  if (searchError) console.warn(`  ⚠ search_cache sweep failed: ${searchError.message}`);
+  else console.log(`  ✓ Deleted ${searchCount ?? '?'} expired search_cache entries`);
 }
 
 // ---------------------------------------------------------------------------
