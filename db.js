@@ -779,6 +779,7 @@ module.exports = {
   getMcKeeverAdminEmails,
 
   // Curiosity agenda
+  setCuriosityStarted,
   saveCuriosityAgenda,
   getCuriosityAgenda,
 
@@ -796,6 +797,21 @@ module.exports = {
  * @param {string} propositionId
  * @param {Object} agenda - Parsed JSON from the curiosity agent
  */
+/**
+ * Mark the curiosity pre-step as started. Written at the very beginning of
+ * runCuriosityPreStep so the admin panel can detect an in-progress run even
+ * if the user navigated away and returned before the agenda was saved.
+ * @param {string} propositionId
+ */
+async function setCuriosityStarted(propositionId) {
+  const { error } = await supabase
+    .from('propositions')
+    .update({ curiosity_started_at: new Date().toISOString() })
+    .eq('id', propositionId);
+
+  if (error) throw new Error(`setCuriosityStarted failed: ${error.message}`);
+}
+
 async function saveCuriosityAgenda(propositionId, agenda) {
   const { error } = await supabase
     .from('propositions')

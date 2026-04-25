@@ -50,6 +50,7 @@ const {
   getMcKeeverAdminEmails,
   getCachedApiResponse,
   setCachedApiResponse,
+  setCuriosityStarted,
   saveCuriosityAgenda,
   getCuriosityAgenda,
 } = require('./db');
@@ -973,6 +974,14 @@ async function runCuriosityPreStep(proposition) {
   console.log(`\n${'─'.repeat(60)}`);
   console.log(`Curiosity pre-step: ${proposition.title}`);
   console.log(`ID: ${proposition.id}`);
+
+  // Write started_at immediately so the admin panel can detect the in-progress
+  // state if the user navigates away and returns before the agenda is saved.
+  try {
+    await setCuriosityStarted(proposition.id);
+  } catch (err) {
+    console.warn(`  ⚠ Could not set curiosity_started_at (non-fatal): ${err.message.slice(0, 80)}`);
+  }
 
   const today = new Date().toISOString().slice(0, 10);
   let ventureIntelligence = null;
