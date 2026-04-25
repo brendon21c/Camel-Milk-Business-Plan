@@ -1,7 +1,7 @@
 # Product Roadmap — Business Viability Intelligence System
 
 **Author:** Brendon McKeever  
-**Last updated:** 2026-04-25 (Session 38 — pre-V3 cleanup complete; data confidence fixed; code quality done)
+**Last updated:** 2026-04-25 (Session 39 — curiosity agent built and E2E tested; cache schema fixed; V3 Step 1 complete)
 
 ---
 
@@ -217,7 +217,9 @@ This is a natural V2 test since the current camel milk proposition targets the U
 - Node 20 → 22 in GitHub Actions
 - Per-agent resume on retry implemented — saves $3–6 per failed run
 - GDELT + USPTO error flags added — agents now distinguish tool failure from empty results
-- GitHub Actions secrets for 5 new API keys from Session 37 still pending (Step 2)
+- GitHub Actions secrets for 5 new API keys added (Step 2 complete)
+- `api_cache` schema mismatch fixed — Perplexity caching now actually works (was silently failing since Session 35)
+- `search_cache` cleanup added — was never swept; now on 7-day TTL in `cleanup.js`
 
 **Goal:** Any business idea — SaaS, services, digital products, franchises, real estate, content creation, marketplaces — gets a rigorous viability analysis with research shaped to the specific proposition, not just its category.
 
@@ -244,9 +246,11 @@ For a real estate portfolio: `production` = renovation costs, `origin_ops` = dea
 
 ### Key changes required for V3
 
-#### 1. The `curiosity_agent` — first V3 prerequisite
+#### 1. ~~The `curiosity_agent` — first V3 prerequisite~~ ✅ Complete (2026-04-25)
 
-The most important addition to the pipeline. Runs after the two Perplexity pre-briefings, before the 10 research agents.
+Built, registered, and E2E tested. Runs as a separate pre-step triggered from the admin panel (`--step curiosity`). Admin reviews and optionally edits the agenda before triggering the full run (Option A design). Agenda saved to `propositions.curiosity_agenda`. Panel on `/admin/propositions/[id]` shows generating state, agenda content (all fields editable), and resumes in-progress state on page reload. Admin context notes factored into agenda automatically. E2E tested on NHD furniture proposition — confidence High, 10/10 agents, 4 cross-agent connections, context notes visible in production/origin_ops questions.
+
+**Original description (for reference):** The most important addition to the pipeline. Runs after the two Perplexity pre-briefings, before the 10 research agents.
 
 **What it does:** Reads the proposition and client intake, runs one Perplexity curiosity call ("what does standard research miss about this type of proposition?"), and produces a per-agent research agenda of specific, non-obvious questions that supplement standard research. It also identifies cross-agent connections — where two agents need to address complementary sides of the same underlying question — which the assembler uses to align findings.
 
@@ -282,8 +286,8 @@ Assembler (receives full curiosity output for section alignment)
 - Only non-obvious questions — if standard research covers it anyway, it doesn't belong
 - Minimum 2 priority questions per agent
 
-**Admin panel review — design pending:**
-The curiosity agenda should be visible in the admin panel and optionally editable by Brendon before research agents fire. Three possible workflows (pre-step trigger, mid-run pause, or next-run review) each have different UX and pipeline implications. Needs a dedicated design decision before building. See HANDOFF.md for detail.
+**Admin panel review — ✅ Built (Option A):**
+Curiosity runs as a separate pre-step from the admin panel. Admin reviews and optionally edits before triggering the full run. `CuriosityPanel` on `/admin/propositions/[id]` — full-width, left-nav agent selector, all fields editable, Save Changes writes back to DB.
 
 #### 2. Make all 10 agents proposition-type aware
 

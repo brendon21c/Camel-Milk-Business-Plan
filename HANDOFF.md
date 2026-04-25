@@ -1,5 +1,5 @@
 # Project Handoff — Business Viability Intelligence System
-**Last updated:** 2026-04-24 (Session 37 — API registration complete; 4 new tool scripts; all 10 workflows upgraded; fact-check agent strengthened)
+**Last updated:** 2026-04-25 (Session 39 — curiosity agent built and E2E tested; api_cache schema mismatch fixed; search_cache cleanup added; db.js syntax fixed)
 
 ---
 
@@ -35,11 +35,11 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ## Current State (as of 2026-04-25)
 
-### Backend — `Camel-Milk-Business-Plan` ✅ V2 complete + Step 0 & Step 1 pre-V3 cleanup done
+### Backend — `Camel-Milk-Business-Plan` ✅ V2 complete + Steps 0–2 + V3 Step 1 (curiosity agent) done
 
 - V1 pipeline fully working and tested
 - E2E test passed 2026-04-10. Report delivered to Iman Warsame and Brendon McKeever
-- **13 migrations run (001–013)**
+- **16 migrations run (001–013 + 3 curiosity columns added manually via Supabase SQL)**
 - **Northern Heritage Designs test run complete (2026-04-20):** First real non-food, non-import proposition. `pending_review` status, 80.5/100 confidence, 3.5/5.0 Moderate viability. Indian Arts and Crafts Act flagged as key legal risk. Origin country was null (domestic) — supply chain section was data-limited as a result.
 - **Step 2.5 complete:** `getPropositionContext()` added to `db.js`. At run start, backend queries `proposition_context`, groups rows by category, and injects relevant notes into each research agent's prompt as a `## ADMIN CONTEXT NOTES` block. Category → agent mapping is in `run.js` (`CATEGORY_TO_AGENTS`).
 - **Prompt caching live:** All 15+ assembler section calls pass the shared `researchContext` as a cached prefix. Saves ~$5/run (~40% cost reduction). Inter-section delay 17s (15 × 17 = 255s, safely under the 300s TTL).
@@ -65,6 +65,19 @@ They share the same Supabase project. The website writes intake data; the backen
   - Per-agent resume on retry — before each run, loads completed agent outputs from the most recent failed run and copies them to the new report. Only runs agents without prior output. Saves $3–6 per retry. `needDelay` flag prevents 30s pre-run sleep when all prior agents are skipped.
   - GDELT + USPTO `_tool_error` flag — all error paths now return `{ "_tool_error": True, "reason": "..." }` instead of silent `records: []`. Agents can now distinguish tool failure from legitimate empty results.
 
+- **Step 2 complete (2026-04-25):** All 5 new API keys added to GitHub repo secrets (`NEWS_API_KEY`, `ALPHA_VANTAGE_API_KEY`, `MASSIVE_API_KEY`, `FINNHUB_API_KEY`, `PRODUCT_HUNT_DEV_TOKEN`). `reports.yml` updated to write all active keys to `.env` on the runner.
+
+- **`api_cache` schema mismatch fixed (2026-04-25):** Table was created with `api_source NOT NULL`, `expires_at NOT NULL`, and `created_at` (auto-generated) — completely different from what `setCachedApiResponse` was trying to write (`cached_at`). Every Perplexity cache write since Session 35 had been silently failing. Fixed `getCachedApiResponse` to filter by `expires_at > NOW()` and `setCachedApiResponse` to derive `api_source` from the key prefix and compute `expires_at` (7-day default). Verified with end-to-end test.
+
+- **`search_cache` cleanup added (2026-04-25):** `cleanup.js` was sweeping `api_cache` but never `search_cache`. Brave Search cache was growing indefinitely. Fixed: `sweepCache()` now deletes expired `api_cache` rows by `expires_at < NOW()` and expired `search_cache` rows by `cached_at < 7 days ago`.
+
+- **`curiosity_agent` complete (2026-04-25 — Session 39):** V3 Step 1 fully built and E2E tested.
+  - **Backend:** `CURIOSITY_TOOLS` (Perplexity only), `runCuriosityAgent()` (Opus, reads `workflows/curiosity_agent.md`, one bounded Perplexity call, returns JSON agenda), `runCuriosityPreStep()` (runs briefings with caching, loads admin context notes + client, calls agent, saves to DB). `--step curiosity` CLI flag routes to pre-step only. `runResearchAgent()` injects `## CURIOSITY AGENDA` block per agent when agenda exists. `runProposition()` loads agenda from DB into context at run start. Fixed latent `history` undefined bug (renamed to `reportHistory`).
+  - **DB:** Three new columns on `propositions` — `curiosity_agenda JSONB`, `curiosity_generated_at TIMESTAMPTZ`, `curiosity_started_at TIMESTAMPTZ`. `curiosity_started_at` written at the very start of the pre-step so the admin panel can detect in-progress state on page reload.
+  - **`reports.yml`:** `step` input added (`curiosity` | `full`, default `full`). Targeted run step passes `--step $STEP` to `node run.js`.
+  - **Website:** `triggerCuriosityAction`, `getCuriosityAgendaAction`, `saveCuriosityAgendaAction` in `actions.ts`. New `CuriosityPanel` component — full-width below the main proposition grid. Layout: header with confidence + timestamps + buttons; Proposition Read + Core Tension side by side; cross-agent connections 2-col card grid; agent agendas with left-nav selector (10 agents) + right content panel (priority questions, bear-case, watch-for). All fields editable, Save Changes writes back to DB. Panel auto-resumes generating state on page reload by reading `curiosity_started_at`.
+  - **E2E test:** Ran on NHD/Ron Swanson furniture proposition (3 context notes, `physical_domestic`, `general_manufacturing`). Confidence: High. Core tension, cross-agent connections, and per-agent agendas all produced. Context notes (Baillie Lumber sourcing, MN wage rates, $100K loan) were factored into the agenda.
+
 **Note:** Camel Milk proposition is set to `plan_tier = 'retainer'` in Supabase to allow the May 1 auto-run test. After May run confirms scheduling works, flip back to `starter`.
 
 **Note:** `report_sources` DB table has 0 rows for the NHD run despite 129 sources in the content JSON. The deterministic JS extractor writes to `content.sources` for PDF use but does not write to the `report_sources` table. Minor bug — not blocking, but sources aren't queryable from the DB.
@@ -83,7 +96,7 @@ They share the same Supabase project. The website writes intake data; the backen
 | `/login` | ✅ Built | Supabase `signInWithPassword`, redirects to `/admin` on success |
 | `/admin` | ✅ Built | Dashboard — 4 stat cards (active propositions, runs this week, total clients, pending review) |
 | `/admin/propositions` | ✅ Built | Lists all propositions with status badges |
-| `/admin/propositions/[id]` | ✅ Built | Full detail — proposition params, client info, reports history, Run Now, Context Panel, PDF download |
+| `/admin/propositions/[id]` | ✅ Built | Full detail — proposition params, client info, reports history, Run Now, Context Panel, Curiosity Panel, PDF download |
 | `/admin/reports` | ✅ Built | 100 most recent runs across all propositions, PDF download per row |
 | `/admin/clients` | ✅ Built | Org list with status toggle, plan tier select, nested contacts |
 | `/admin/clients/[id]` | ✅ Built | Org detail page |
@@ -92,6 +105,7 @@ They share the same Supabase project. The website writes intake data; the backen
 **Notable component details:**
 - **RunPanel:** Two-step confirm guard on "Run Again" — first click turns amber ("Confirm run?"), second click fires. Auto-cancels after 4 seconds. All run buttons have `type="button"`.
 - **ContextPanel:** Collapsible category guide (toggled via "Category guide" link in the header). Shows which agents each category routes to, what to use it for, and an example note.
+- **CuriosityPanel:** Full-width block below the main grid. Generate Agenda button dispatches `step=curiosity` to GitHub Actions. Polls `curiosity_generated_at` for completion. Auto-resumes generating state on page reload via `curiosity_started_at`. Layout: Proposition Read + Core Tension (side by side), cross-agent connections (2-col cards), agent agendas (left-nav selector + right content). All fields editable; Save Changes writes back to `propositions.curiosity_agenda`. Admin context notes are factored into the agenda automatically (count shown in panel).
 
 ---
 
@@ -99,27 +113,18 @@ They share the same Supabase project. The website writes intake data; the backen
 
 ### ~~Step 0 — Data Confidence Tool Review~~ ✅ Complete (2026-04-25)
 ### ~~Step 1 — Code Quality Fixes~~ ✅ Complete (2026-04-25)
+### ~~Step 2 — GitHub Actions Secrets~~ ✅ Complete (2026-04-25)
+### ~~Step 3.1 — Build the `curiosity_agent`~~ ✅ Complete (2026-04-25)
 
 ---
 
-### Step 2 — GitHub Actions Secrets
-
-New API keys in `.env` need to be added to GitHub repo secrets so scheduled runs can use them. Go to repo → Settings → Secrets and variables → Actions → add:
-- `NEWS_API_KEY`
-- `ALPHA_VANTAGE_API_KEY`
-- `MASSIVE_API_KEY`
-- `FINNHUB_API_KEY`
-- `PRODUCT_HUNT_DEV_TOKEN`
-
----
-
-### Step 3 — V3 Build Order
+### Step 3 — V3 Build Order (remaining)
 
 Don't start a new step until the previous one has an E2E-tested result.
 
 **Architectural note:** AGENT_MANIFEST (dynamic agent selection per venture type) is superseded. All 10 research agents run for every proposition — they ask universal business questions that apply to every venture type. The vocabulary and tools adapt per proposition type; the agent set does not change. See ROADMAP_V2.md V3 section for full rationale.
 
-1. **Build the `curiosity_agent`** — first V3 prerequisite and the highest-leverage addition to the pipeline. Runs after the two Perplexity pre-briefings, before the 10 research agents. Uses Opus (one bounded call + one Perplexity curiosity call). Produces a per-agent research agenda of non-obvious, proposition-specific questions that supplement standard research. Non-fatal — if it fails, research agents proceed on standard workflows only. Workflow file: `workflows/curiosity_agent.md` (written). Needs: registration in `run.js`, injection into research agent prompts, admin panel visibility (**admin panel review workflow design pending — see note below**).
+1. ~~**Build the `curiosity_agent`**~~ ✅ Complete (2026-04-25). Runs as a separate pre-step triggered from the admin panel. Admin reviews and optionally edits the agenda before triggering the full run. Design chosen: Option A (pre-step + separate trigger). Workflow: `workflows/curiosity_agent.md`. Panel: `CuriosityPanel` on `/admin/propositions/[id]`.
 
 2. **Make all 10 agents proposition-type aware** — update each research workflow to handle non-physical venture types. The venture intelligence brief already does this partially; the workflows need explicit guidance on how to reframe their 10 universal questions for services, SaaS, digital products, and content businesses. No new agents — vocabulary and tool selection adapts, agent set stays the same.
 
@@ -134,19 +139,6 @@ Don't start a new step until the previous one has an E2E-tested result.
 7. **Billing support (website)** — independent work; can run in parallel with any step above. Becomes urgent before first real paying V3 clients accumulate.
 
 8. **Existing Business Analysis** — after V3 is stable with at least 2 venture types working end-to-end. The 10 universal agents apply; assembler uses a different framing workflow. 2–4 additional research dimensions specific to operating businesses (strengths analysis, growth opportunity mapping, competitive gap analysis, benchmark underperformance) — likely 1–2 additional agents or assembler-level additions.
-
----
-
-**Admin panel review of curiosity agenda — design pending**
-
-The curiosity_agent saves its agenda to `agent_outputs` and it should be visible in the admin panel on the proposition detail page before a run fires. Brendon should be able to read the agenda and optionally edit specific questions before research starts — this is the human backstop for unusual or high-stakes propositions.
-
-The workflow for how this integrates with run triggering needs to be designed before building:
-- Does the curiosity agenda generate as a separate pre-step the admin triggers, with the full run triggered separately after review?
-- Does the run pause after curiosity_agent and wait for admin approval before research agents fire?
-- Or does the full run always complete, with the agenda shown for review before the *next* run?
-
-Each option has different UX and pipeline implications. Needs a dedicated design decision before implementation.
 
 ---
 
@@ -192,6 +184,20 @@ Clients need to request invoices, request refunds, and ask billing questions. Ad
 ---
 
 ## Session Log
+
+### Session 39 — Step 2 (GitHub secrets) + curiosity agent (V3 Step 1) + cache fixes (2026-04-25)
+
+- **Step 2 complete:** 5 new API keys added to GitHub Actions secrets. `reports.yml` updated to write all active keys to runner `.env` (EXA, Tavily, Jina, UN Comtrade, NewsAPI, Alpha Vantage, Massive, Finnhub, Product Hunt). G2 API confirmed blocked via local machine test (401 from residential IP — not a cloud ASN block). Original finding confirmed.
+- **`api_cache` schema mismatch fixed:** Table schema (`api_source NOT NULL`, `expires_at NOT NULL`, `created_at` auto-generated) never matched the code (`cached_at`, no required fields). Every Perplexity cache write since Session 35 silently failed. `setCachedApiResponse` now derives `api_source` from the key prefix and computes `expires_at` (default 7 days). `getCachedApiResponse` now filters by `expires_at > NOW()`. End-to-end write + read tested and confirmed working.
+- **`search_cache` cleanup added:** `cleanup.js` swept `api_cache` but never `search_cache`. Brave Search cache was growing indefinitely. `sweepCache()` now deletes expired `api_cache` by `expires_at < NOW()` and expired `search_cache` by `cached_at < 7 days ago`. HANDOFF `api_cache` description corrected (was marked "unused scaffolding" — outdated since Session 35).
+- **`db.js` syntax error fixed:** `saveCuriosityAgenda` and `getCuriosityAgenda` functions were accidentally placed inside the `module.exports` block. Moved after closing brace.
+- **Curiosity agent built (V3 Step 1):**
+  - `db.js`: `setCuriosityStarted`, `saveCuriosityAgenda`, `getCuriosityAgenda` added and exported.
+  - `run.js`: `CURIOSITY_TOOLS` (Perplexity only), `runCuriosityAgent()` (Opus, one Perplexity call, reads `workflows/curiosity_agent.md`), `runCuriosityPreStep()` (writes `curiosity_started_at` immediately, runs briefings with caching, loads admin context notes, calls agent, saves to DB). `--step` flag in `parseArgs()`. `main()` routes `--step curiosity` to pre-step only. `runResearchAgent()` injects `## CURIOSITY AGENDA` block per agent when agenda exists in context. `runProposition()` loads curiosity agenda from DB at start. Fixed latent `history` undefined bug (renamed to `reportHistory`).
+  - `reports.yml`: `step` input added. Targeted run step passes `--step $STEP` to `node run.js`. All 12 active API keys now written to runner `.env`.
+  - Website: `triggerCuriosityAction`, `getCuriosityAgendaAction` (returns `startedAt` too), `saveCuriosityAgendaAction` in `actions.ts`. New `CuriosityPanel` component — full-width below main grid, left-nav agent selector, 2-col layout for proposition read + core tension and cross-agent connections. All fields editable. Auto-resumes generating state on page reload via `curiosity_started_at`. `page.tsx` fetches all 3 curiosity columns and passes to panel.
+  - DB: 3 new columns on `propositions` added via Supabase SQL: `curiosity_agenda JSONB`, `curiosity_generated_at TIMESTAMPTZ`, `curiosity_started_at TIMESTAMPTZ`.
+- **E2E test:** Curiosity agent run on NHD/Ron Swanson furniture proposition (3 context notes — Baillie Lumber sourcing, MN wages, $100K loan). Result: confidence High, 4 cross-agent connections, 10/10 agents covered. Context notes explicitly factored into agenda (Baillie Lumber pricing and MN labor pool questions appeared in production/origin_ops agendas).
 
 ### Session 38 — Step 0 (data confidence audit + fixes) + Step 1 (4 code quality fixes) (2026-04-25)
 
@@ -570,7 +576,7 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 
 ## DB Schema
 
-**13 migrations run (001–013).**
+**13 migrations run (001–013) + 3 curiosity columns added manually via Supabase SQL (2026-04-25).**
 
 | Table | Purpose |
 |---|---|
@@ -602,6 +608,11 @@ After each successful run, `advancePropositionSchedule()` checks plan tier + com
 **New fields added in migration 013:**
 - `reports.formatting_notes` — TEXT, nullable. Used by the admin formatting panel to store per-report presentation notes.
 
+**New fields added manually (2026-04-25 — curiosity agent):**
+- `propositions.curiosity_agenda` — JSONB, nullable. Full curiosity agent output JSON (proposition_read, core_tension, cross_agent_connections, agent_agenda for all 10 agents, agenda_confidence, agenda_confidence_rationale).
+- `propositions.curiosity_generated_at` — TIMESTAMPTZ, nullable. Set when agenda is saved; also updated when admin saves edits.
+- `propositions.curiosity_started_at` — TIMESTAMPTZ, nullable. Set at the very start of `runCuriosityPreStep` so the admin panel can show generating state even if user navigated away and returned.
+
 **Extensions enabled:** `moddatetime` — required for the `proposition_context.updated_at` trigger.
 
 **Organization status values:** `prospect | pending | active | cancelled | inactive`
@@ -619,7 +630,8 @@ Only `physical_import_export` and `physical_domestic` have workflows. V2 adds in
 - Completed reports: 6-month window (always keeps most recent per proposition)
 - Failed reports: 7-day TTL
 - `agent_outputs`: deleted immediately on successful run completion. On failure, **preserved** so the resume path can re-compute the data confidence score. Cleaned up by `tryResumeFromContent()` after a successful resume, or when the next run finds a failed report with no content JSON.
-- `api_cache`: 7-day TTL
+- `api_cache`: expired entries swept by `expires_at < NOW()` (native expiry semantics)
+- `search_cache`: 7-day TTL by `cached_at` (added 2026-04-25 — was never swept before)
 
 ---
 
